@@ -1,8 +1,10 @@
 #pragma once
 
+#include "raylib.h"
+#include "world/Planet.hpp"
+
 // ====================================================================
 // GameState — top-level state machine
-// Owns all subsystems and orchestrates update/render each frame.
 // ====================================================================
 
 enum class AppState {
@@ -23,15 +25,15 @@ public:
   AppState state() const { return m_state; }
 
 private:
-  AppState m_state = AppState::MainMenu;
+  void updateFreeCamera(float dt);
+  void drawHUD() const;
 
-  // Subsystems will be added here as phases progress
-  // e.g.:
-  //   Planet          m_planet;
-  //   EntityManager   m_entities;
-  //   WeaponSystem    m_weapons;
-  //   ShieldSystem    m_shields;
-  //   WaveManager     m_waves;
-  //   AudioManager    m_audio;
-  //   HUD             m_hud;
+  AppState m_state = AppState::MainMenu;
+  Planet m_planet;
+  Camera3D m_camera = {};
+
+  // Free-roam camera state
+  float m_camYaw = 0.0f;
+  float m_camPitch = -0.35f;
+  float m_camSpeed = 40.0f;
 };

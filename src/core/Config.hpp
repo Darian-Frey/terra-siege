@@ -53,10 +53,10 @@ constexpr int HEIGHTMAP_SIZE = 512;   // must be 2^n + 1
 constexpr int CHUNK_COUNT = 16;       // NxN chunks
 constexpr int CHUNK_VERTS = 32;       // quads per chunk edge
 constexpr float TERRAIN_SCALE = 4.0f; // world units per heightmap cell
-constexpr float TERRAIN_HEIGHT_MAX = 18.0f;
+constexpr float TERRAIN_HEIGHT_MAX = 55.0f;
 constexpr float TERRAIN_CURVATURE = 0.00015f; // curvature cosine coefficient
-constexpr float FOG_NEAR = 180.0f;
-constexpr float FOG_FAR = 320.0f;
+constexpr float FOG_NEAR = 400.0f;
+constexpr float FOG_FAR = 900.0f;
 
 // ----------------------------------------------------------------
 // Weapons — primary
@@ -153,5 +153,12 @@ constexpr float EXHAUST_LIFETIME = 0.3f;
 // ----------------------------------------------------------------
 constexpr int SOUND_CHANNELS = 4; // concurrent weapon fire channels
 constexpr float AUDIO_MAX_DISTANCE = 300.0f;
+
+// ----------------------------------------------------------------
+// Terrain generation
+// ----------------------------------------------------------------
+constexpr float TERRAIN_ROUGHNESS = 0.55f; // lower = smoother, larger features
+constexpr float SEA_LEVEL =
+    0.20f; // fraction of HEIGHT_MAX — below this is flat ocean
 
 } // namespace Config

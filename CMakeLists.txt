@@ -112,6 +112,8 @@ target_include_directories(terra-siege PRIVATE src)
 
 target_link_libraries(terra-siege PRIVATE raylib)
 
+target_compile_definitions(terra-siege PRIVATE RAYMATH_IMPLEMENTATION)
+
 # Compiler warnings
 target_compile_options(terra-siege PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic>
