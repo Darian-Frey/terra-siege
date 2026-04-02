@@ -5,39 +5,61 @@
 
 // ====================================================================
 // Heightmap
-// Generates a fractal height field using the Diamond-Square algorithm,
-// followed by a smoothing pass to produce connected landmasses rather
-// than isolated spikes.
-// Size must be (2^n + 1) e.g. 129, 257, 513.
-// Heights are stored normalised [0,1].
+// Diamond-Square fractal generation + smoothing + river carving +
+// lake flooding. Produces a water-type map alongside height data so
+// the renderer can colour ocean / lake / river differently.
+// Size must be (2^n + 1): 129, 257, 513, 1025 etc.
+// Heights stored normalised [0,1].
 // ====================================================================
+
+enum class WaterType : uint8_t {
+  None = 0,  // dry land
+  Ocean = 1, // below sea level
+  Lake = 2,  // inland lake (calm, darker blue)
+  River = 3, // flowing river (lighter, animated later)
+};
 
 class Heightmap {
 public:
   Heightmap() = default;
 
-  // Generate a new heightmap. seed=0 uses a random seed.
-  void generate(int size, float roughness = 0.40f, uint32_t seed = 0);
+  void generate(int size, float roughness = 0.55f, uint32_t seed = 0);
 
-  // Sample height at integer grid coordinates (clamped to edges)
   float get(int x, int z) const;
-
-  // Bilinear sample at fractional coordinates
   float sample(float x, float z) const;
+  WaterType waterAt(int x, int z) const;
 
   int size() const { return m_size; }
 
 private:
+  // Generation pipeline
   void diamondSquare(float roughness);
-  void smooth(int passes);   // box-blur to merge spikes into landmasses
-  void applyRadialFalloff(); // taper edges to ocean for island continent feel
-  void set(int x, int z, float value);
+  void smooth(int passes);
+  void applyRadialFalloff();
   void normalise();
+  void classifyOcean();
+  void carveRivers();
+  void floodLakes();
+
+  // River helpers
+  bool flowDownhill(int startX, int startZ,
+                    std::vector<std::pair<int, int>> &path);
+  void carveChannel(const std::vector<std::pair<int, int>> &path);
+
+  // Lake helpers
+  void floodFillLake(int x, int z);
+
+  // Data access
+  void set(int x, int z, float value);
+  WaterType &waterRef(int x, int z);
+  bool inBounds(int x, int z) const;
+
+  // RNG
+  float randF(float lo, float hi);
+  uint32_t nextRand();
+  uint32_t m_rng = 0;
 
   int m_size = 0;
   std::vector<float> m_data;
-  uint32_t m_rng = 0;
-
-  float randF(float lo, float hi);
-  uint32_t nextRand();
+  std::vector<WaterType> m_water;
 };

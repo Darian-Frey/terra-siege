@@ -49,8 +49,8 @@ constexpr float CAM_FOV = 70.0f; // degrees
 // ----------------------------------------------------------------
 // Terrain / planet
 // ----------------------------------------------------------------
-constexpr int HEIGHTMAP_SIZE = 512;   // must be 2^n + 1
-constexpr int CHUNK_COUNT = 16;       // NxN chunks
+constexpr int HEIGHTMAP_SIZE = 1025;  // must be 2^n + 1
+constexpr int CHUNK_COUNT = 16;       // 1024/16 = 64 cells per chunk
 constexpr int CHUNK_VERTS = 32;       // quads per chunk edge
 constexpr float TERRAIN_SCALE = 4.0f; // world units per heightmap cell
 constexpr float TERRAIN_HEIGHT_MAX = 55.0f;
@@ -158,7 +158,21 @@ constexpr float AUDIO_MAX_DISTANCE = 300.0f;
 // Terrain generation
 // ----------------------------------------------------------------
 constexpr float TERRAIN_ROUGHNESS = 0.55f; // lower = smoother, larger features
-constexpr float SEA_LEVEL =
-    0.20f; // fraction of HEIGHT_MAX — below this is flat ocean
+constexpr float SEA_LEVEL = 0.20f;         // fraction of HEIGHT_MAX
+
+// Rivers
+constexpr int RIVER_COUNT = 6; // number of rivers to carve
+constexpr float RIVER_SOURCE_MIN_H =
+    0.60f; // min normalised height for river source
+constexpr float RIVER_CARVE_DEPTH = 0.04f; // how deep to cut the channel
+constexpr int RIVER_WIDTH = 2;             // cells either side of centreline
+constexpr int RIVER_MIN_LENGTH = 40;       // discard rivers shorter than this
+
+// Lakes
+constexpr int LAKE_COUNT = 12;      // max inland lakes
+constexpr float LAKE_MIN_H = 0.22f; // must be above sea level
+constexpr float LAKE_MAX_H = 0.55f; // not on mountain tops
+constexpr int LAKE_MAX_CELLS = 800; // max flood-fill size   // fraction of
+                                    // HEIGHT_MAX — below this is flat ocean
 
 } // namespace Config

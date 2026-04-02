@@ -1,18 +1,15 @@
 #include "TerrainChunk.hpp"
 #include <cmath>
-#include <cstring>
 
-// ----------------------------------------------------------------
-// Height-to-colour bands (h is normalised 0..1)
-// ----------------------------------------------------------------
-Color TerrainChunk::heightToColor(float h) const {
-  if (h <= Config::SEA_LEVEL + 0.01f)
-    return {30, 80, 180, 255}; // ocean
-  else if (h < 0.28f)
-    return {55, 120, 200, 255}; // shallow water
-  else if (h < 0.35f)
+// ================================================================
+// Colour helpers
+// ================================================================
+
+Color TerrainChunk::landColor(float h) const {
+  // h is normalised [0,1]
+  if (h < 0.25f)
     return {210, 190, 120, 255}; // sand / beach
-  else if (h < 0.58f)
+  else if (h < 0.55f)
     return {100, 155, 65, 255}; // grassland
   else if (h < 0.72f)
     return {145, 125, 95, 255}; // rock
@@ -22,29 +19,43 @@ Color TerrainChunk::heightToColor(float h) const {
     return {240, 245, 255, 255}; // snow
 }
 
-// ----------------------------------------------------------------
-// Directional light — sun at (0.57, 0.74, 0.36) normalised
-// ----------------------------------------------------------------
-static Color applyLight(Color base, Vector3 normal) {
-  const float sx = 0.5700f, sy = 0.7400f, sz = 0.3600f;
+Color TerrainChunk::waterColor(WaterType wt) const {
+  switch (wt) {
+  case WaterType::Ocean:
+    return {25, 70, 170, 255}; // deep blue
+  case WaterType::Lake:
+    return {40, 110, 185, 255}; // calmer mid-blue
+  case WaterType::River:
+    return {65, 145, 200, 255}; // lighter, flowing blue
+  default:
+    return {25, 70, 170, 255};
+  }
+}
+
+// ================================================================
+// Directional lighting
+// Sun direction normalised: (0.57, 0.74, 0.36)
+// ================================================================
+static Color applyLight(Color base, Vector3 normal, bool isWater) {
+  const float sx = 0.57f, sy = 0.74f, sz = 0.36f;
   float diff = sx * normal.x + sy * normal.y + sz * normal.z;
   if (diff < 0.0f)
     diff = 0.0f;
 
-  const float ambient = 0.45f;
+  // Water surfaces are flatter so they get a stronger specular-like boost
+  float ambient = isWater ? 0.60f : 0.45f;
   float light = ambient + (1.0f - ambient) * diff;
 
-  auto clampU = [](float v) -> unsigned char {
+  auto cu = [](float v) -> unsigned char {
     int i = static_cast<int>(v);
     return static_cast<unsigned char>(i < 0 ? 0 : i > 255 ? 255 : i);
   };
-  return {clampU(base.r * light), clampU(base.g * light),
-          clampU(base.b * light), 255};
+  return {cu(base.r * light), cu(base.g * light), cu(base.b * light), 255};
 }
 
-// ----------------------------------------------------------------
+// ================================================================
 // build
-// ----------------------------------------------------------------
+// ================================================================
 void TerrainChunk::build(const Heightmap &hmap, int originX, int originZ,
                          int cellsPerEdge) {
   if (m_built)
@@ -52,14 +63,12 @@ void TerrainChunk::build(const Heightmap &hmap, int originX, int originZ,
 
   const float S = Config::TERRAIN_SCALE;
   const float Hm = Config::TERRAIN_HEIGHT_MAX;
-  const float seaWorld = Config::SEA_LEVEL * Hm; // sea level in world units
+  const float seaWorld = Config::SEA_LEVEL * Hm;
   const int N = cellsPerEdge;
-
   const int vertCount = N * N * 6;
 
   m_mesh.vertexCount = vertCount;
   m_mesh.triangleCount = N * N * 2;
-
   m_mesh.vertices =
       static_cast<float *>(RL_MALLOC(vertCount * 3 * sizeof(float)));
   m_mesh.colors = static_cast<unsigned char *>(
@@ -70,10 +79,28 @@ void TerrainChunk::build(const Heightmap &hmap, int originX, int originZ,
   int vi = 0, ci = 0, ni = 0;
   float cx = 0.0f, cz = 0.0f;
 
-  // Helper: clamp raw height to sea level so ocean is a flat surface
+  // World height: clamp anything below sea level to flat ocean surface
   auto worldH = [&](int x, int z) -> float {
     float h = hmap.get(x, z) * Hm;
     return h < seaWorld ? seaWorld : h;
+  };
+
+  // Dominant water type for a quad face (any water wins over land)
+  auto dominantWater = [&](int x0, int z0, int x1, int z1, int x2,
+                           int z2) -> WaterType {
+    WaterType w0 = hmap.waterAt(x0, z0);
+    WaterType w1 = hmap.waterAt(x1, z1);
+    WaterType w2 = hmap.waterAt(x2, z2);
+    // Priority: River > Lake > Ocean > None
+    if (w0 == WaterType::River || w1 == WaterType::River ||
+        w2 == WaterType::River)
+      return WaterType::River;
+    if (w0 == WaterType::Lake || w1 == WaterType::Lake || w2 == WaterType::Lake)
+      return WaterType::Lake;
+    if (w0 == WaterType::Ocean || w1 == WaterType::Ocean ||
+        w2 == WaterType::Ocean)
+      return WaterType::Ocean;
+    return WaterType::None;
   };
 
   for (int qz = 0; qz < N; ++qz) {
@@ -108,15 +135,21 @@ void TerrainChunk::build(const Heightmap &hmap, int originX, int originZ,
         return n;
       };
 
-      // Triangle 1: v00, v01, v10  (CCW from above — normal points up)
+      // Triangle 1: v00, v01, v10 (CCW from above)
       Vector3 n1 = faceNormal(v00, v01, v10);
-      float a1 = (h00 + h10 + h01) / 3.0f / Hm;
-      Color c1 = applyLight(heightToColor(a1), n1);
+      WaterType wt1 = dominantWater(hx, hz, hx, hz + 1, hx + 1, hz);
+      float a1 = (h00 + h01 + h10) / 3.0f / Hm;
+      Color c1 = (wt1 != WaterType::None)
+                     ? applyLight(waterColor(wt1), n1, true)
+                     : applyLight(landColor(a1), n1, false);
 
-      // Triangle 2: v10, v01, v11  (CCW from above — normal points up)
+      // Triangle 2: v10, v01, v11 (CCW from above)
       Vector3 n2 = faceNormal(v10, v01, v11);
-      float a2 = (h10 + h11 + h01) / 3.0f / Hm;
-      Color c2 = applyLight(heightToColor(a2), n2);
+      WaterType wt2 = dominantWater(hx + 1, hz, hx, hz + 1, hx + 1, hz + 1);
+      float a2 = (h10 + h01 + h11) / 3.0f / Hm;
+      Color c2 = (wt2 != WaterType::None)
+                     ? applyLight(waterColor(wt2), n2, true)
+                     : applyLight(landColor(a2), n2, false);
 
       auto writeVert = [&](Vector3 v, Vector3 n, Color col) {
         m_mesh.vertices[vi] = v.x;
@@ -159,9 +192,9 @@ void TerrainChunk::build(const Heightmap &hmap, int originX, int originZ,
   m_built = true;
 }
 
-// ----------------------------------------------------------------
+// ================================================================
 // draw / unload
-// ----------------------------------------------------------------
+// ================================================================
 void TerrainChunk::draw(Vector3 /*cameraPos*/) const {
   if (!m_built)
     return;
