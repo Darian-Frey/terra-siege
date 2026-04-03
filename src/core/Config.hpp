@@ -29,6 +29,9 @@ constexpr float PLAYER_MAX_SPEED = 40.0f;
 constexpr float PLAYER_BANK_RATE = 3.5f;    // roll rad/s driven by lateral vel
 constexpr float PLAYER_MIN_ALTITUDE = 2.5f; // metres above terrain
 constexpr float PLAYER_MAX_ALTITUDE = 120.0f;
+constexpr float PLAYER_TURN_RATE = 1.8f;  // rad/s yaw
+constexpr float PLAYER_ALT_RATE = 18.0f;  // units/s manual altitude
+constexpr float PLAYER_PITCH_VIS = 0.18f; // visual pitch coefficient
 
 // ----------------------------------------------------------------
 // Flight assist (0 = raw, 3 = full)
@@ -41,7 +44,8 @@ constexpr float ASSIST_TERRAIN_LOOKAHEAD =
 // ----------------------------------------------------------------
 // Camera
 // ----------------------------------------------------------------
-constexpr float CAM_FOLLOW_LAG = 0.08f; // lerp coefficient per tick
+constexpr float CAM_FOLLOW_LAG = 0.08f;  // position lerp per tick
+constexpr float CAM_FOLLOW_SPEED = 6.0f; // lerp speed factor
 constexpr float CAM_HEIGHT = 6.0f;
 constexpr float CAM_DISTANCE = 14.0f;
 constexpr float CAM_FOV = 70.0f; // degrees
