@@ -1,5 +1,6 @@
 #include "Player.hpp"
 #include "core/Config.hpp"
+#include "rlgl.h"
 #include "world/Planet.hpp"
 #include <cmath>
 #include <cstring>
@@ -257,9 +258,9 @@ void Player::handleInput(float dt) {
   // Turn (yaw)
   m_turnInput = 0.0f;
   if (IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_D))
-    m_turnInput += 1.0f;
-  if (IsKeyDown(KEY_LEFT) || IsKeyDown(KEY_A))
     m_turnInput -= 1.0f;
+  if (IsKeyDown(KEY_LEFT) || IsKeyDown(KEY_A))
+    m_turnInput += 1.0f;
   m_yaw += m_turnInput * Config::PLAYER_TURN_RATE * dt;
 
   // Thrust — along forward vector
@@ -356,9 +357,13 @@ void Player::applyPhysics(float dt, const Planet &planet) {
   float targetRoll = -m_turnInput * 0.45f;
   m_roll += (targetRoll - m_roll) * dt * 5.0f;
 
-  // Visual pitch — nose dips slightly when thrusting
-  float targetPitch = m_thrusting ? -0.12f : 0.0f;
-  m_pitchVis += (targetPitch - m_pitchVis) * dt * 4.0f;
+  // Visual pitch — disabled for now; the rotation around model origin
+  // shifts the ship's apparent screen position, creating a false
+  // impression of altitude change. Revisit with a smaller value once
+  // combat is in and the camera feel is locked down.
+  // float targetPitch = m_thrusting ? -0.03f : 0.0f;
+  // m_pitchVis += (targetPitch - m_pitchVis) * dt * 4.0f;
+  m_pitchVis = 0.0f;
 }
 
 // ================================================================
@@ -377,15 +382,17 @@ void Player::render() const {
   if (!m_built)
     return;
 
-  // Build world transform: roll in local space → yaw to face heading →
-  // translate
-  Matrix worldMat =
-      MatrixMultiply(MatrixTranslate(m_pos.x, m_pos.y, m_pos.z),
-                     MatrixMultiply(MatrixRotateY(m_yaw),
-                                    MatrixMultiply(MatrixRotateZ(m_roll),
-                                                   MatrixRotateX(m_pitchVis))));
+  // raylib uses row-vector convention: v * M, operations left-to-right.
+  // So the order is: pitch → roll → yaw → translate (local to world).
+  Matrix worldMat = MatrixMultiply(
+      MatrixMultiply(
+          MatrixMultiply(MatrixRotateX(m_pitchVis), MatrixRotateZ(m_roll)),
+          MatrixRotateY(m_yaw)),
+      MatrixTranslate(m_pos.x, m_pos.y, m_pos.z));
 
+  rlDisableBackfaceCulling();
   DrawMesh(m_mesh, m_model.materials[0], worldMat);
+  rlEnableBackfaceCulling();
 }
 
 // ================================================================

@@ -28,6 +28,7 @@ public:
   Vector3 right() const;   // unit right vector in world space
   float yaw() const { return m_yaw; }
   float roll() const { return m_roll; }
+  float pitchVis() const { return m_pitchVis; }
   float speed() const;
   float health() const { return m_health; }
   bool isAlive() const { return m_health > 0.0f; }

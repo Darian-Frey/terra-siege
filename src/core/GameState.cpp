@@ -4,6 +4,61 @@
 #include "raymath.h"
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+
+#ifdef DEV_MODE
+#include <fstream>
+
+static std::ofstream g_logFile;
+static float g_logTimer = 0.0f;
+static constexpr float LOG_INTERVAL = 0.1f; // log every 100ms
+
+static void openLog() {
+  g_logFile.open("terra-siege-debug.log", std::ios::out | std::ios::trunc);
+  if (g_logFile.is_open()) {
+    g_logFile << "time,ship_x,ship_y,ship_z,yaw,roll,pitch_vis,speed,"
+                 "screen_x,screen_y,keys\n";
+  }
+}
+
+static void writeLog(float time, const Camera3D &cam, const Player &player) {
+  if (!g_logFile.is_open())
+    return;
+
+  // Build key string
+  char keys[64] = {};
+  int k = 0;
+  if (IsKeyDown(KEY_W))           k += snprintf(keys + k, sizeof(keys) - k, "W ");
+  if (IsKeyDown(KEY_S))           k += snprintf(keys + k, sizeof(keys) - k, "S ");
+  if (IsKeyDown(KEY_A))           k += snprintf(keys + k, sizeof(keys) - k, "A ");
+  if (IsKeyDown(KEY_D))           k += snprintf(keys + k, sizeof(keys) - k, "D ");
+  if (IsKeyDown(KEY_Q))           k += snprintf(keys + k, sizeof(keys) - k, "Q ");
+  if (IsKeyDown(KEY_E))           k += snprintf(keys + k, sizeof(keys) - k, "E ");
+  if (IsKeyDown(KEY_UP))          k += snprintf(keys + k, sizeof(keys) - k, "UP ");
+  if (IsKeyDown(KEY_DOWN))        k += snprintf(keys + k, sizeof(keys) - k, "DN ");
+  if (IsKeyDown(KEY_LEFT))        k += snprintf(keys + k, sizeof(keys) - k, "LT ");
+  if (IsKeyDown(KEY_RIGHT))       k += snprintf(keys + k, sizeof(keys) - k, "RT ");
+  if (IsKeyDown(KEY_LEFT_SHIFT))  k += snprintf(keys + k, sizeof(keys) - k, "SHIFT ");
+  if (k == 0) snprintf(keys, sizeof(keys), "NONE");
+
+  Vector3 p = player.position();
+  Vector2 screenPos = GetWorldToScreen(p, cam);
+
+  g_logFile << time << ","
+            << p.x << "," << p.y << "," << p.z << ","
+            << player.yaw() << "," << player.roll() << ","
+            << player.pitchVis() << "," << player.speed() << ","
+            << screenPos.x << "," << screenPos.y << ","
+            << keys << "\n";
+}
+
+static void closeLog() {
+  if (g_logFile.is_open()) {
+    g_logFile.flush();
+    g_logFile.close();
+  }
+}
+#endif
 
 // ================================================================
 // init
@@ -34,6 +89,10 @@ void GameState::init() {
   m_camMode = CamMode::Follow;
 
   m_state = AppState::Playing;
+
+#ifdef DEV_MODE
+  openLog();
+#endif
 }
 
 // ================================================================
@@ -69,12 +128,18 @@ void GameState::handleDevKeys() {
 void GameState::updateFollowCamera(float dt) {
   Vector3 playerPos = m_player.position();
   Vector3 playerFwd = m_player.forward();
-  float playerRoll = m_player.roll();
+  Vector3 playerVel = m_player.velocity();
 
-  // Desired camera position: behind and above the player
+  // Predict where the player will be shortly so the camera leads
+  // instead of lagging behind during movement
+  constexpr float PREDICT_TIME = 0.15f; // seconds of look-ahead
+  Vector3 predictedPos = Vector3Add(playerPos,
+                                    Vector3Scale(playerVel, PREDICT_TIME));
+
+  // Desired camera position: behind and above the predicted position
   Vector3 desiredPos = Vector3Add(
-      playerPos, Vector3Add(Vector3Scale(playerFwd, -Config::CAM_DISTANCE),
-                            {0.0f, Config::CAM_HEIGHT, 0.0f}));
+      predictedPos, Vector3Add(Vector3Scale(playerFwd, -Config::CAM_DISTANCE),
+                               {0.0f, Config::CAM_HEIGHT, 0.0f}));
 
   // Clamp desired position above terrain — prevents camera going underground
   // when turning toward hills or flying over ridges
@@ -90,24 +155,26 @@ void GameState::updateFollowCamera(float dt) {
   if (desiredPos.y < playerPos.y + 2.0f)
     desiredPos.y = playerPos.y + 2.0f;
 
-  // Smooth follow — lerp toward desired position
-  float lerpSpeed = Config::CAM_FOLLOW_SPEED * dt;
+  // Fast lerp — not instant snap. Snapping XZ made turns look reversed
+  // because the background rotated instead of the ship. A fast lerp
+  // (~95% converged in 0.1s) lets the user see the ship actually turning.
+  float lerpSpeed = 30.0f * dt;
   if (lerpSpeed > 1.0f)
     lerpSpeed = 1.0f;
 
   m_camera.position = Vector3Lerp(m_camera.position, desiredPos, lerpSpeed);
 
-  // Look at player with slight forward offset so we see ahead
-  Vector3 lookTarget = Vector3Add(
+  // Look target snaps directly — the camera position lerp provides
+  // all the smoothness we need. Lerping the target caused it to lag
+  // behind heading changes, making the ship appear to jump on screen
+  // during turns.
+  m_camera.target = Vector3Add(
       playerPos, Vector3Add(Vector3Scale(playerFwd, 8.0f), {0.0f, 1.5f, 0.0f}));
-  m_camera.target = Vector3Lerp(m_camera.target, lookTarget, lerpSpeed * 1.5f);
 
-  // Bank camera slightly with the ship
-  float rollLerp = playerRoll * 0.3f;
-  Vector3 baseUp = {0.0f, 1.0f, 0.0f};
-  Vector3 rightV = m_player.right();
-  m_camera.up =
-      Vector3Normalize(Vector3Add(baseUp, Vector3Scale(rightV, -rollLerp)));
+  // Camera always level — the ship model already shows banking via
+  // its own roll rotation. Tilting the camera too shifts the ship's
+  // screen position during turns, creating a false altitude change.
+  m_camera.up = {0.0f, 1.0f, 0.0f};
 }
 
 // ================================================================
@@ -166,6 +233,14 @@ void GameState::update(float dt) {
       // Free-roam: player suspended
       updateFreeCamera(dt);
     }
+
+#ifdef DEV_MODE
+    g_logTimer += dt;
+    if (g_logTimer >= LOG_INTERVAL) {
+      g_logTimer -= LOG_INTERVAL;
+      writeLog(static_cast<float>(GetTime()), m_camera, m_player);
+    }
+#endif
     break;
   }
   default:
@@ -316,6 +391,9 @@ void GameState::drawHUD() const {
 // shutdown
 // ================================================================
 void GameState::shutdown() {
+#ifdef DEV_MODE
+  closeLog();
+#endif
   m_player.unload();
   m_planet.unload();
 }
