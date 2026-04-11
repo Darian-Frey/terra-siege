@@ -539,120 +539,141 @@ static void buildX36Mesh(std::vector<Tri> &tris) {
 }
 
 // ================================================================
-// YB-49 — Northrop flying wing. No fuselage, no tail. Just a wide
-// swept-back triangular wing with a small cockpit bulge in the
-// center and four engine nozzles across the trailing edge.
+// YB-49 — Northrop flying wing bomber. Pure flying wing with no
+// fuselage and no tail. Tapered hexagonal outline (root chord >
+// tip chord), small central fuselage bump for the cockpit, four
+// dorsal fins on top of the wing, and two pairs of jet exhausts.
+// Proportions match the real aircraft: span ~3x the root chord.
 // ================================================================
 static void buildYB49Mesh(std::vector<Tri> &tris) {
-  // ---- Colour palette — silver bomber ----
-  const Color wingTop = {175, 178, 185, 255};
-  const Color wingBot = {85, 90, 100, 255};
-  const Color wingEdge = {120, 125, 132, 255};
+  // ---- Colour palette — bare aluminium bomber ----
+  const Color wingTop = {180, 184, 192, 255};
+  const Color wingBot = {90, 95, 105, 255};
+  const Color wingEdge = {130, 135, 142, 255};
   const Color cockpitGlass = {65, 110, 160, 255};
-  const Color cockpitBody = {145, 150, 158, 255};
-  const Color finCol = {130, 135, 145, 255};
+  const Color cockpitBody = {150, 155, 165, 255};
+  const Color finCol = {120, 125, 132, 255};
   const Color nozzle = {255, 145, 45, 255};
 
   // ================================================================
-  // 1. Wing outline — wide swept-back triangle
-  //    Apex at front, swept leading edges, straight trailing edge.
+  // 1. Wing outline — tapered hexagonal flying wing
+  //    Span = ±4.5  (9 wide)
+  //    Root chord = 2.8  (front +1.40 to rear -1.40)
+  //    Tip chord  = 0.9  (front +0.45 to rear -0.45)
+  //    Both leading AND trailing edges sweep back toward the tips.
   // ================================================================
-  const Vector3 nose_t = {0.00f, 0.05f, 2.80f};
-  const Vector3 ltip_t = {-4.50f, -0.08f, -2.00f};
-  const Vector3 rtip_t = {4.50f, -0.08f, -2.00f};
-  const Vector3 ltrl_t = {-1.10f, -0.05f, -2.40f};  // left rear (inner)
-  const Vector3 rtrl_t = {1.10f, -0.05f, -2.40f};   // right rear (inner)
+  const float TY = 0.05f;  // top surface Y
+  const float BY = -0.10f; // bottom surface Y
 
-  const Vector3 nose_b = {0.00f, -0.18f, 2.80f};
-  const Vector3 ltip_b = {-4.50f, -0.22f, -2.00f};
-  const Vector3 rtip_b = {4.50f, -0.22f, -2.00f};
-  const Vector3 ltrl_b = {-1.10f, -0.20f, -2.40f};
-  const Vector3 rtrl_b = {1.10f, -0.20f, -2.40f};
+  // Top surface vertices (6 perimeter points)
+  const Vector3 cf_t = {0.00f, TY, 1.40f};   // center front
+  const Vector3 rfo_t = {4.50f, TY, 0.45f};  // right tip front (outer)
+  const Vector3 rro_t = {4.50f, TY, -0.45f}; // right tip rear (outer)
+  const Vector3 cr_t = {0.00f, TY, -1.40f};  // center rear
+  const Vector3 lro_t = {-4.50f, TY, -0.45f};
+  const Vector3 lfo_t = {-4.50f, TY, 0.45f};
 
-  // Top surface — fan from nose
-  tris.push_back({nose_t, rtip_t, ltip_t, wingTop});
-  tris.push_back({nose_t, rtrl_t, rtip_t, wingTop});
-  tris.push_back({nose_t, ltip_t, ltrl_t, wingTop});
-  tris.push_back({nose_t, ltrl_t, rtrl_t, wingTop});
+  // Bottom surface (slightly below)
+  const Vector3 cf_b = {0.00f, BY, 1.40f};
+  const Vector3 rfo_b = {4.50f, BY, 0.45f};
+  const Vector3 rro_b = {4.50f, BY, -0.45f};
+  const Vector3 cr_b = {0.00f, BY, -1.40f};
+  const Vector3 lro_b = {-4.50f, BY, -0.45f};
+  const Vector3 lfo_b = {-4.50f, BY, 0.45f};
 
-  // Bottom surface (reversed winding)
-  tris.push_back({nose_b, ltip_b, rtip_b, wingBot});
-  tris.push_back({nose_b, rtip_b, rtrl_b, wingBot});
-  tris.push_back({nose_b, ltrl_b, ltip_b, wingBot});
-  tris.push_back({nose_b, rtrl_b, ltrl_b, wingBot});
+  // Top surface — triangle fan from center front (CCW from above → +Y)
+  tris.push_back({cf_t, rfo_t, rro_t, wingTop});
+  tris.push_back({cf_t, rro_t, cr_t, wingTop});
+  tris.push_back({cf_t, cr_t, lro_t, wingTop});
+  tris.push_back({cf_t, lro_t, lfo_t, wingTop});
 
-  // Left leading edge (nose → ltip): visible thin strip
-  tris.push_back({nose_t, ltip_t, ltip_b, wingEdge});
-  tris.push_back({nose_t, ltip_b, nose_b, wingEdge});
-  // Right leading edge
-  tris.push_back({nose_t, nose_b, rtip_b, wingEdge});
-  tris.push_back({nose_t, rtip_b, rtip_t, wingEdge});
+  // Bottom surface — reversed winding (-Y normal)
+  tris.push_back({cf_b, rro_b, rfo_b, wingBot});
+  tris.push_back({cf_b, cr_b, rro_b, wingBot});
+  tris.push_back({cf_b, lro_b, cr_b, wingBot});
+  tris.push_back({cf_b, lfo_b, lro_b, wingBot});
 
-  // Left wing-tip edge (ltip → ltrl)
-  tris.push_back({ltip_t, ltrl_t, ltrl_b, wingEdge});
-  tris.push_back({ltip_t, ltrl_b, ltip_b, wingEdge});
-  // Right wing-tip edge
-  tris.push_back({rtip_t, rtip_b, rtrl_b, wingEdge});
-  tris.push_back({rtip_t, rtrl_b, rtrl_t, wingEdge});
-
-  // Trailing edge (ltrl → rtrl)
-  tris.push_back({ltrl_t, ltrl_b, rtrl_b, wingEdge});
-  tris.push_back({ltrl_t, rtrl_b, rtrl_t, wingEdge});
+  // Edge strips around the perimeter (each quad → 2 tris)
+  auto edge = [&](const Vector3 &t1, const Vector3 &b1,
+                  const Vector3 &t2, const Vector3 &b2) {
+    tris.push_back({t1, b1, b2, wingEdge});
+    tris.push_back({t1, b2, t2, wingEdge});
+  };
+  // Right leading edge (cf → rfo)
+  edge(cf_t, cf_b, rfo_t, rfo_b);
+  // Right wing tip (rfo → rro)
+  edge(rfo_t, rfo_b, rro_t, rro_b);
+  // Right trailing edge (rro → cr)
+  edge(rro_t, rro_b, cr_t, cr_b);
+  // Left trailing edge (cr → lro)
+  edge(cr_t, cr_b, lro_t, lro_b);
+  // Left wing tip (lro → lfo)
+  edge(lro_t, lro_b, lfo_t, lfo_b);
+  // Left leading edge (lfo → cf)
+  edge(lfo_t, lfo_b, cf_t, cf_b);
 
   // ================================================================
-  // 2. Center cockpit bulge — small dome on top center
+  // 2. Central fuselage bump — small streamlined body running
+  //    front-to-back along the wing centerline. Houses cockpit
+  //    forward and gear bay rearward.
   // ================================================================
-  addBox(tris, -0.45f, 0.05f, 0.30f, 0.45f, 0.20f, 1.80f,
+  addBox(tris, -0.35f, TY, -1.20f, 0.35f, 0.22f, 1.30f,
          cockpitBody, cockpitBody, cockpitBody);
-  // Glass canopy peak above the body
-  const Vector3 ck_fl = {-0.30f, 0.20f, 1.40f};
-  const Vector3 ck_fr = {0.30f, 0.20f, 1.40f};
-  const Vector3 ck_rl = {-0.35f, 0.20f, 0.50f};
-  const Vector3 ck_rr = {0.35f, 0.20f, 0.50f};
-  const Vector3 ck_pk = {0.00f, 0.40f, 0.95f};
+
+  // Cockpit canopy bulge above the front of the fuselage
+  const Vector3 ck_fl = {-0.22f, 0.22f, 1.10f};
+  const Vector3 ck_fr = {0.22f, 0.22f, 1.10f};
+  const Vector3 ck_rl = {-0.26f, 0.22f, 0.30f};
+  const Vector3 ck_rr = {0.26f, 0.22f, 0.30f};
+  const Vector3 ck_pk = {0.00f, 0.42f, 0.70f};
   tris.push_back({ck_fl, ck_fr, ck_pk, cockpitGlass});
   tris.push_back({ck_fr, ck_rr, ck_pk, cockpitGlass});
   tris.push_back({ck_rr, ck_rl, ck_pk, cockpitGlass});
   tris.push_back({ck_rl, ck_fl, ck_pk, cockpitGlass});
 
   // ================================================================
-  // 3. Two small vertical fins on top of the wing (visual interest)
+  // 3. Four dorsal fins — small vertical stabilizers on top of the
+  //    wing, paired inboard and outboard on each side.
   // ================================================================
-  // Left fin
-  const Vector3 lf_bf = {-1.80f, 0.00f, -0.80f};
-  const Vector3 lf_br = {-1.80f, 0.00f, -1.80f};
-  const Vector3 lf_tf = {-1.80f, 0.40f, -1.10f};
-  const Vector3 lf_tr = {-1.80f, 0.40f, -1.80f};
-  tris.push_back({lf_bf, lf_tf, lf_tr, finCol});
-  tris.push_back({lf_bf, lf_tr, lf_br, finCol});
-  tris.push_back({lf_bf, lf_tr, lf_tf, finCol});
-  tris.push_back({lf_bf, lf_br, lf_tr, finCol});
-  // Right fin
-  const Vector3 rf_bf = {1.80f, 0.00f, -0.80f};
-  const Vector3 rf_br = {1.80f, 0.00f, -1.80f};
-  const Vector3 rf_tf = {1.80f, 0.40f, -1.10f};
-  const Vector3 rf_tr = {1.80f, 0.40f, -1.80f};
-  tris.push_back({rf_bf, rf_tf, rf_tr, finCol});
-  tris.push_back({rf_bf, rf_tr, rf_br, finCol});
-  tris.push_back({rf_bf, rf_tr, rf_tf, finCol});
-  tris.push_back({rf_bf, rf_br, rf_tr, finCol});
+  auto fin = [&](float x, float zFront, float zRear, float height) {
+    Vector3 bf = {x, TY, zFront};
+    Vector3 br = {x, TY, zRear};
+    Vector3 tf = {x, TY + height, zFront + 0.10f};
+    Vector3 tr = {x, TY + height, zRear};
+    tris.push_back({bf, tf, tr, finCol});
+    tris.push_back({bf, tr, br, finCol});
+    tris.push_back({bf, tr, tf, finCol});
+    tris.push_back({bf, br, tr, finCol});
+  };
+  // Inboard pair
+  fin(-1.20f, -0.20f, -1.10f, 0.35f);
+  fin(1.20f, -0.20f, -1.10f, 0.35f);
+  // Outboard pair
+  fin(-2.40f, -0.40f, -1.10f, 0.30f);
+  fin(2.40f, -0.40f, -1.10f, 0.30f);
 
   // ================================================================
-  // 4. Four engine nozzles arranged across the trailing edge
-  //    Two pairs (jets are grouped on the YB-49)
+  // 4. Engine exhausts — two paired clusters near the trailing edge
+  //    matching the YB-49's grouped jet layout. Drawn as orange
+  //    rectangles on the rear face of small engine humps.
   // ================================================================
-  auto nozz = [&](float x0, float x1) {
-    tris.push_back({{x0, -0.12f, -2.41f}, {x0, 0.05f, -2.41f},
-                    {x1, 0.05f, -2.41f}, nozzle});
-    tris.push_back({{x0, -0.12f, -2.41f}, {x1, 0.05f, -2.41f},
-                    {x1, -0.12f, -2.41f}, nozzle});
+  auto engineHump = [&](float x0, float x1) {
+    addBox(tris, x0, BY + 0.02f, -1.30f, x1, TY + 0.06f, -0.90f,
+           cockpitBody, cockpitBody, cockpitBody);
+    // Nozzle on the rear face
+    tris.push_back({{x0 + 0.04f, BY + 0.04f, -1.31f},
+                    {x0 + 0.04f, TY + 0.04f, -1.31f},
+                    {x1 - 0.04f, TY + 0.04f, -1.31f}, nozzle});
+    tris.push_back({{x0 + 0.04f, BY + 0.04f, -1.31f},
+                    {x1 - 0.04f, TY + 0.04f, -1.31f},
+                    {x1 - 0.04f, BY + 0.04f, -1.31f}, nozzle});
   };
   // Left pair
-  nozz(-1.00f, -0.65f);
-  nozz(-0.55f, -0.20f);
+  engineHump(-2.10f, -1.55f);
+  engineHump(-1.45f, -0.90f);
   // Right pair
-  nozz(0.20f, 0.55f);
-  nozz(0.65f, 1.00f);
+  engineHump(0.90f, 1.45f);
+  engineHump(1.55f, 2.10f);
 }
 
 // ================================================================
