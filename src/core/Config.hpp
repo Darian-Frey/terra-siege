@@ -27,11 +27,54 @@ constexpr float PLAYER_THRUST = 28.0f;
 constexpr float PLAYER_DRAG = 0.92f; // velocity multiplier per tick
 constexpr float PLAYER_MAX_SPEED = 40.0f;
 constexpr float PLAYER_BANK_RATE = 3.5f;    // roll rad/s driven by lateral vel
-constexpr float PLAYER_MIN_ALTITUDE = 2.5f; // metres above terrain
+constexpr float PLAYER_MIN_ALTITUDE = 5.0f; // hard floor metres above terrain
 constexpr float PLAYER_MAX_ALTITUDE = 120.0f;
 constexpr float PLAYER_TURN_RATE = 1.8f;  // rad/s yaw
 constexpr float PLAYER_ALT_RATE = 18.0f;  // units/s manual altitude
 constexpr float PLAYER_PITCH_VIS = 0.18f; // visual pitch coefficient
+
+// ----------------------------------------------------------------
+// Arcade flight model (Air Combat 22 / Ace Combat style)
+// Values from research report — see project-status/research.
+// ----------------------------------------------------------------
+constexpr float ARCADE_MIN_SPEED = 12.0f;
+constexpr float ARCADE_CRUISE_SPEED = 30.0f;
+constexpr float ARCADE_MAX_SPEED = 45.0f;
+constexpr float ARCADE_BOOST_SPEED = 65.0f;
+constexpr float ARCADE_THROTTLE_RATE = 30.0f; // target speed Δ per second (W/S)
+constexpr float ARCADE_ACCEL_K = 1.2f;        // current → target lerp factor
+constexpr float ARCADE_PITCH_RATE = 1.2f;     // rad/s max pitch response
+constexpr float ARCADE_PITCH_MAX = 1.22f;     // ~70° clamp
+constexpr float ARCADE_ROLL_RATE = 2.5f;      // rad/s max roll response
+constexpr float ARCADE_BANK_MAX = 1.31f;      // ~75° clamp
+constexpr float ARCADE_TURN_COEFF = 1.6f;     // yaw_rate = bank * coeff
+constexpr float ARCADE_BANK_RESPONSE = 4.0f;  // P-gain for bank target tracking
+constexpr float ARCADE_ENERGY_TRADE = 0.4f;   // climb/dive speed exchange
+constexpr float ARCADE_GRAVITY = 9.81f;
+constexpr float ARCADE_MOUSE_PITCH_SENS = 0.003f; // rad per pixel
+constexpr float ARCADE_MOUSE_ROLL_SENS = 0.0035f; // rad per pixel
+
+// Input smoothing — lowpass filters on mouse delta and control rates.
+// Higher = faster (more responsive but less smooth). Lower = smoother
+// but laggier. These give "glider" feel.
+constexpr float ARCADE_MOUSE_SMOOTH = 20.0f;  // mouse delta lowpass per second
+constexpr float ARCADE_RATE_SMOOTH = 8.0f;    // control rate lowpass per second
+
+// Speed-aware terrain pullup. When AGL drops into the danger zone,
+// the auto-pitch-up engages proportionally to how deep we've descended.
+// Faster speed = bigger danger zone (more altitude needed to recover).
+constexpr float ARCADE_PULLUP_BASE = 8.0f;          // base danger AGL (m)
+constexpr float ARCADE_PULLUP_SPEED_FACTOR = 0.35f; // extra AGL per u/s of speed
+constexpr float ARCADE_PULLUP_STRENGTH = 10.0f;     // max recovery rate at floor
+
+// Speed-dependent chase camera — pulls back at high speed to give a
+// strong sensation of acceleration. Distance lerps between min and max.
+constexpr float ARCADE_CAM_DISTANCE_MIN = 14.0f; // at cruise speed
+constexpr float ARCADE_CAM_DISTANCE_MAX = 26.0f; // at full boost
+constexpr float ARCADE_CAM_HEIGHT_MIN = 6.0f;
+constexpr float ARCADE_CAM_HEIGHT_MAX = 8.0f;
+constexpr float ARCADE_CAM_FOV_MIN = 70.0f;
+constexpr float ARCADE_CAM_FOV_MAX = 82.0f; // FOV widens during boost
 
 // ----------------------------------------------------------------
 // Flight assist (0 = raw, 3 = full)

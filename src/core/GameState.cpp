@@ -7,14 +7,29 @@
 #include <cstdlib>
 
 #ifdef DEV_MODE
+#include <filesystem>
 #include <fstream>
+
+#ifndef TERRA_SIEGE_PROJECT_ROOT
+#define TERRA_SIEGE_PROJECT_ROOT "."
+#endif
+
+static const std::string g_logDir =
+    std::string(TERRA_SIEGE_PROJECT_ROOT) + "/tests/logs";
+
+static void ensureLogDir() {
+  std::error_code ec;
+  std::filesystem::create_directories(g_logDir, ec);
+}
 
 static std::ofstream g_logFile;
 static float g_logTimer = 0.0f;
 static constexpr float LOG_INTERVAL = 0.1f; // log every 100ms
 
 static void openLog() {
-  g_logFile.open("terra-siege-debug.log", std::ios::out | std::ios::trunc);
+  ensureLogDir();
+  g_logFile.open(g_logDir + "/terra-siege-debug.log",
+                 std::ios::out | std::ios::trunc);
   if (g_logFile.is_open()) {
     g_logFile << "time,ship_x,ship_y,ship_z,yaw,roll,pitch_vis,speed,"
                  "screen_x,screen_y,keys\n";
@@ -57,6 +72,94 @@ static void closeLog() {
     g_logFile.flush();
     g_logFile.close();
   }
+}
+
+// ================================================================
+// Flight recorder — F4 toggled burst capture of flight data
+// Records every physics tick (120Hz) to flight-recording.csv for
+// precision analysis of flight behavior.
+// ================================================================
+static std::ofstream g_recordFile;
+static bool g_recording = false;
+static float g_recordStartTime = 0.0f;
+
+static void startRecording() {
+  ensureLogDir();
+  g_recordFile.open(g_logDir + "/flight-recording.csv",
+                    std::ios::out | std::ios::trunc);
+  if (g_recordFile.is_open()) {
+    g_recordFile
+        << "t,ship_x,ship_y,ship_z,vel_x,vel_y,vel_z,speed,target_speed,"
+           "yaw_rad,pitch_rad,roll_rad,yaw_deg,pitch_deg,roll_deg,"
+           "fwd_x,fwd_y,fwd_z,agl,boost,"
+           "cam_x,cam_y,cam_z,cam_off_x,cam_off_y,cam_off_z,cam_dist,cam_fov,"
+           "keys,mouse_dx,mouse_dy\n";
+    g_recordStartTime = static_cast<float>(GetTime());
+    g_recording = true;
+    TraceLog(LOG_INFO, "Flight recorder: STARTED");
+  }
+}
+
+static void stopRecording() {
+  if (g_recording) {
+    g_recordFile.flush();
+    g_recordFile.close();
+    g_recording = false;
+    TraceLog(LOG_INFO, "Flight recorder: STOPPED (saved flight-recording.csv)");
+  }
+}
+
+static bool isRecording() { return g_recording; }
+
+static void recordSample(const Camera3D &cam, const Player &player,
+                         const Planet &planet) {
+  if (!g_recording || !g_recordFile.is_open())
+    return;
+
+  // Keys currently held
+  char keys[64] = {};
+  int k = 0;
+  if (IsKeyDown(KEY_W))          k += snprintf(keys + k, sizeof(keys) - k, "W ");
+  if (IsKeyDown(KEY_S))          k += snprintf(keys + k, sizeof(keys) - k, "S ");
+  if (IsKeyDown(KEY_A))          k += snprintf(keys + k, sizeof(keys) - k, "A ");
+  if (IsKeyDown(KEY_D))          k += snprintf(keys + k, sizeof(keys) - k, "D ");
+  if (IsKeyDown(KEY_UP))         k += snprintf(keys + k, sizeof(keys) - k, "UP ");
+  if (IsKeyDown(KEY_DOWN))       k += snprintf(keys + k, sizeof(keys) - k, "DN ");
+  if (IsKeyDown(KEY_LEFT_SHIFT)) k += snprintf(keys + k, sizeof(keys) - k, "SHIFT ");
+  if (k == 0) snprintf(keys, sizeof(keys), "-");
+
+  float t = static_cast<float>(GetTime()) - g_recordStartTime;
+  Vector3 p = player.position();
+  Vector3 v = player.velocity();
+  Vector3 f = player.forward();
+  float agl = p.y - planet.heightAt(p.x, p.z);
+  const float rad2deg = 180.0f / 3.14159265f;
+  Vector2 md = GetMouseDelta();
+
+  // Camera offset relative to ship — what we ultimately care about for
+  // the chase-cam feel. cam_dist = scalar distance from ship to camera.
+  Vector3 camOff = {cam.position.x - p.x, cam.position.y - p.y,
+                    cam.position.z - p.z};
+  float camDist =
+      sqrtf(camOff.x * camOff.x + camOff.y * camOff.y + camOff.z * camOff.z);
+
+  g_recordFile << t << ","
+               << p.x << "," << p.y << "," << p.z << ","
+               << v.x << "," << v.y << "," << v.z << ","
+               << player.speed() << "," << player.targetSpeed() << ","
+               << player.yaw() << "," << player.pitch() << ","
+               << player.roll() << ","
+               << player.yaw() * rad2deg << ","
+               << player.pitch() * rad2deg << ","
+               << player.roll() * rad2deg << ","
+               << f.x << "," << f.y << "," << f.z << ","
+               << agl << ","
+               << (player.boosting() ? 1 : 0) << ","
+               << cam.position.x << "," << cam.position.y << "," << cam.position.z << ","
+               << camOff.x << "," << camOff.y << "," << camOff.z << ","
+               << camDist << "," << cam.fovy << ","
+               << keys << ","
+               << md.x << "," << md.y << "\n";
 }
 #endif
 
@@ -119,6 +222,21 @@ void GameState::handleDevKeys() {
     int next = (m_player.flightAssist() + 1) % 4;
     m_player.setFlightAssist(next);
   }
+
+  // F4 — toggle flight recorder
+  if (IsKeyPressed(KEY_F4)) {
+    if (isRecording())
+      stopRecording();
+    else
+      startRecording();
+  }
+
+  // F5 — cycle craft type
+  if (IsKeyPressed(KEY_F5)) {
+    int next = (static_cast<int>(m_player.craft()) + 1) %
+               static_cast<int>(CraftType::_Count);
+    m_player.setCraft(static_cast<CraftType>(next));
+  }
 #endif
 }
 
@@ -127,53 +245,63 @@ void GameState::handleDevKeys() {
 // ================================================================
 void GameState::updateFollowCamera(float dt) {
   Vector3 playerPos = m_player.position();
-  Vector3 playerFwd = m_player.forward();
-  Vector3 playerVel = m_player.velocity();
 
-  // Predict where the player will be shortly so the camera leads
-  // instead of lagging behind during movement
-  constexpr float PREDICT_TIME = 0.15f; // seconds of look-ahead
-  Vector3 predictedPos = Vector3Add(playerPos,
-                                    Vector3Scale(playerVel, PREDICT_TIME));
+  // Camera uses HORIZONTAL forward only (yaw axis). The ship's pitch
+  // does not tilt the camera — instead the ship visually tilts within
+  // the view while the camera stays locked to the horizon. This is the
+  // classic Ace Combat / Air Combat 22 chase cam behavior.
+  float playerYaw = m_player.yaw();
+  Vector3 horizFwd = {sinf(playerYaw), 0.0f, cosf(playerYaw)};
 
-  // Desired camera position: behind and above the predicted position
+  // Speed-dependent distance, height, and FOV. As the player accelerates
+  // past cruise speed, the camera pulls back, lifts slightly, and FOV
+  // widens — three classic tricks that make speed feel visceral.
+  float speedT = (m_player.speed() - Config::ARCADE_CRUISE_SPEED) /
+                 (Config::ARCADE_BOOST_SPEED - Config::ARCADE_CRUISE_SPEED);
+  if (speedT < 0.0f) speedT = 0.0f;
+  if (speedT > 1.0f) speedT = 1.0f;
+
+  float camDistance = Config::ARCADE_CAM_DISTANCE_MIN +
+                      speedT * (Config::ARCADE_CAM_DISTANCE_MAX -
+                                Config::ARCADE_CAM_DISTANCE_MIN);
+  float camHeight = Config::ARCADE_CAM_HEIGHT_MIN +
+                    speedT * (Config::ARCADE_CAM_HEIGHT_MAX -
+                              Config::ARCADE_CAM_HEIGHT_MIN);
+  float camFov = Config::ARCADE_CAM_FOV_MIN +
+                 speedT * (Config::ARCADE_CAM_FOV_MAX -
+                           Config::ARCADE_CAM_FOV_MIN);
+
+  // Lerp FOV smoothly so it doesn't snap when the speed changes abruptly
+  m_camera.fovy += (camFov - m_camera.fovy) * 4.0f * dt;
+
+  // Desired camera position: behind (in horizontal plane) and above
+  // the player. Pitch does NOT affect camera position.
   Vector3 desiredPos = Vector3Add(
-      predictedPos, Vector3Add(Vector3Scale(playerFwd, -Config::CAM_DISTANCE),
-                               {0.0f, Config::CAM_HEIGHT, 0.0f}));
+      playerPos, Vector3Add(Vector3Scale(horizFwd, -camDistance),
+                            {0.0f, camHeight, 0.0f}));
 
-  // Clamp desired position above terrain — prevents camera going underground
-  // when turning toward hills or flying over ridges
+  // Terrain clamping — keep camera above the ground
   {
     float camGroundH = m_planet.heightAt(desiredPos.x, desiredPos.z);
-    float camMinY = camGroundH + 3.5f; // stay 3.5 units above terrain
+    float camMinY = camGroundH + 3.5f;
     if (desiredPos.y < camMinY)
       desiredPos.y = camMinY;
   }
-
-  // Also enforce a minimum distance above the player so the camera
-  // never drops below ship level on very steep slopes
   if (desiredPos.y < playerPos.y + 2.0f)
     desiredPos.y = playerPos.y + 2.0f;
 
-  // Fast lerp — not instant snap. Snapping XZ made turns look reversed
-  // because the background rotated instead of the ship. A fast lerp
-  // (~95% converged in 0.1s) lets the user see the ship actually turning.
+  // Fast lerp — visible turn motion without jarring snap
   float lerpSpeed = 30.0f * dt;
   if (lerpSpeed > 1.0f)
     lerpSpeed = 1.0f;
-
   m_camera.position = Vector3Lerp(m_camera.position, desiredPos, lerpSpeed);
 
-  // Look target snaps directly — the camera position lerp provides
-  // all the smoothness we need. Lerping the target caused it to lag
-  // behind heading changes, making the ship appear to jump on screen
-  // during turns.
+  // Look target — ahead of the ship in the HORIZONTAL plane only.
+  // The ship visually pitches within the view; the horizon stays level.
   m_camera.target = Vector3Add(
-      playerPos, Vector3Add(Vector3Scale(playerFwd, 8.0f), {0.0f, 1.5f, 0.0f}));
+      playerPos, Vector3Add(Vector3Scale(horizFwd, 8.0f), {0.0f, 1.5f, 0.0f}));
 
-  // Camera always level — the ship model already shows banking via
-  // its own roll rotation. Tilting the camera too shifts the ship's
-  // screen position during turns, creating a false altitude change.
+  // Camera always level
   m_camera.up = {0.0f, 1.0f, 0.0f};
 }
 
@@ -239,6 +367,10 @@ void GameState::update(float dt) {
     if (g_logTimer >= LOG_INTERVAL) {
       g_logTimer -= LOG_INTERVAL;
       writeLog(static_cast<float>(GetTime()), m_camera, m_player);
+    }
+    // Flight recorder samples every physics tick (120Hz) for precision
+    if (m_camMode == CamMode::Follow) {
+      recordSample(m_camera, m_player, m_planet);
     }
 #endif
     break;
@@ -331,7 +463,12 @@ void GameState::drawHUD() const {
   const int lh = 18;
   const Color col = {200, 220, 255, 220};
 
-  int panelLines = m_camMode == CamMode::FreeRoam ? 8 : 7;
+  float pitchDeg = m_player.pitch() * (180.0f / 3.14159f);
+  float rollDeg = m_player.roll() * (180.0f / 3.14159f);
+  float tgtSpd = m_player.targetSpeed();
+  bool boost = m_player.boosting();
+
+  int panelLines = m_camMode == CamMode::FreeRoam ? 11 : 10;
   DrawRectangle(px - 8, py - 4, 216, lh * panelLines + 8, {0, 0, 0, 120});
 
   snprintf(buf, sizeof(buf), "X: %7.1f", pos.x);
@@ -346,10 +483,17 @@ void GameState::drawHUD() const {
   snprintf(buf, sizeof(buf), "AGL:  %6.1f m", agl);
   DrawText(buf, px, py, 14, col);
   py += lh;
-  snprintf(buf, sizeof(buf), "Spd:  %6.1f", spd);
-  DrawText(buf, px, py, 14, col);
+  snprintf(buf, sizeof(buf), "Spd:  %5.1f / %.0f%s", spd, tgtSpd,
+           boost ? " B" : "");
+  DrawText(buf, px, py, 14, boost ? Color{255, 200, 80, 240} : col);
   py += lh;
   snprintf(buf, sizeof(buf), "Hdg:  %5.1f  %s", yawDeg, compass);
+  DrawText(buf, px, py, 14, col);
+  py += lh;
+  snprintf(buf, sizeof(buf), "Pch:  %+6.1f°", pitchDeg);
+  DrawText(buf, px, py, 14, col);
+  py += lh;
+  snprintf(buf, sizeof(buf), "Roll: %+6.1f°", rollDeg);
   DrawText(buf, px, py, 14, col);
   py += lh;
   snprintf(buf, sizeof(buf), "Asst: %s", assistStr);
@@ -378,12 +522,42 @@ void GameState::drawHUD() const {
 
   const char *controls =
       m_camMode == CamMode::Follow
-          ? "W/S: thrust/brake  |  A/D: turn  |  Q/E: altitude  |  Shift: boost"
+          ? "W/S: throttle  |  A/D: bank  |  Mouse: pitch+bank  |  Shift: boost"
           : "WASD: fly  |  Q/E: up/down  |  Shift: fast  (F1: back to ship)";
   DrawText(controls, 12, sh - 20, 14, {180, 180, 180, 220});
 
+  // Craft name (above the controls bar)
+  {
+    char cbuf[48];
+    snprintf(cbuf, sizeof(cbuf), "CRAFT: %s", craftName(m_player.craft()));
+    DrawText(cbuf, 12, sh - 46, 14, {200, 220, 255, 220});
+  }
+
 #ifdef DEV_MODE
-  DrawText("[DEV]  F1:cam  F2:assist", sw - 200, sh - 20, 14, YELLOW);
+  DrawText("[DEV]  F1:cam  F2:assist  F4:rec  F5:craft",
+           sw - 340, sh - 20, 14, YELLOW);
+
+  // Flight recorder indicator — large pulsing badge at top-center
+  if (isRecording()) {
+    float pulse = 0.5f + 0.5f * sinf(static_cast<float>(GetTime()) * 5.0f);
+    unsigned char alpha = static_cast<unsigned char>(160 + 95 * pulse);
+    Color bg = {0, 0, 0, alpha};
+    Color fg = {255, 50, 50, 255};
+
+    const int bw = 160, bh = 36;
+    const int bx = sw / 2 - bw / 2;
+    const int by = 10;
+    DrawRectangle(bx, by, bw, bh, bg);
+    DrawRectangleLines(bx, by, bw, bh, fg);
+    DrawCircle(bx + 22, by + bh / 2, 8, fg);
+    DrawText("REC", bx + 42, by + 8, 22, fg);
+
+    // Elapsed time
+    float elapsed = static_cast<float>(GetTime()) - g_recordStartTime;
+    char tbuf[16];
+    snprintf(tbuf, sizeof(tbuf), "%.1fs", elapsed);
+    DrawText(tbuf, bx + 100, by + 10, 18, {255, 220, 220, 255});
+  }
 #endif
 }
 
@@ -393,6 +567,7 @@ void GameState::drawHUD() const {
 void GameState::shutdown() {
 #ifdef DEV_MODE
   closeLog();
+  stopRecording();
 #endif
   m_player.unload();
   m_planet.unload();

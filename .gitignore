@@ -44,3 +44,6 @@ desktop.ini
 *.log
 *.tmp
 *.bak
+
+# Dev-mode flight telemetry / debug captures
+tests/logs/

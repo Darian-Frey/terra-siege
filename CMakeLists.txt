@@ -114,6 +114,11 @@ target_link_libraries(terra-siege PRIVATE raylib)
 
 target_compile_definitions(terra-siege PRIVATE RAYMATH_IMPLEMENTATION)
 
+# Bake project source root into the binary so DEV_MODE log files always
+# land in tests/logs/ regardless of where the binary is launched from.
+target_compile_definitions(terra-siege PRIVATE
+    TERRA_SIEGE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}")
+
 # Compiler warnings
 target_compile_options(terra-siege PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic>
