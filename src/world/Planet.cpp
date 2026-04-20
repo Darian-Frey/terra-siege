@@ -1,21 +1,23 @@
 #include "Planet.hpp"
 #include <cmath>
 
-void Planet::generate(uint32_t seed) {
+void Planet::generate(uint32_t seed, ProgressCb cb) {
   if (m_ready)
     unload();
 
-  // Generate heightmap
+  // ---- Heightmap phase (0% → 40%) ----
+  if (cb) cb("Generating heightmap", 0.0f);
   m_heightmap.generate(Config::HEIGHTMAP_SIZE, Config::TERRAIN_ROUGHNESS, seed);
+  if (cb) cb("Heightmap complete, meshing terrain", 0.4f);
 
-  // Build chunks
-  // CHUNK_COUNT x CHUNK_COUNT grid, each chunk covers
-  // (HEIGHTMAP_SIZE-1)/CHUNK_COUNT cells per edge
+  // ---- Chunk phase (40% → 100%) ----
   const int chunksPerEdge = Config::CHUNK_COUNT;
   const int cellsPerChunk = (Config::HEIGHTMAP_SIZE - 1) / chunksPerEdge;
+  const int totalChunks = chunksPerEdge * chunksPerEdge;
 
-  m_chunks.resize(static_cast<size_t>(chunksPerEdge * chunksPerEdge));
+  m_chunks.resize(static_cast<size_t>(totalChunks));
 
+  int done = 0;
   for (int cz = 0; cz < chunksPerEdge; ++cz) {
     for (int cx = 0; cx < chunksPerEdge; ++cx) {
       int originX = cx * cellsPerChunk;
@@ -23,9 +25,15 @@ void Planet::generate(uint32_t seed) {
       int idx = cz * chunksPerEdge + cx;
       m_chunks[static_cast<size_t>(idx)].build(m_heightmap, originX, originZ,
                                                cellsPerChunk);
+      ++done;
+      if (cb)
+        cb("Building terrain chunks",
+           0.4f + 0.6f * static_cast<float>(done) /
+                      static_cast<float>(totalChunks));
     }
   }
 
+  if (cb) cb("Complete", 1.0f);
   m_ready = true;
 }
 

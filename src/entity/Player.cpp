@@ -88,6 +88,14 @@ static void addBox(std::vector<Tri> &tris, float x0, float y0, float z0,
   tris.push_back({blb, tlf, tlb, sideC});
 }
 
+const char *flightModeName(FlightMode m) {
+  switch (m) {
+  case FlightMode::Classic: return "Classic (Newtonian)";
+  case FlightMode::Arcade:  return "Arcade (Bank-to-turn)";
+  default:                  return "Unknown";
+  }
+}
+
 // Friendly name for HUD / menu
 const char *craftName(CraftType c) {
   switch (c) {
@@ -95,6 +103,7 @@ const char *craftName(CraftType c) {
   case CraftType::ForwardSwept: return "Forward Swept";
   case CraftType::X36:          return "X-36";
   case CraftType::YB49:         return "YB-49 Flying Wing";
+  case CraftType::Saucer:       return "Saucer";
   default:                      return "Unknown";
   }
 }
@@ -677,6 +686,101 @@ static void buildYB49Mesh(std::vector<Tri> &tris) {
 }
 
 // ================================================================
+// Saucer — simple flying saucer for Classic/Newtonian mode.
+// Flat disc underside, domed top with central cockpit, ring of
+// glowing thrusters around the rim underneath. Intentionally
+// symmetric since Classic thrust is along LOCAL UP — heading yaw
+// is all that distinguishes "forward" for the player.
+// ================================================================
+static void buildSaucerMesh(std::vector<Tri> &tris) {
+  // ---- Colour palette ----
+  const Color hullTop = {155, 160, 168, 255};  // brushed steel top
+  const Color hullMid = {115, 120, 128, 255};  // mid band
+  const Color hullBot = {70, 75, 82, 255};     // dark underside
+  const Color rim = {90, 95, 100, 255};        // edge rim
+  const Color domeGlass = {60, 130, 180, 255}; // cockpit glass
+  const Color thruster = {255, 160, 40, 255};  // glow
+
+  // ---- Saucer disc — 16-sided regular polygon for a clean circle ----
+  constexpr int SEGS = 16;
+  const float outerR = 2.40f;           // rim radius
+  const float midR   = 1.80f;           // where the hull meets the dome
+  const float domeR  = 0.80f;           // base of cockpit dome
+  const float rimY_top = 0.10f;         // top of the rim edge
+  const float rimY_bot = -0.10f;        // bottom of the rim edge
+  const float midY_top = 0.30f;         // where the hull slopes start from
+  const float domeY_base = 0.35f;       // base of dome (on hull)
+  const float domeY_peak = 0.95f;       // dome apex
+  const float domeY_ring = 0.65f;       // faceted ring on the dome
+
+  // Precompute vertices around each radial ring
+  Vector3 rimTop[SEGS], rimBot[SEGS];
+  Vector3 midRing[SEGS];
+  Vector3 domeRing[SEGS];
+  Vector3 domeMid[SEGS];
+  for (int i = 0; i < SEGS; ++i) {
+    float a = 2.0f * 3.14159265f * (float)i / (float)SEGS;
+    float cx = cosf(a), cz = sinf(a);
+    rimTop[i]  = {outerR * cx, rimY_top, outerR * cz};
+    rimBot[i]  = {outerR * cx, rimY_bot, outerR * cz};
+    midRing[i] = {midR * cx,   midY_top, midR * cz};
+    domeRing[i] = {domeR * cx, domeY_base, domeR * cz};
+    domeMid[i]  = {domeR * 0.6f * cx, domeY_ring, domeR * 0.6f * cz};
+  }
+  Vector3 domePeak = {0.0f, domeY_peak, 0.0f};
+  Vector3 belly   = {0.0f, -0.25f, 0.0f}; // underside central point
+
+  // ---- Top surface: outer ring (rim_top → mid_ring) ----
+  for (int i = 0; i < SEGS; ++i) {
+    int j = (i + 1) % SEGS;
+    tris.push_back({rimTop[i], rimTop[j], midRing[j], hullMid});
+    tris.push_back({rimTop[i], midRing[j], midRing[i], hullMid});
+  }
+  // ---- Hull top slope: mid_ring → dome_ring ----
+  for (int i = 0; i < SEGS; ++i) {
+    int j = (i + 1) % SEGS;
+    tris.push_back({midRing[i], midRing[j], domeRing[j], hullTop});
+    tris.push_back({midRing[i], domeRing[j], domeRing[i], hullTop});
+  }
+  // ---- Dome faceted bubble: dome_ring → dome_mid → dome_peak ----
+  for (int i = 0; i < SEGS; ++i) {
+    int j = (i + 1) % SEGS;
+    tris.push_back({domeRing[i], domeRing[j], domeMid[j], domeGlass});
+    tris.push_back({domeRing[i], domeMid[j], domeMid[i], domeGlass});
+    tris.push_back({domeMid[i], domeMid[j], domePeak, domeGlass});
+  }
+  // ---- Rim edge (outer vertical band) ----
+  for (int i = 0; i < SEGS; ++i) {
+    int j = (i + 1) % SEGS;
+    tris.push_back({rimTop[i], rimBot[i], rimBot[j], rim});
+    tris.push_back({rimTop[i], rimBot[j], rimTop[j], rim});
+  }
+  // ---- Underside: outer ring to central belly point ----
+  for (int i = 0; i < SEGS; ++i) {
+    int j = (i + 1) % SEGS;
+    tris.push_back({rimBot[i], belly, rimBot[j], hullBot});
+  }
+
+  // ---- Thruster ring — 8 glowing squares under the rim ----
+  constexpr int THR = 8;
+  const float thrusterR = 1.80f;
+  for (int i = 0; i < THR; ++i) {
+    float a = 2.0f * 3.14159265f * (float)i / (float)THR;
+    float cx = cosf(a), cz = sinf(a);
+    float px = thrusterR * cx;
+    float pz = thrusterR * cz;
+    // A small horizontal quad facing down
+    float s = 0.18f;
+    Vector3 p1 = {px - s * cz, -0.09f, pz + s * cx};
+    Vector3 p2 = {px + s * cz, -0.09f, pz - s * cx};
+    Vector3 p3 = {px + s * cz - 0.25f * cx, -0.09f, pz - s * cx - 0.25f * cz};
+    Vector3 p4 = {px - s * cz - 0.25f * cx, -0.09f, pz + s * cx - 0.25f * cz};
+    tris.push_back({p1, p3, p2, thruster});
+    tris.push_back({p1, p4, p3, thruster});
+  }
+}
+
+// ================================================================
 // buildMesh — dispatches to the craft-specific builder and uploads
 // ================================================================
 void Player::buildMesh() {
@@ -695,6 +799,9 @@ void Player::buildMesh() {
     break;
   case CraftType::YB49:
     buildYB49Mesh(tris);
+    break;
+  case CraftType::Saucer:
+    buildSaucerMesh(tris);
     break;
   default:
     buildDeltaWingMesh(tris);
@@ -760,6 +867,35 @@ void Player::setCraft(CraftType craft) {
 }
 
 // ================================================================
+// setFlightMode — swap physics model at runtime. Auto-assigns a
+// sensible craft for each mode when called: Saucer for Classic,
+// Delta Wing for Arcade. Existing flight state is reset so the
+// ship doesn't inherit arcade/classic-specific invariants.
+// ================================================================
+void Player::setFlightMode(FlightMode mode) {
+  if (m_flightMode == mode) return;
+  m_flightMode = mode;
+
+  // Reset transient state — otherwise arcade's targetSpeed or
+  // classic's momentum carry across the transition in weird ways.
+  m_vel = {0, 0, 0};
+  m_pitch = 0.0f;
+  m_roll = 0.0f;
+  m_pitchVis = 0.0f;
+  m_rollRate = 0.0f;
+  m_pitchRate = 0.0f;
+  m_currentSpeed = (mode == FlightMode::Arcade)
+                   ? Config::ARCADE_CRUISE_SPEED : 0.0f;
+  m_targetSpeed = m_currentSpeed;
+
+  // Auto-assign the canonical craft for each mode
+  if (mode == FlightMode::Classic)
+    setCraft(CraftType::Saucer);
+  else
+    setCraft(CraftType::DeltaWing);
+}
+
+// ================================================================
 // init
 // ================================================================
 void Player::init(Vector3 startPos, int flightAssistLevel, CraftType craft) {
@@ -783,9 +919,9 @@ void Player::init(Vector3 startPos, int flightAssistLevel, CraftType craft) {
 }
 
 // ================================================================
-// handleInput
+// handleArcadeInput — Air Combat 22 style (bank-to-turn, smoothed)
 // ================================================================
-void Player::handleInput(float dt) {
+void Player::handleArcadeInput(float dt) {
   // ---- Lowpass-filter raw mouse delta to kill per-frame jitter ----
   Vector2 rawMouse = GetMouseDelta();
   float mouseSmooth = 1.0f - expf(-Config::ARCADE_MOUSE_SMOOTH * dt);
@@ -909,9 +1045,9 @@ void Player::applyFlightAssist(float dt) {
 }
 
 // ================================================================
-// applyPhysics
+// applyArcadePhysics — Air Combat 22 style
 // ================================================================
-void Player::applyPhysics(float dt, const Planet &planet) {
+void Player::applyArcadePhysics(float dt, const Planet &planet) {
   // ---- Speed: lerp current toward target, then apply energy trade ----
   m_currentSpeed +=
       (m_targetSpeed - m_currentSpeed) * Config::ARCADE_ACCEL_K * dt;
@@ -975,12 +1111,179 @@ void Player::applyPhysics(float dt, const Planet &planet) {
 }
 
 // ================================================================
+// handleClassicInput — Newtonian Virus-style attitude control.
+//   A/D       = roll (bank)
+//   Mouse X   = roll (additive)
+//   W/S / Up/Down = pitch (nose up/down)
+//   Mouse Y   = pitch (additive)
+//   Q/E       = yaw (direct heading change)
+//   Shift     = thrust (full)
+//   Space / no key = idle (zero thrust, gravity pulls down)
+//   No auto-level — pilot holds attitude manually.
+// ================================================================
+void Player::handleClassicInput(float dt) {
+  // Smoothed mouse delta (reuse arcade's lowpass)
+  Vector2 rawMouse = GetMouseDelta();
+  float mouseSmooth = 1.0f - expf(-Config::CLASSIC_INPUT_SMOOTH * dt);
+  m_smoothMouse.x += (rawMouse.x - m_smoothMouse.x) * mouseSmooth;
+  m_smoothMouse.y += (rawMouse.y - m_smoothMouse.y) * mouseSmooth;
+
+  // ---- Thrust: Shift = full, else idle ----
+  m_boosting = false;
+  m_thrusting = IsKeyDown(KEY_LEFT_SHIFT);
+  // Classic doesn't use target/current speed lerp — thrust is binary
+  m_targetSpeed = m_thrusting ? Config::CLASSIC_THRUST : Config::CLASSIC_THRUST_IDLE;
+
+  // ---- Roll: A/D + mouse X ----
+  float rollInput = 0.0f;
+  if (IsKeyDown(KEY_LEFT) || IsKeyDown(KEY_A))
+    rollInput -= 1.0f;
+  if (IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_D))
+    rollInput += 1.0f;
+  rollInput += m_smoothMouse.x * Config::CLASSIC_MOUSE_ROLL_SENS / dt;
+  if (rollInput > 1.0f) rollInput = 1.0f;
+  if (rollInput < -1.0f) rollInput = -1.0f;
+  m_turnInput = rollInput;
+
+  // Integrate roll directly — no auto-level in Classic
+  m_roll += rollInput * Config::CLASSIC_ROLL_RATE * dt;
+  // Wrap to ±π so we can do full rolls
+  while (m_roll > 3.14159f)  m_roll -= 6.28318f;
+  while (m_roll < -3.14159f) m_roll += 6.28318f;
+
+  // ---- Pitch: W/S or Up/Down + mouse Y ----
+  // Classic/Virus convention: push stick FORWARD = craft tilts nose
+  // DOWN = thrust redirects FORWARD = fly forward. So W / mouse-up
+  // decrements m_pitch (render shows nose going down).
+  float pitchInput = 0.0f;
+  if (IsKeyDown(KEY_UP) || IsKeyDown(KEY_W))
+    pitchInput -= 1.0f;
+  if (IsKeyDown(KEY_DOWN) || IsKeyDown(KEY_S))
+    pitchInput += 1.0f;
+  pitchInput += m_smoothMouse.y * Config::CLASSIC_MOUSE_PITCH_SENS / dt;
+  if (pitchInput > 1.0f) pitchInput = 1.0f;
+  if (pitchInput < -1.0f) pitchInput = -1.0f;
+
+  m_pitch += pitchInput * Config::CLASSIC_PITCH_RATE * dt;
+  if (m_pitch > Config::CLASSIC_PITCH_MAX)
+    m_pitch = Config::CLASSIC_PITCH_MAX;
+  if (m_pitch < -Config::CLASSIC_PITCH_MAX)
+    m_pitch = -Config::CLASSIC_PITCH_MAX;
+
+  // ---- Yaw: Q/E for direct heading change (saucer-style) ----
+  // Q = turn left (yaw decreases), E = turn right (yaw increases) from
+  // the pilot's perspective with the camera behind the ship.
+  float yawInput = 0.0f;
+  if (IsKeyDown(KEY_Q)) yawInput += 1.0f;
+  if (IsKeyDown(KEY_E)) yawInput -= 1.0f;
+  m_yaw += yawInput * Config::CLASSIC_YAW_RATE * dt;
+}
+
+// ================================================================
+// applyClassicPhysics — Newtonian thrust-vs-gravity.
+//   velocity += (thrust_along_local_up + gravity_world_down) * dt
+//   position += velocity * dt
+//   thrust direction = ship's rotated UP axis (tilt redirects lift)
+// ================================================================
+void Player::applyClassicPhysics(float dt, const Planet &planet) {
+  // Compute the ship's LOCAL UP axis in world space, matching the
+  // render matrix (which applies Rx with m_pitchVis = -m_pitch).
+  // Rotation sequence as in the render: Rz(roll) → Rx(-m_pitch) → Ry(yaw).
+  float cr = cosf(m_roll),  sr = sinf(m_roll);
+  float cp = cosf(m_pitch), sp = sinf(m_pitch);
+  float cy = cosf(m_yaw),   sy = sinf(m_yaw);
+
+  // Local up = (0,1,0). After Rz(roll): (-sr, cr, 0)
+  float ux = -sr;
+  float uy = cr;
+  float uz = 0.0f;
+  // After Rx(-m_pitch): x unchanged,
+  //   y' = y*cos(-mp) - z*sin(-mp) = y*cp + z*sp
+  //   z' = y*sin(-mp) + z*cos(-mp) = -y*sp + z*cp
+  float uy2 = uy * cp + uz * sp;
+  float uz2 = -uy * sp + uz * cp;
+  uy = uy2;
+  uz = uz2;
+  // After Ry(yaw)
+  float ux2 = ux * cy + uz * sy;
+  float uz3 = -ux * sy + uz * cy;
+  ux = ux2;
+  uz = uz3;
+  Vector3 localUp = {ux, uy, uz};
+
+  // ---- Forces ----
+  float thrustAccel = m_thrusting ? Config::CLASSIC_THRUST : 0.0f;
+  Vector3 thrustVec = Vector3Scale(localUp, thrustAccel);
+  Vector3 gravityVec = {0.0f, -Config::CLASSIC_GRAVITY, 0.0f};
+  Vector3 accel = Vector3Add(thrustVec, gravityVec);
+
+  // Integrate velocity
+  m_vel = Vector3Add(m_vel, Vector3Scale(accel, dt));
+
+  // Near-zero drag (per-tick exponential decay)
+  float dragFactor = 1.0f - Config::CLASSIC_DRAG * dt;
+  if (dragFactor < 0.0f) dragFactor = 0.0f;
+  m_vel = Vector3Scale(m_vel, dragFactor);
+
+  // Hard speed clamp (safety)
+  float speed = Vector3Length(m_vel);
+  if (speed > Config::CLASSIC_MAX_SPEED)
+    m_vel = Vector3Scale(m_vel, Config::CLASSIC_MAX_SPEED / speed);
+
+  m_currentSpeed = speed;
+
+  // Integrate position
+  m_pos = Vector3Add(m_pos, Vector3Scale(m_vel, dt));
+
+  // ---- Ground interaction ----
+  float groundH = planet.heightAt(m_pos.x, m_pos.z);
+  float minH = groundH + Config::PLAYER_MIN_ALTITUDE;
+  if (m_pos.y < minH) {
+    // Crash vs bounce check
+    if (m_vel.y < -Config::CLASSIC_GROUND_IMPACT) {
+      // Hard crash — drain health
+      applyDamage(100.0f * (fabsf(m_vel.y) / Config::CLASSIC_GROUND_IMPACT));
+    }
+    // Snap to minimum altitude and bounce/absorb vertical velocity
+    m_pos.y = minH;
+    if (m_vel.y < 0.0f)
+      m_vel.y = -m_vel.y * Config::CLASSIC_GROUND_BOUNCE;
+  }
+
+  // Ceiling
+  if (m_pos.y > Config::PLAYER_MAX_ALTITUDE + groundH) {
+    m_pos.y = Config::PLAYER_MAX_ALTITUDE + groundH;
+    if (m_vel.y > 0.0f) m_vel.y = 0.0f;
+  }
+
+  // Visual pitch follows real pitch (row-vector convention)
+  m_pitchVis = -m_pitch;
+}
+
+// ================================================================
 // update
 // ================================================================
 void Player::update(float dt, const Planet &planet) {
   handleInput(dt);
   applyFlightAssist(dt);
   applyPhysics(dt, planet);
+}
+
+// ================================================================
+// Input/physics dispatchers — route to the active FlightMode path
+// ================================================================
+void Player::handleInput(float dt) {
+  if (m_flightMode == FlightMode::Classic)
+    handleClassicInput(dt);
+  else
+    handleArcadeInput(dt);
+}
+
+void Player::applyPhysics(float dt, const Planet &planet) {
+  if (m_flightMode == FlightMode::Classic)
+    applyClassicPhysics(dt, planet);
+  else
+    applyArcadePhysics(dt, planet);
 }
 
 // ================================================================

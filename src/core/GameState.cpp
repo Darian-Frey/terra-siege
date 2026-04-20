@@ -2,6 +2,7 @@
 #include "core/Config.hpp"
 #include "raylib.h"
 #include "raymath.h"
+#include "rlgl.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -167,14 +168,71 @@ static void recordSample(const Camera3D &cam, const Player &player,
 // init
 // ================================================================
 void GameState::init() {
-  m_planet.generate(12345u);
+  double t0 = GetTime();
+
+  // Throttle the loading-screen render to ~30 fps so we don't spend
+  // meaningful time on UI during chunk meshing.
+  double lastDraw = 0.0;
+  auto progressCb = [&lastDraw](const char *step, float progress) {
+    double now = GetTime();
+    if (progress < 1.0f && (now - lastDraw) < 0.033) return; // ~30 fps
+    lastDraw = now;
+
+    int sw = GetScreenWidth();
+    int sh = GetScreenHeight();
+
+    BeginDrawing();
+    ClearBackground({18, 28, 48, 255}); // dark blue
+
+    // Title
+    const char *title = "TERRA-SIEGE";
+    int tw = MeasureText(title, 48);
+    DrawText(title, sw / 2 - tw / 2, sh / 2 - 110, 48, {230, 235, 245, 255});
+
+    // Subtitle
+    const char *sub = "a modern reimagining of Virus (1988)";
+    int sbw = MeasureText(sub, 16);
+    DrawText(sub, sw / 2 - sbw / 2, sh / 2 - 60, 16,
+             {150, 165, 185, 220});
+
+    // Step label
+    int stepW = MeasureText(step, 20);
+    DrawText(step, sw / 2 - stepW / 2, sh / 2 + 5, 20,
+             {200, 215, 235, 255});
+
+    // Progress bar
+    const int barW = 440;
+    const int barH = 18;
+    const int barX = sw / 2 - barW / 2;
+    const int barY = sh / 2 + 50;
+    DrawRectangle(barX - 2, barY - 2, barW + 4, barH + 4,
+                  {80, 100, 130, 255});
+    DrawRectangle(barX, barY, barW, barH, {30, 40, 60, 255});
+    int fillW = static_cast<int>(barW * progress);
+    if (fillW > 0)
+      DrawRectangle(barX, barY, fillW, barH, {90, 200, 110, 255});
+
+    // Percent text
+    char pct[16];
+    snprintf(pct, sizeof(pct), "%d%%", static_cast<int>(progress * 100.0f));
+    int pw = MeasureText(pct, 18);
+    DrawText(pct, sw / 2 - pw / 2, barY + 30, 18, {180, 200, 225, 255});
+
+    EndDrawing();
+  };
+
+  m_planet.generate(12345u, progressCb);
+  double t1 = GetTime();
+  TraceLog(LOG_INFO, "Terrain generation: %.2f seconds (%d x %d heightmap)",
+           t1 - t0, Config::HEIGHTMAP_SIZE, Config::HEIGHTMAP_SIZE);
 
   // Start player above terrain centre facing north (+Z)
   float mid = m_planet.worldSize() * 0.5f;
   float ground = m_planet.heightAt(mid, mid);
   Vector3 startPos = {mid, ground + 12.0f, mid};
 
-  m_player.init(startPos, Config::FLIGHT_ASSIST_DEFAULT);
+  m_player.init(startPos, Config::FLIGHT_ASSIST_DEFAULT, CraftType::Saucer);
+  m_player.setFlightMode(FlightMode::Classic);
 
   // Camera setup
   m_camera.fovy = Config::CAM_FOV;
@@ -236,6 +294,13 @@ void GameState::handleDevKeys() {
     int next = (static_cast<int>(m_player.craft()) + 1) %
                static_cast<int>(CraftType::_Count);
     m_player.setCraft(static_cast<CraftType>(next));
+  }
+
+  // F6 — toggle FlightMode (Classic <-> Arcade)
+  if (IsKeyPressed(KEY_F6)) {
+    FlightMode next = (m_player.flightMode() == FlightMode::Classic)
+                       ? FlightMode::Arcade : FlightMode::Classic;
+    m_player.setFlightMode(next);
   }
 #endif
 }
@@ -391,6 +456,18 @@ void GameState::render(float alpha) {
     ClearBackground({55, 80, 140, 255});
 
     BeginMode3D(m_camera);
+    // Override projection matrix to push the far clip plane out from
+    // raylib's default 1000 to 3000 so the whole 8km world is visible.
+    {
+      rlMatrixMode(RL_PROJECTION);
+      rlLoadIdentity();
+      double aspect = static_cast<double>(GetScreenWidth()) /
+                      static_cast<double>(GetScreenHeight());
+      double top = 0.05 * tan(m_camera.fovy * 0.5 * DEG2RAD);
+      double right = top * aspect;
+      rlFrustum(-right, right, -top, top, 0.05, 3000.0);
+      rlMatrixMode(RL_MODELVIEW);
+    }
     m_planet.draw(m_camera.position);
     m_player.render();
     EndMode3D();
@@ -533,9 +610,20 @@ void GameState::drawHUD() const {
     DrawText(cbuf, 12, sh - 46, 14, {200, 220, 255, 220});
   }
 
+  // Flight mode indicator — just above the craft label
+  {
+    char mbuf[48];
+    snprintf(mbuf, sizeof(mbuf), "MODE:  %s",
+             flightModeName(m_player.flightMode()));
+    Color mCol = (m_player.flightMode() == FlightMode::Classic)
+                 ? Color{255, 200, 100, 220}   // warm for Classic
+                 : Color{150, 200, 255, 220};  // cool for Arcade
+    DrawText(mbuf, 12, sh - 64, 14, mCol);
+  }
+
 #ifdef DEV_MODE
-  DrawText("[DEV]  F1:cam  F2:assist  F4:rec  F5:craft",
-           sw - 340, sh - 20, 14, YELLOW);
+  DrawText("[DEV]  F1:cam  F2:assist  F4:rec  F5:craft  F6:mode",
+           sw - 420, sh - 20, 14, YELLOW);
 
   // Flight recorder indicator — large pulsing badge at top-center
   if (isRecording()) {

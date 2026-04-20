@@ -28,7 +28,7 @@ constexpr float PLAYER_DRAG = 0.92f; // velocity multiplier per tick
 constexpr float PLAYER_MAX_SPEED = 40.0f;
 constexpr float PLAYER_BANK_RATE = 3.5f;    // roll rad/s driven by lateral vel
 constexpr float PLAYER_MIN_ALTITUDE = 5.0f; // hard floor metres above terrain
-constexpr float PLAYER_MAX_ALTITUDE = 120.0f;
+constexpr float PLAYER_MAX_ALTITUDE = 500.0f;
 constexpr float PLAYER_TURN_RATE = 1.8f;  // rad/s yaw
 constexpr float PLAYER_ALT_RATE = 18.0f;  // units/s manual altitude
 constexpr float PLAYER_PITCH_VIS = 0.18f; // visual pitch coefficient
@@ -67,6 +67,36 @@ constexpr float ARCADE_PULLUP_BASE = 8.0f;          // base danger AGL (m)
 constexpr float ARCADE_PULLUP_SPEED_FACTOR = 0.35f; // extra AGL per u/s of speed
 constexpr float ARCADE_PULLUP_STRENGTH = 10.0f;     // max recovery rate at floor
 
+// ----------------------------------------------------------------
+// Classic flight model — Newtonian Virus-style
+//   Thrust along ship's LOCAL UP axis only; constant gravity pulls
+//   down; near-zero drag. Player flies by tilting the ship to
+//   redirect the thrust vector, balancing against gravity.
+// ----------------------------------------------------------------
+constexpr float CLASSIC_GRAVITY = 12.0f;      // world-down acceleration (m/s²)
+constexpr float CLASSIC_THRUST = 22.0f;       // acceleration from full thrust (m/s²)
+constexpr float CLASSIC_THRUST_IDLE = 0.0f;   // thrust at rest (none — gravity wins)
+constexpr float CLASSIC_DRAG = 0.03f;         // near-zero linear damping per tick
+constexpr float CLASSIC_PITCH_RATE = 1.8f;    // manual pitch response (rad/s)
+constexpr float CLASSIC_ROLL_RATE = 2.4f;     // manual roll response (rad/s)
+constexpr float CLASSIC_YAW_RATE = 1.2f;      // manual yaw (Q/E or shoulder buttons)
+constexpr float CLASSIC_PITCH_MAX = 1.55f;    // ~88° — allow near-vertical
+constexpr float CLASSIC_ROLL_MAX = 3.14f;     // full ±180° (can flip upside-down)
+constexpr float CLASSIC_MAX_SPEED = 80.0f;    // hard clamp to prevent runaway
+constexpr float CLASSIC_GROUND_IMPACT = 14.0f; // above this vertical speed = crash
+constexpr float CLASSIC_GROUND_BOUNCE = 0.3f;  // vertical velocity multiplier on light touch
+constexpr float CLASSIC_MOUSE_PITCH_SENS = 0.004f;
+constexpr float CLASSIC_MOUSE_ROLL_SENS = 0.005f;
+constexpr float CLASSIC_INPUT_SMOOTH = 15.0f;  // input lowpass per second
+
+// ----------------------------------------------------------------
+// Classic camera — higher and further back than arcade, wider FOV
+// ----------------------------------------------------------------
+constexpr float CLASSIC_CAM_HEIGHT = 12.0f;
+constexpr float CLASSIC_CAM_DISTANCE = 22.0f;
+constexpr float CLASSIC_CAM_FOV = 85.0f;
+constexpr float CLASSIC_CAM_LERP = 6.0f;
+
 // Speed-dependent chase camera — pulls back at high speed to give a
 // strong sensation of acceleration. Distance lerps between min and max.
 constexpr float ARCADE_CAM_DISTANCE_MIN = 14.0f; // at cruise speed
@@ -96,14 +126,14 @@ constexpr float CAM_FOV = 70.0f; // degrees
 // ----------------------------------------------------------------
 // Terrain / planet
 // ----------------------------------------------------------------
-constexpr int HEIGHTMAP_SIZE = 1025;  // must be 2^n + 1
-constexpr int CHUNK_COUNT = 16;       // 1024/16 = 64 cells per chunk
+constexpr int HEIGHTMAP_SIZE = 2049;  // must be 2^n + 1 (was 1025)
+constexpr int CHUNK_COUNT = 32;       // 2048/32 = 64 cells per chunk (unchanged per-chunk density)
 constexpr int CHUNK_VERTS = 32;       // quads per chunk edge
-constexpr float TERRAIN_SCALE = 4.0f; // world units per heightmap cell
-constexpr float TERRAIN_HEIGHT_MAX = 55.0f;
+constexpr float TERRAIN_SCALE = 4.0f; // world units per heightmap cell (world ~8192×8192)
+constexpr float TERRAIN_HEIGHT_MAX = 180.0f; // much taller mountains (was 55)
 constexpr float TERRAIN_CURVATURE = 0.00015f; // curvature cosine coefficient
-constexpr float FOG_NEAR = 400.0f;
-constexpr float FOG_FAR = 900.0f;
+constexpr float FOG_NEAR = 700.0f;
+constexpr float FOG_FAR = 2000.0f;
 
 // ----------------------------------------------------------------
 // Weapons — primary
@@ -208,7 +238,7 @@ constexpr float TERRAIN_ROUGHNESS = 0.55f; // lower = smoother, larger features
 constexpr float SEA_LEVEL = 0.20f;         // fraction of HEIGHT_MAX
 
 // Rivers
-constexpr int RIVER_COUNT = 6; // number of rivers to carve
+constexpr int RIVER_COUNT = 20; // number of rivers to carve (scaled for 4× area)
 constexpr float RIVER_SOURCE_MIN_H =
     0.60f; // min normalised height for river source
 constexpr float RIVER_CARVE_DEPTH = 0.04f; // how deep to cut the channel
@@ -216,7 +246,7 @@ constexpr int RIVER_WIDTH = 2;             // cells either side of centreline
 constexpr int RIVER_MIN_LENGTH = 40;       // discard rivers shorter than this
 
 // Lakes
-constexpr int LAKE_COUNT = 12;      // max inland lakes
+constexpr int LAKE_COUNT = 40;      // max inland lakes (scaled for 4× area)
 constexpr float LAKE_MIN_H = 0.22f; // must be above sea level
 constexpr float LAKE_MAX_H = 0.55f; // not on mountain tops
 constexpr int LAKE_MAX_CELLS = 800; // max flood-fill size   // fraction of

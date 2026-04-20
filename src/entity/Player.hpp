@@ -7,13 +7,28 @@
 class Planet;
 
 // ====================================================================
+// FlightMode — physics model selection.
+//   Classic  = Newtonian Virus-style (thrust along local UP, gravity,
+//              near-zero drag, full manual attitude).
+//   Arcade   = Air Combat 22 style (bank-to-turn, velocity locked to
+//              forward, auto-level, smoothing).
+// ====================================================================
+enum class FlightMode {
+  Classic,
+  Arcade,
+  _Count
+};
+const char *flightModeName(FlightMode m);
+
+// ====================================================================
 // CraftType — selectable ship mesh. More can be added later.
 // ====================================================================
 enum class CraftType {
-  DeltaWing,    // Swept-back delta fighter (current default)
+  DeltaWing,    // Swept-back delta fighter (arcade)
   ForwardSwept, // X-29/Su-47 style forward-swept wings + canards
   X36,          // NASA X-36 tailless lambda-wing demonstrator
   YB49,         // Northrop YB-49 flying wing bomber
+  Saucer,       // Simple flying saucer — Classic/Newtonian mode
   _Count        // sentinel for cycling
 };
 
@@ -37,6 +52,12 @@ public:
   // preserved.
   void setCraft(CraftType craft);
   CraftType craft() const { return m_craftType; }
+
+  // Swap physics model at runtime. Auto-assigns the Saucer craft when
+  // switching to Classic (the fighter meshes don't match Newtonian
+  // handling). Caller can still override with setCraft() afterwards.
+  void setFlightMode(FlightMode mode);
+  FlightMode flightMode() const { return m_flightMode; }
   void update(float dt, const Planet &planet);
   void render() const;
   void unload();
@@ -65,7 +86,11 @@ public:
 private:
   // Pipeline
   void handleInput(float dt);
+  void handleArcadeInput(float dt);
+  void handleClassicInput(float dt);
   void applyPhysics(float dt, const Planet &planet);
+  void applyArcadePhysics(float dt, const Planet &planet);
+  void applyClassicPhysics(float dt, const Planet &planet);
   void applyFlightAssist(float dt);
 
   // Mesh construction
@@ -89,6 +114,7 @@ private:
   bool m_thrusting = false;
   int m_assistLevel = 2;
   CraftType m_craftType = CraftType::DeltaWing;
+  FlightMode m_flightMode = FlightMode::Classic;
 
   // Mesh / model
   Mesh m_mesh = {};

@@ -4,6 +4,7 @@
 #include "TerrainChunk.hpp"
 #include "core/Config.hpp"
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 // ====================================================================
@@ -18,7 +19,11 @@ public:
   Planet() = default;
   ~Planet() = default;
 
-  void generate(uint32_t seed = 0);
+  // Progress callback receives a step label and a 0..1 fraction.
+  // Called once before heightmap generation, after heightmap completes,
+  // and after each terrain chunk is built.
+  using ProgressCb = std::function<void(const char *, float)>;
+  void generate(uint32_t seed = 0, ProgressCb progressCb = nullptr);
   void draw(Vector3 cameraPos) const;
   void unload();
 
