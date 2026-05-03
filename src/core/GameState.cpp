@@ -190,6 +190,7 @@ void GameState::init() {
   m_camera.target = Vector3Add(startPos, {0, 1.5f, 0});
 
   m_camMode = CamMode::Follow;
+  resetCameraZoom();
   m_state = AppState::Playing;
 
 #ifdef DEV_MODE
@@ -333,12 +334,33 @@ void GameState::handleDevKeys() {
 }
 
 // ================================================================
-// Follow camera
+// Five-view camera system — see terra_rebuild/camera_system.md
+//
+// Shared properties:
+//  - All views terrain-clamp the camera (heightAt + 3.5) before lerping.
+//  - All views position-lerp at CAM_LERP for the position-only smoothing
+//    that prevents pop on view switch; orientation updates instantly.
+//  - The dispatcher updateCamera() decrements the view-label timer once
+//    per tick so the on-switch fade label drains uniformly.
 // ================================================================
-void GameState::updateFollowCamera(float dt) {
-  // Single fixed-distance chase camera. Speed-dependent zoom is gone with
-  // the Arcade model. The five-view system in camera_system.md replaces
-  // this with key-1..5 view selection in Step 3 of the rebuild.
+
+namespace {
+// Apply the standard terrain clamp: camera position is pushed up to be
+// at least 3.5 above the ground beneath it AND at least 2.0 above the
+// player. Used by every view that follows the player from above.
+inline void applyTerrainClamp(Vector3 &pos, const Planet &planet,
+                              const Vector3 &playerPos, float groundMargin) {
+  float groundH = planet.heightAt(pos.x, pos.z);
+  if (pos.y < groundH + groundMargin) pos.y = groundH + groundMargin;
+  if (pos.y < playerPos.y + 2.0f) pos.y = playerPos.y + 2.0f;
+}
+} // namespace
+
+// ----------------------------------------------------------------
+// View 1 — Chase (default). Follows ship nose direction (yaw only),
+// horizon stays level regardless of ship pitch/roll.
+// ----------------------------------------------------------------
+void GameState::updateChaseCamera(float dt) {
   Vector3 playerPos = m_player.position();
   float playerYaw = m_player.yaw();
   Vector3 horizFwd = {sinf(playerYaw), 0.0f, cosf(playerYaw)};
@@ -346,24 +368,231 @@ void GameState::updateFollowCamera(float dt) {
   Vector3 desiredPos = Vector3Add(
       playerPos, Vector3Add(Vector3Scale(horizFwd, -Config::CAM_DISTANCE),
                             {0.0f, Config::CAM_HEIGHT, 0.0f}));
+  applyTerrainClamp(desiredPos, m_planet, playerPos, 3.5f);
 
-  // Terrain clamping — keep camera above the ground (do not remove this)
-  float camGroundH = m_planet.heightAt(desiredPos.x, desiredPos.z);
-  float camMinY = camGroundH + 3.5f;
-  if (desiredPos.y < camMinY) desiredPos.y = camMinY;
-  if (desiredPos.y < playerPos.y + 2.0f)
-    desiredPos.y = playerPos.y + 2.0f;
-
-  // Smooth follow lerp — frame-rate independent
   float lerpSpeed = Config::CAM_LERP * dt;
   if (lerpSpeed > 1.0f) lerpSpeed = 1.0f;
   m_camera.position = Vector3Lerp(m_camera.position, desiredPos, lerpSpeed);
 
-  // Look ahead of the ship in horizontal plane — horizon stays level.
   m_camera.target = Vector3Add(
       playerPos, Vector3Add(Vector3Scale(horizFwd, 8.0f), {0.0f, 1.5f, 0.0f}));
   m_camera.up = {0.0f, 1.0f, 0.0f};
-  m_camera.fovy = Config::CAM_FOV;
+  m_camera.fovy = m_zoom[static_cast<int>(CameraView::Chase)];
+}
+
+// ----------------------------------------------------------------
+// View 2 — Velocity. Same as Chase but oriented along the velocity
+// vector instead of the nose direction. Below VELOCITY_CAM_MIN_SPD
+// the velocity direction is unstable, so blend smoothly to nose.
+// ----------------------------------------------------------------
+void GameState::updateVelocityCamera(float dt) {
+  Vector3 playerPos = m_player.position();
+  Vector3 vel = m_player.velocity();
+  float spd = Vector3Length(vel);
+  float playerYaw = m_player.yaw();
+  Vector3 noseFwd = {sinf(playerYaw), 0.0f, cosf(playerYaw)};
+
+  Vector3 velDir = noseFwd;
+  if (spd > 0.01f) {
+    Vector3 flatVel = {vel.x, 0.0f, vel.z};
+    float flatSpd = Vector3Length(flatVel);
+    if (flatSpd > 0.01f)
+      velDir = Vector3Scale(flatVel, 1.0f / flatSpd);
+  }
+
+  // Linear blend toward nose when nearly stationary — avoids flicker.
+  float blendT = spd / Config::VELOCITY_CAM_MIN_SPD;
+  if (blendT > 1.0f) blendT = 1.0f;
+  float blendToNose = 1.0f - blendT;
+  velDir = Vector3Normalize(
+      Vector3Add(Vector3Scale(velDir, 1.0f - blendToNose),
+                 Vector3Scale(noseFwd, blendToNose)));
+
+  Vector3 desiredPos = Vector3Add(
+      playerPos, Vector3Add(Vector3Scale(velDir, -Config::CAM_DISTANCE),
+                            {0.0f, Config::CAM_HEIGHT, 0.0f}));
+  applyTerrainClamp(desiredPos, m_planet, playerPos, 3.5f);
+
+  float lerpSpeed = Config::CAM_LERP * dt;
+  if (lerpSpeed > 1.0f) lerpSpeed = 1.0f;
+  m_camera.position = Vector3Lerp(m_camera.position, desiredPos, lerpSpeed);
+
+  m_camera.target = Vector3Add(
+      playerPos, Vector3Add(Vector3Scale(velDir, 8.0f), {0.0f, 1.5f, 0.0f}));
+  m_camera.up = {0.0f, 1.0f, 0.0f};
+  m_camera.fovy = m_zoom[static_cast<int>(CameraView::Velocity)];
+}
+
+// ----------------------------------------------------------------
+// View 3 — Tactical overhead. Fixed altitude looking straight down,
+// world-north (+Z) at top of screen. CRITICAL: camera.up = {0,0,1}.
+// {0,1,0} produces a degenerate cross product when the look direction
+// is also world-up, and the view spins erratically.
+// ----------------------------------------------------------------
+void GameState::updateTacticalCamera(float dt) {
+  Vector3 playerPos = m_player.position();
+  // Tactical zoom = altitude (per-view zoom slot)
+  float altitude = m_zoom[static_cast<int>(CameraView::Tactical)];
+  Vector3 desiredPos = {playerPos.x, playerPos.y + altitude, playerPos.z};
+
+  float lerpSpeed = Config::CAM_LERP * dt;
+  if (lerpSpeed > 1.0f) lerpSpeed = 1.0f;
+  m_camera.position = Vector3Lerp(m_camera.position, desiredPos, lerpSpeed);
+
+  m_camera.target = playerPos;
+  m_camera.up = {0.0f, 0.0f, 1.0f}; // world-+Z = north on screen
+  m_camera.fovy = Config::TACTICAL_CAM_FOV;
+}
+
+// ----------------------------------------------------------------
+// View 4 — Threat-lock. Same chase geometry but yaw rotates to keep
+// the highest-priority enemy in frame. With no entities yet (Phase 3
+// hasn't shipped), findHighestThreat() returns nullptr and the view
+// is identical to Chase — that's the documented stub behaviour.
+// Hysteresis logic, rotation cap, and target tracking are all wired
+// up so Phase 3 can drop in EntityManager + threat scoring without
+// touching the camera code.
+// ----------------------------------------------------------------
+void GameState::updateThreatLockCamera(float dt) {
+  Vector3 playerPos = m_player.position();
+  float playerYaw = m_player.yaw();
+
+  // Phase 3 will replace this with EntityManager threat lookup.
+  // Until then, no target → fall back to chase orientation.
+  void *target = nullptr;
+  float desiredCamYaw = playerYaw;
+
+  if (target) {
+    // Reserved: enemy-direction logic per spec — populated when
+    // EntityManager exists. (Unreachable while target stays nullptr.)
+  }
+
+  // Slew current threat-yaw toward desired with rotation cap.
+  float maxRot = Config::THREAT_CAM_MAX_ROT * dt;
+  float yawError = desiredCamYaw - m_threatCamYaw;
+  while (yawError > 3.14159f) yawError -= 6.28318f;
+  while (yawError < -3.14159f) yawError += 6.28318f;
+  if (yawError > maxRot) yawError = maxRot;
+  else if (yawError < -maxRot) yawError = -maxRot;
+  m_threatCamYaw += yawError;
+
+  Vector3 camDir = {sinf(m_threatCamYaw), 0.0f, cosf(m_threatCamYaw)};
+  Vector3 desiredPos = Vector3Add(
+      playerPos, Vector3Add(Vector3Scale(camDir, -Config::CAM_DISTANCE),
+                            {0.0f, Config::CAM_HEIGHT, 0.0f}));
+  applyTerrainClamp(desiredPos, m_planet, playerPos, 3.5f);
+
+  float lerpSpeed = Config::CAM_LERP * dt;
+  if (lerpSpeed > 1.0f) lerpSpeed = 1.0f;
+  m_camera.position = Vector3Lerp(m_camera.position, desiredPos, lerpSpeed);
+
+  m_camera.target = Vector3Add(playerPos, {0.0f, 1.5f, 0.0f});
+  m_camera.up = {0.0f, 1.0f, 0.0f};
+  m_camera.fovy = m_zoom[static_cast<int>(CameraView::ThreatLock)];
+}
+
+// ----------------------------------------------------------------
+// View 5 — Classic. Fixed world-space offset: camera never rotates,
+// world-north stays at top of screen. The original Virus / Zarch
+// feel — hardest view to learn but full 360° terrain awareness.
+// ----------------------------------------------------------------
+void GameState::updateClassicCamera(float dt) {
+  Vector3 playerPos = m_player.position();
+  Vector3 desiredPos = {playerPos.x + Config::CLASSIC_CAM_OFFSET_X,
+                        playerPos.y + Config::CLASSIC_CAM_ALTITUDE,
+                        playerPos.z + Config::CLASSIC_CAM_OFFSET_Z};
+  applyTerrainClamp(desiredPos, m_planet, playerPos, 5.0f);
+
+  float lerpSpeed = Config::CLASSIC_CAM_LERP * dt;
+  if (lerpSpeed > 1.0f) lerpSpeed = 1.0f;
+  m_camera.position = Vector3Lerp(m_camera.position, desiredPos, lerpSpeed);
+
+  m_camera.target = playerPos;
+  m_camera.up = {0.0f, 1.0f, 0.0f};
+  m_camera.fovy = m_zoom[static_cast<int>(CameraView::Classic)];
+}
+
+// ----------------------------------------------------------------
+// Dispatcher + view-switch keys
+// ----------------------------------------------------------------
+void GameState::updateCamera(float dt) {
+  switch (m_cameraView) {
+  case CameraView::Chase:      updateChaseCamera(dt); break;
+  case CameraView::Velocity:   updateVelocityCamera(dt); break;
+  case CameraView::Tactical:   updateTacticalCamera(dt); break;
+  case CameraView::ThreatLock: updateThreatLockCamera(dt); break;
+  case CameraView::Classic:    updateClassicCamera(dt); break;
+  }
+  m_viewLabelTimer -= dt;
+  if (m_viewLabelTimer < 0.0f) m_viewLabelTimer = 0.0f;
+}
+
+void GameState::resetCameraZoom() {
+  m_zoom[static_cast<int>(CameraView::Chase)] = Config::CAM_FOV;
+  m_zoom[static_cast<int>(CameraView::Velocity)] = Config::CAM_FOV;
+  m_zoom[static_cast<int>(CameraView::Tactical)] = Config::TACTICAL_CAM_ALTITUDE;
+  m_zoom[static_cast<int>(CameraView::ThreatLock)] = Config::CAM_FOV;
+  m_zoom[static_cast<int>(CameraView::Classic)] = Config::CLASSIC_CAM_FOV;
+}
+
+// Mouse wheel + [ / ] step + \ reset, applied to the active view's
+// zoom slot. Tactical zoom is altitude (60–250); all other views are
+// FOV (50–90). Wheel-up = zoom in (lower FOV / lower altitude).
+void GameState::handleCameraZoom() {
+  float wheel = GetMouseWheelMove();
+  bool stepIn = IsKeyPressed(KEY_LEFT_BRACKET);
+  bool stepOut = IsKeyPressed(KEY_RIGHT_BRACKET);
+  bool reset = IsKeyPressed(KEY_BACKSLASH);
+  if (wheel == 0.0f && !stepIn && !stepOut && !reset) return;
+
+  const int idx = static_cast<int>(m_cameraView);
+
+  if (m_cameraView == CameraView::Tactical) {
+    constexpr float STEP = 15.0f;
+    constexpr float MIN = 60.0f;
+    constexpr float MAX = 250.0f;
+    if (reset) m_zoom[idx] = Config::TACTICAL_CAM_ALTITUDE;
+    m_zoom[idx] -= wheel * STEP;
+    if (stepIn) m_zoom[idx] -= STEP;
+    if (stepOut) m_zoom[idx] += STEP;
+    if (m_zoom[idx] < MIN) m_zoom[idx] = MIN;
+    else if (m_zoom[idx] > MAX) m_zoom[idx] = MAX;
+  } else {
+    constexpr float STEP = 5.0f;
+    constexpr float MIN = 50.0f;
+    constexpr float MAX = 90.0f;
+    float defaultFov = (m_cameraView == CameraView::Classic)
+                           ? Config::CLASSIC_CAM_FOV
+                           : Config::CAM_FOV;
+    if (reset) m_zoom[idx] = defaultFov;
+    m_zoom[idx] -= wheel * STEP;
+    if (stepIn) m_zoom[idx] -= STEP;
+    if (stepOut) m_zoom[idx] += STEP;
+    if (m_zoom[idx] < MIN) m_zoom[idx] = MIN;
+    else if (m_zoom[idx] > MAX) m_zoom[idx] = MAX;
+  }
+
+  // Re-show the view label so the player gets visual feedback that
+  // something changed in this view.
+  m_viewLabelTimer = Config::CAM_VIEW_LABEL_DURATION;
+}
+
+void GameState::handleCameraViewKeys() {
+  CameraView newView = m_cameraView;
+  if (IsKeyPressed(KEY_ONE))   newView = CameraView::Chase;
+  if (IsKeyPressed(KEY_TWO))   newView = CameraView::Velocity;
+  if (IsKeyPressed(KEY_THREE)) newView = CameraView::Tactical;
+  if (IsKeyPressed(KEY_FOUR))  newView = CameraView::ThreatLock;
+  if (IsKeyPressed(KEY_FIVE))  newView = CameraView::Classic;
+
+  if (newView != m_cameraView) {
+    m_cameraView = newView;
+    m_viewLabelTimer = Config::CAM_VIEW_LABEL_DURATION;
+    // Reset threat yaw when entering ThreatLock so it starts aligned
+    // with the player's nose instead of swinging from a stale value.
+    if (newView == CameraView::ThreatLock)
+      m_threatCamYaw = m_player.yaw();
+  }
 }
 
 // ================================================================
@@ -416,10 +645,12 @@ void GameState::update(float dt) {
     handleDevKeys();
 
     if (m_camMode == CamMode::Follow) {
+      handleCameraViewKeys();
+      handleCameraZoom();
       m_player.update(dt, m_planet);
-      updateFollowCamera(dt);
+      updateCamera(dt);
     } else {
-      // Free-roam: player suspended
+      // Free-roam: player suspended; keys 1–5 are ignored.
       updateFreeCamera(dt);
     }
 
@@ -615,12 +846,62 @@ void GameState::drawHUD() const {
     DrawText("LANDED", bx + bw + 12, sh - 80, 14, {120, 220, 140, 255});
   }
 
+  // ---- AGL tape ----
+  // Vertical bar showing the craft's height above the terrain directly
+  // beneath it (NOT absolute Y). The ceiling tick marks where thrust
+  // cuts out — pilots learn the "stay below the line" rule visually.
+  // Bar scaled so the ceiling sits ~80% of the way up, leaving headroom
+  // to show the over-ceiling state.
+  {
+    Vector3 ppos = m_player.position();
+    float ground = m_planet.heightAt(ppos.x, ppos.z);
+    float agl = ppos.y - ground;
+    if (agl < 0.0f) agl = 0.0f;
+
+    const float maxAGL = Config::NEWTON_FLIGHT_CEILING * 1.25f;
+    float t = agl / maxAGL;
+    if (t > 1.0f) t = 1.0f;
+
+    const int abx = bx + bw + 78; // right of HULL/THRUST + breathing room
+    const int abw = 16;
+    const int abh = 200;
+    const int aby = sh - 50 - abh;
+
+    // Frame
+    DrawRectangle(abx - 1, aby - 1, abw + 2, abh + 2, {0, 0, 0, 160});
+    DrawRectangle(abx, aby, abw, abh, {40, 40, 50, 230});
+
+    // Fill — colour codes the safety zone
+    int fillH = static_cast<int>(abh * t);
+    Color fillCol;
+    if (agl > Config::NEWTON_FLIGHT_CEILING)
+      fillCol = {220, 60, 60, 240}; // red — thrust cuts out
+    else if (agl > Config::NEWTON_FLIGHT_CEILING * 0.85f)
+      fillCol = {220, 180, 0, 240}; // yellow — approaching ceiling
+    else
+      fillCol = {80, 200, 100, 240}; // green — normal flight
+    DrawRectangle(abx, aby + abh - fillH, abw, fillH, fillCol);
+
+    // Ceiling tick mark
+    float ceilT = Config::NEWTON_FLIGHT_CEILING / maxAGL;
+    int ceilY = aby + abh - static_cast<int>(abh * ceilT);
+    DrawLine(abx - 4, ceilY, abx + abw + 4, ceilY, {255, 220, 80, 220});
+    DrawText("CLG", abx + abw + 6, ceilY - 5, 10, {255, 220, 80, 200});
+
+    // Label + numeric AGL
+    DrawText("AGL", abx - 6, aby - 14, 12, col);
+    char abuf[16];
+    snprintf(abuf, sizeof(abuf), "%dm", static_cast<int>(agl));
+    DrawText(abuf, abx + abw + 6, aby + abh - 12, 12, col);
+  }
+
   // ---- Controls bar ----
   DrawRectangle(0, sh - 28, sw, 28, {0, 0, 0, 140});
 
   const char *controls =
       m_camMode == CamMode::Follow
-          ? "Mouse: pitch+yaw  |  W/LMB: thrust  |  A/D: yaw  |  Q/E: roll"
+          ? "Mouse: pitch+yaw  |  Wheel/[]: zoom  |  W/LMB: thrust  |  "
+            "A/D: yaw  |  Q/E: roll  |  1-5: view  |  \\: zoom reset"
           : "WASD: fly  |  Q/E: up/down  |  Shift: fast  (F1: back to ship)";
   DrawText(controls, 12, sh - 20, 14, {180, 180, 180, 220});
 
@@ -669,6 +950,383 @@ void GameState::drawHUD() const {
     DrawText(tbuf, bx + 100, by + 10, 18, {255, 220, 220, 255});
   }
 #endif
+
+  // Camera-view overlays — fade label on switch, plus per-view UI.
+  drawCameraViewLabel();
+  drawTacticalShipArrow();
+  drawClassicCompassRose();
+
+  // Wireframe flight HUD — visible in every camera view. Provides the
+  // attitude/heading/speed/FPV data a Newtonian pilot needs regardless
+  // of which camera is active.
+  drawFlightHUD();
+}
+
+// ================================================================
+// Camera view overlays — see camera_system.md
+// ================================================================
+void GameState::drawCameraViewLabel() const {
+  if (m_viewLabelTimer <= 0.0f) return;
+
+  static const char *labels[] = {
+      "CHASE VIEW", "VELOCITY VIEW", "TACTICAL VIEW",
+      "THREAT-LOCK VIEW", "CLASSIC VIEW",
+  };
+  const char *label = labels[static_cast<int>(m_cameraView)];
+
+  // Linear fade over the last CAM_VIEW_LABEL_FADE seconds.
+  float a = m_viewLabelTimer / Config::CAM_VIEW_LABEL_FADE;
+  if (a > 1.0f) a = 1.0f;
+  unsigned char alpha = static_cast<unsigned char>(220.0f * a);
+  unsigned char bgAlpha = static_cast<unsigned char>(120.0f * a);
+
+  int sw = GetScreenWidth();
+  int tw = MeasureText(label, 22);
+  int px = sw / 2 - tw / 2;
+  int py = 48;
+  DrawRectangle(px - 12, py - 6, tw + 24, 34, {0, 0, 0, bgAlpha});
+  DrawText(label, px, py, 22, {200, 220, 255, alpha});
+}
+
+void GameState::drawTacticalShipArrow() const {
+  if (m_cameraView != CameraView::Tactical) return;
+
+  Vector3 shipPos = m_player.position();
+  Vector2 screenPos = GetWorldToScreen(shipPos, m_camera);
+  float yaw = m_player.yaw();
+
+  // In tactical view, +Z (north) is up on screen, so yaw maps directly:
+  // X = sin(yaw), screen-Y = -cos(yaw) (screen Y inverted).
+  const float arrowLen = 22.0f;
+  Vector2 tip = {screenPos.x + sinf(yaw) * arrowLen,
+                 screenPos.y - cosf(yaw) * arrowLen};
+  DrawLineEx(screenPos, tip, 2.5f, {255, 230, 100, 220});
+  DrawCircle(static_cast<int>(tip.x), static_cast<int>(tip.y), 3.0f,
+             {255, 230, 100, 220});
+}
+
+void GameState::drawClassicCompassRose() const {
+  if (m_cameraView != CameraView::Classic) return;
+
+  // Bottom-right corner, above the dev controls bar.
+  const int cx = GetScreenWidth() - 50;
+  const int cy = GetScreenHeight() - 95;
+  const int r = 24;
+  DrawCircleLines(cx, cy, static_cast<float>(r), {150, 160, 180, 160});
+  DrawText("N", cx - 4, cy - r - 14, 12, {220, 230, 255, 220});
+  DrawText("S", cx - 4, cy + r + 2, 12, {180, 190, 210, 160});
+  DrawText("E", cx + r + 3, cy - 5, 12, {180, 190, 210, 160});
+  DrawText("W", cx - r - 14, cy - 5, 12, {180, 190, 210, 160});
+  // Tick at north
+  DrawLine(cx, cy - r + 4, cx, cy - r + 10, {255, 230, 100, 220});
+}
+
+// ================================================================
+// Wireframe flight HUD — boresight, FPV, pitch ladder, heading tape,
+// speed tape. Drawn in every camera view per the design.
+// Style: amber lines (Virus / F-16 phosphor convention), no fills,
+// translucent so the world reads through.
+// ================================================================
+void GameState::drawFlightHUD() const {
+  const Color amber = {255, 176, 0, 220};
+  const Color amberDim = {255, 176, 0, 140};
+  const int sw = GetScreenWidth();
+  const int sh = GetScreenHeight();
+  const float cx = sw * 0.5f;
+  const float cy = sh * 0.5f;
+
+  Vector3 ppos = m_player.position();
+  Vector3 vel = m_player.velocity();
+  float speed = m_player.speed();
+  float yaw = m_player.yaw();
+  float pitch = m_player.pitch();
+  float roll = m_player.roll();
+
+  const float deg = 180.0f / 3.14159265f;
+  float yawDeg = yaw * deg;
+  while (yawDeg < 0.0f) yawDeg += 360.0f;
+  while (yawDeg >= 360.0f) yawDeg -= 360.0f;
+  float pitchDeg = pitch * deg;
+
+  // ----------------------------------------------------------------
+  // Horizon bar (waterline) — fixed at screen centre, an airplane-rear
+  // silhouette: two short wings flanking a centre fuselage square,
+  // wing tips drop downward. The pitch ladder (and the world) moves
+  // RELATIVE to this bar — it's the static "you are here" reference.
+  // ----------------------------------------------------------------
+  {
+    const float wingLen = 22.0f;
+    const float gap = 9.0f;
+    const float dropLen = 5.0f;
+    // Wings
+    DrawLineEx({cx - gap - wingLen, cy}, {cx - gap, cy}, 2.0f, amber);
+    DrawLineEx({cx + gap, cy}, {cx + gap + wingLen, cy}, 2.0f, amber);
+    // Wing-tip drops (downward strokes at the outboard ends)
+    DrawLineEx({cx - gap - wingLen, cy},
+               {cx - gap - wingLen, cy + dropLen}, 2.0f, amber);
+    DrawLineEx({cx + gap + wingLen, cy},
+               {cx + gap + wingLen, cy + dropLen}, 2.0f, amber);
+    // Centre fuselage marker
+    DrawRectangle(static_cast<int>(cx) - 2, static_cast<int>(cy) - 2, 4, 4,
+                  amber);
+  }
+
+  // ----------------------------------------------------------------
+  // Nose / weapons crosshair — projects a point in front of the ship
+  // along its actual forward vector (yaw + pitch + roll applied) onto
+  // the screen. This is where future projectile weapons will fire.
+  // Distinct from the FPV: this is a circle with a 4-arm SEALED cross
+  // (not the FPV's 3-wing open pattern).
+  // ----------------------------------------------------------------
+  {
+    Vector3 noseFwd = m_player.forward();
+    Vector3 noseWorld = Vector3Add(ppos, Vector3Scale(noseFwd, 30.0f));
+    Vector2 noseScreen = GetWorldToScreen(noseWorld, m_camera);
+
+    // Cull when nose points away from camera (GetWorldToScreen returns
+    // mirror-projected coords for points behind the camera plane).
+    Vector3 camFwd = Vector3Normalize(
+        Vector3Subtract(m_camera.target, m_camera.position));
+    bool inFront = Vector3DotProduct(noseFwd, camFwd) > 0.0f;
+
+    if (inFront && noseScreen.x > -50.0f && noseScreen.x < sw + 50.0f &&
+        noseScreen.y > -50.0f && noseScreen.y < sh + 50.0f) {
+      const float r = 5.0f;
+      const float arm = 7.0f;
+      DrawCircleLines(static_cast<int>(noseScreen.x),
+                      static_cast<int>(noseScreen.y), r, amber);
+      DrawLineEx({noseScreen.x - r - arm, noseScreen.y},
+                 {noseScreen.x - r, noseScreen.y}, 1.5f, amber);
+      DrawLineEx({noseScreen.x + r, noseScreen.y},
+                 {noseScreen.x + r + arm, noseScreen.y}, 1.5f, amber);
+      DrawLineEx({noseScreen.x, noseScreen.y - r - arm},
+                 {noseScreen.x, noseScreen.y - r}, 1.5f, amber);
+      DrawLineEx({noseScreen.x, noseScreen.y + r},
+                 {noseScreen.x, noseScreen.y + r + arm}, 1.5f, amber);
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // Pitch ladder + artificial horizon. Translates vertically with
+  // pitch (positive pitch = nose up = horizon below screen centre)
+  // and rotates about screen centre with roll. Rungs every 15° from
+  // -45 to +45. The horizon (0°) is bold; negative-pitch rungs are
+  // dashed, F-16 convention.
+  // ----------------------------------------------------------------
+  {
+    constexpr float PPD = 6.0f;          // pixels per degree
+    const float rungHalfLen = 60.0f;     // half-width of a rung
+    const float rungGap = 14.0f;         // gap in middle of each rung
+    const float ca = cosf(roll);
+    const float sa = sinf(roll);
+    auto worldFromLocal = [&](float lx, float ly) -> Vector2 {
+      // 2D rotation about origin then translate to (cx, cy)
+      return {lx * ca - ly * sa + cx, lx * sa + ly * ca + cy};
+    };
+
+    const int LADDER[] = {-45, -30, -15, 0, 15, 30, 45};
+    for (int d : LADDER) {
+      // Local Y for rung at world-pitch d, given player pitch:
+      // rung at d=pitchDeg passes through screen centre (localY=0).
+      // Rungs above the horizon (d > pitchDeg) draw above centre
+      // (negative localY), rungs below draw below.
+      float localY = (pitchDeg - static_cast<float>(d)) * PPD;
+      if (localY < -static_cast<float>(sh) || localY > static_cast<float>(sh))
+        continue;
+
+      Vector2 lA = worldFromLocal(-rungHalfLen, localY);
+      Vector2 lB = worldFromLocal(-rungGap, localY);
+      Vector2 rA = worldFromLocal(rungGap, localY);
+      Vector2 rB = worldFromLocal(rungHalfLen, localY);
+
+      if (d == 0) {
+        DrawLineEx(lA, lB, 2.0f, amber);
+        DrawLineEx(rA, rB, 2.0f, amber);
+      } else if (d > 0) {
+        DrawLineEx(lA, lB, 1.4f, amber);
+        DrawLineEx(rA, rB, 1.4f, amber);
+      } else {
+        // Dashed for negative pitch (below horizon)
+        Vector2 lMid = worldFromLocal(-(rungHalfLen + rungGap) * 0.5f, localY);
+        Vector2 rMid = worldFromLocal((rungHalfLen + rungGap) * 0.5f, localY);
+        DrawLineEx(lA, lMid, 1.2f, amberDim);
+        DrawLineEx(rMid, rB, 1.2f, amberDim);
+      }
+
+      // Tail tick — short downward stroke at the inner ends, suggesting
+      // "this is the side of the line below the horizon" (F-16 detail).
+      Vector2 lTickA = worldFromLocal(-rungGap, localY);
+      Vector2 lTickB = worldFromLocal(-rungGap, localY + (d >= 0 ? 5.0f : -5.0f));
+      Vector2 rTickA = worldFromLocal(rungGap, localY);
+      Vector2 rTickB = worldFromLocal(rungGap, localY + (d >= 0 ? 5.0f : -5.0f));
+      DrawLineEx(lTickA, lTickB, 1.0f, d == 0 ? amber : amberDim);
+      DrawLineEx(rTickA, rTickB, 1.0f, d == 0 ? amber : amberDim);
+
+      // Degree labels at both ends
+      char buf[8];
+      snprintf(buf, sizeof(buf), "%+d", d);
+      Vector2 lblL = worldFromLocal(-rungHalfLen - 26.0f, localY - 6.0f);
+      Vector2 lblR = worldFromLocal(rungHalfLen + 4.0f, localY - 6.0f);
+      DrawText(buf, static_cast<int>(lblL.x), static_cast<int>(lblL.y), 11,
+               amber);
+      DrawText(buf, static_cast<int>(lblR.x), static_cast<int>(lblR.y), 11,
+               amber);
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // Flight Path Marker (FPV) / velocity vector indicator. Projects a
+  // point in front of the ship along the velocity direction onto the
+  // screen. When FPV diverges from boresight, the pilot is drifting.
+  // Drawn as a small circle with three "wings": KSP/Elite/F-16 style.
+  // Hidden when nearly stationary (direction is meaningless then).
+  // ----------------------------------------------------------------
+  if (speed > Config::VELOCITY_CAM_MIN_SPD) {
+    Vector3 velDir = Vector3Scale(vel, 1.0f / speed);
+    // Sample point along velocity direction. Use a moderate distance
+    // so the marker stays in screen even at extreme speeds.
+    Vector3 fpvWorld =
+        Vector3Add(ppos, Vector3Scale(velDir, 30.0f));
+    Vector2 fpvScreen = GetWorldToScreen(fpvWorld, m_camera);
+
+    // Cull if projection is wildly off-screen (behind camera, etc.)
+    if (fpvScreen.x > -100.0f && fpvScreen.x < sw + 100.0f &&
+        fpvScreen.y > -100.0f && fpvScreen.y < sh + 100.0f) {
+      // Determine if velocity points generally behind the camera; if so,
+      // GetWorldToScreen still returns valid coords but they refer to
+      // the screen as a flipped projection. Check via dot product
+      // against the camera forward vector to detect retrograde.
+      Vector3 camFwd =
+          Vector3Normalize(Vector3Subtract(m_camera.target, m_camera.position));
+      bool retrograde = Vector3DotProduct(velDir, camFwd) < 0.0f;
+
+      const float r = 6.0f;
+      const float wing = 6.0f;
+      DrawCircleLines(static_cast<int>(fpvScreen.x),
+                      static_cast<int>(fpvScreen.y), r, amber);
+      // Three "wings" — left, right, top
+      DrawLineEx({fpvScreen.x - r, fpvScreen.y},
+                 {fpvScreen.x - r - wing, fpvScreen.y}, 1.5f, amber);
+      DrawLineEx({fpvScreen.x + r, fpvScreen.y},
+                 {fpvScreen.x + r + wing, fpvScreen.y}, 1.5f, amber);
+      DrawLineEx({fpvScreen.x, fpvScreen.y - r},
+                 {fpvScreen.x, fpvScreen.y - r - wing}, 1.5f, amber);
+
+      // Retrograde: cross through the FPV (KSP/Elite convention)
+      if (retrograde) {
+        const float d = r * 0.7f;
+        DrawLineEx({fpvScreen.x - d, fpvScreen.y - d},
+                   {fpvScreen.x + d, fpvScreen.y + d}, 1.5f, amber);
+        DrawLineEx({fpvScreen.x - d, fpvScreen.y + d},
+                   {fpvScreen.x + d, fpvScreen.y - d}, 1.5f, amber);
+      }
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // Heading tape — top-centre. ~50° of arc shown. Three-digit format
+  // (000 = north) plus N/E/S/W cardinal letters at the four points.
+  // Caret at screen centre marks the current heading.
+  // ----------------------------------------------------------------
+  {
+    const float tapeW = 320.0f;
+    const float tapeH = 26.0f;
+    const float tx = cx - tapeW * 0.5f;
+    const float ty = 18.0f;
+    const float visibleArc = 50.0f; // degrees displayed
+    const float ppd = tapeW / visibleArc; // pixels per degree
+
+    // Frame
+    DrawRectangleLinesEx({tx, ty, tapeW, tapeH}, 1.0f, amberDim);
+
+    // Tick marks every 5°. Major (with label) every 10°.
+    int startDeg = static_cast<int>(yawDeg) - static_cast<int>(visibleArc * 0.5f);
+    int endDeg = startDeg + static_cast<int>(visibleArc) + 1;
+    for (int d = startDeg; d <= endDeg; ++d) {
+      int dn = ((d % 360) + 360) % 360;
+      if (d % 5 != 0) continue;
+      float xpos = tx + (d - (yawDeg - visibleArc * 0.5f)) * ppd;
+      if (xpos < tx || xpos > tx + tapeW) continue;
+      bool major = (d % 10 == 0);
+      float h = major ? 8.0f : 4.0f;
+      DrawLineEx({xpos, ty + tapeH - h}, {xpos, ty + tapeH}, 1.0f, amber);
+      if (major) {
+        char buf[8];
+        if (dn == 0)        snprintf(buf, sizeof(buf), "N");
+        else if (dn == 90)  snprintf(buf, sizeof(buf), "E");
+        else if (dn == 180) snprintf(buf, sizeof(buf), "S");
+        else if (dn == 270) snprintf(buf, sizeof(buf), "W");
+        else                snprintf(buf, sizeof(buf), "%03d", dn);
+        int tw = MeasureText(buf, 11);
+        DrawText(buf, static_cast<int>(xpos) - tw / 2,
+                 static_cast<int>(ty) + 2, 11, amber);
+      }
+    }
+
+    // Centre caret pointing up at the active heading
+    Vector2 cTip = {cx, ty + tapeH + 2.0f};
+    Vector2 cL = {cx - 5.0f, ty + tapeH + 8.0f};
+    Vector2 cR = {cx + 5.0f, ty + tapeH + 8.0f};
+    DrawLineEx(cTip, cL, 1.5f, amber);
+    DrawLineEx(cTip, cR, 1.5f, amber);
+    DrawLineEx(cL, cR, 1.5f, amber);
+  }
+
+  // ----------------------------------------------------------------
+  // Speed tape — left edge. Mirrors the AGL tape on the right of the
+  // bottom-left HUD cluster. Shows current ground speed in m/s with
+  // a moving tick scale and a centre caret.
+  // ----------------------------------------------------------------
+  {
+    const float tapeH = 220.0f;
+    const float tapeW = 18.0f;
+    const float tx = 14.0f;
+    const float ty = cy - tapeH * 0.5f;
+
+    // Frame
+    DrawRectangle(static_cast<int>(tx) - 1, static_cast<int>(ty) - 1,
+                  static_cast<int>(tapeW) + 2, static_cast<int>(tapeH) + 2,
+                  {0, 0, 0, 160});
+    DrawRectangleLinesEx({tx, ty, tapeW, tapeH}, 1.0f, amberDim);
+
+    // Scrolling scale: 5 m/s per minor tick, 10 per major.
+    // 100 m/s spans roughly the tape height; scale = 2.2 px per m/s.
+    const float pxPerUnit = tapeH / 100.0f; // 100 m/s window
+    const float minSpd = speed - 50.0f;
+    const float maxSpd = speed + 50.0f;
+    int s0 = static_cast<int>(floorf(minSpd / 5.0f)) * 5;
+    int s1 = static_cast<int>(ceilf(maxSpd / 5.0f)) * 5;
+    for (int s = s0; s <= s1; s += 5) {
+      if (s < 0) continue;
+      float yPx = ty + tapeH * 0.5f - (s - speed) * pxPerUnit;
+      if (yPx < ty || yPx > ty + tapeH) continue;
+      bool major = (s % 10 == 0);
+      float w = major ? 7.0f : 4.0f;
+      DrawLineEx({tx + tapeW - w, yPx}, {tx + tapeW, yPx}, 1.0f,
+                 major ? amber : amberDim);
+      if (major && s > 0) {
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%d", s);
+        DrawText(buf, static_cast<int>(tx) - 22, static_cast<int>(yPx) - 5,
+                 10, amberDim);
+      }
+    }
+
+    // Centre caret + speed readout
+    Vector2 carT = {tx + tapeW + 2.0f, ty + tapeH * 0.5f - 4.0f};
+    Vector2 carM = {tx + tapeW + 8.0f, ty + tapeH * 0.5f};
+    Vector2 carB = {tx + tapeW + 2.0f, ty + tapeH * 0.5f + 4.0f};
+    DrawLineEx(carT, carM, 1.5f, amber);
+    DrawLineEx(carM, carB, 1.5f, amber);
+    DrawLineEx(carT, carB, 1.5f, amber);
+
+    DrawText("SPD", static_cast<int>(tx) - 4, static_cast<int>(ty) - 14, 11,
+             amber);
+    char sbuf[12];
+    snprintf(sbuf, sizeof(sbuf), "%.0f", speed);
+    DrawText(sbuf, static_cast<int>(tx) - 4,
+             static_cast<int>(ty + tapeH) + 4, 14, amber);
+  }
 }
 
 // ================================================================

@@ -63,12 +63,39 @@ constexpr int FLIGHT_ASSIST_DEFAULT = 2; // Standard / Recruit
 constexpr float ASSIST_LEVEL_COEFFS[4] = {0.0f, 0.18f, 0.42f, 0.75f};
 
 // ----------------------------------------------------------------
-// Camera (single follow camera — five-view system in camera_system.md)
+// Camera — five-view system (Chase / Velocity / Tactical / ThreatLock /
+// Classic). Keys 1–5 select; 2-second fade-out label confirms switch.
+// See terra_rebuild/camera_system.md for the design and tactical notes.
 // ----------------------------------------------------------------
-constexpr float CAM_HEIGHT = 8.0f;
-constexpr float CAM_DISTANCE = 18.0f;
+
+// Shared
 constexpr float CAM_FOV = 75.0f;     // degrees
-constexpr float CAM_LERP = 8.0f;     // follow lag per second
+constexpr float CAM_LERP = 8.0f;     // follow position lerp per second
+
+// Chase (View 1) and Velocity (View 2)
+constexpr float CAM_HEIGHT = 8.0f;            // units above player
+constexpr float CAM_DISTANCE = 18.0f;         // units behind player
+constexpr float VELOCITY_CAM_MIN_SPD = 5.0f;  // blend to chase below this speed
+
+// Tactical overhead (View 3) — note: camera.up MUST be {0,0,1}, not {0,1,0}
+constexpr float TACTICAL_CAM_ALTITUDE = 130.0f; // world units above player
+constexpr float TACTICAL_CAM_FOV = 55.0f;       // narrower FOV for less distortion
+
+// Threat-lock (View 4)
+constexpr float THREAT_CAM_MAX_ROT = 1.5708f;   // rad/s — 90°/sec rotation cap
+constexpr float THREAT_CAM_HYSTERESIS = 0.20f;  // 20% score gap to switch target
+
+// Classic / original-Virus view (View 5) — fixed world-space offset,
+// camera never rotates with the ship; world-north stays at top of screen.
+constexpr float CLASSIC_CAM_OFFSET_X = -15.0f;  // east-west offset
+constexpr float CLASSIC_CAM_OFFSET_Z = -35.0f;  // north of player (-Z = north)
+constexpr float CLASSIC_CAM_ALTITUDE = 42.0f;   // above player
+constexpr float CLASSIC_CAM_FOV = 65.0f;        // slightly narrower than chase
+constexpr float CLASSIC_CAM_LERP = 5.0f;        // slower = more detached feel
+
+// View-switch label fade (2 second display, last 0.5s fades to transparent)
+constexpr float CAM_VIEW_LABEL_DURATION = 2.0f;
+constexpr float CAM_VIEW_LABEL_FADE = 0.5f;
 
 // ----------------------------------------------------------------
 // Terrain / planet — Fourier (sine) synthesis, toroidal world
