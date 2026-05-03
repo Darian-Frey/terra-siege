@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 
 #ifdef DEV_MODE
 #include <filesystem>
@@ -169,42 +170,67 @@ static void recordSample(const Camera3D &cam, const Player &player,
 // ================================================================
 void GameState::init() {
   double t0 = GetTime();
+  loadWorld(12345u); // stable default seed — DEV_MODE F5 rerolls
+  double t1 = GetTime();
+  TraceLog(LOG_INFO, "Terrain generation: %.2f seconds (%d x %d heightmap)",
+           t1 - t0, Config::HEIGHTMAP_SIZE, Config::HEIGHTMAP_SIZE);
+
+  // Camera setup
+  m_camera.fovy = Config::CAM_FOV;
+  m_camera.projection = CAMERA_PERSPECTIVE;
+  m_camera.up = {0.0f, 1.0f, 0.0f};
+
+  // Initialise follow camera at sensible position
+  Vector3 startPos = m_player.position();
+  Vector3 fwd = m_player.forward();
+  m_camera.position =
+      Vector3Add(startPos, Vector3Add(Vector3Scale(fwd, -Config::CAM_DISTANCE),
+                                      {0, Config::CAM_HEIGHT, 0}));
+  m_camera.target = Vector3Add(startPos, {0, 1.5f, 0});
+
+  m_camMode = CamMode::Follow;
+  m_state = AppState::Playing;
+
+#ifdef DEV_MODE
+  openLog();
+#endif
+}
+
+// ================================================================
+// loadWorld — generate terrain for the given seed and place the player
+// above the world centre. Used by init() and the DEV_MODE seed-reroll
+// hotkey. Progress callback drives the loading screen.
+// ================================================================
+void GameState::loadWorld(uint32_t seed) {
+  m_seed = seed;
 
   // Throttle the loading-screen render to ~30 fps so we don't spend
   // meaningful time on UI during chunk meshing.
   double lastDraw = 0.0;
   auto progressCb = [&lastDraw](const char *step, float progress) {
     double now = GetTime();
-    if (progress < 1.0f && (now - lastDraw) < 0.033) return; // ~30 fps
+    if (progress < 1.0f && (now - lastDraw) < 0.033) return;
     lastDraw = now;
 
     int sw = GetScreenWidth();
     int sh = GetScreenHeight();
 
     BeginDrawing();
-    ClearBackground({18, 28, 48, 255}); // dark blue
+    ClearBackground({18, 28, 48, 255});
 
-    // Title
     const char *title = "TERRA-SIEGE";
     int tw = MeasureText(title, 48);
     DrawText(title, sw / 2 - tw / 2, sh / 2 - 110, 48, {230, 235, 245, 255});
 
-    // Subtitle
     const char *sub = "a modern reimagining of Virus (1988)";
     int sbw = MeasureText(sub, 16);
-    DrawText(sub, sw / 2 - sbw / 2, sh / 2 - 60, 16,
-             {150, 165, 185, 220});
+    DrawText(sub, sw / 2 - sbw / 2, sh / 2 - 60, 16, {150, 165, 185, 220});
 
-    // Step label
     int stepW = MeasureText(step, 20);
-    DrawText(step, sw / 2 - stepW / 2, sh / 2 + 5, 20,
-             {200, 215, 235, 255});
+    DrawText(step, sw / 2 - stepW / 2, sh / 2 + 5, 20, {200, 215, 235, 255});
 
-    // Progress bar
-    const int barW = 440;
-    const int barH = 18;
-    const int barX = sw / 2 - barW / 2;
-    const int barY = sh / 2 + 50;
+    const int barW = 440, barH = 18;
+    const int barX = sw / 2 - barW / 2, barY = sh / 2 + 50;
     DrawRectangle(barX - 2, barY - 2, barW + 4, barH + 4,
                   {80, 100, 130, 255});
     DrawRectangle(barX, barY, barW, barH, {30, 40, 60, 255});
@@ -212,7 +238,6 @@ void GameState::init() {
     if (fillW > 0)
       DrawRectangle(barX, barY, fillW, barH, {90, 200, 110, 255});
 
-    // Percent text
     char pct[16];
     snprintf(pct, sizeof(pct), "%d%%", static_cast<int>(progress * 100.0f));
     int pw = MeasureText(pct, 18);
@@ -221,38 +246,13 @@ void GameState::init() {
     EndDrawing();
   };
 
-  m_planet.generate(12345u, progressCb);
-  double t1 = GetTime();
-  TraceLog(LOG_INFO, "Terrain generation: %.2f seconds (%d x %d heightmap)",
-           t1 - t0, Config::HEIGHTMAP_SIZE, Config::HEIGHTMAP_SIZE);
+  m_planet.generate(seed, progressCb);
 
-  // Start player above terrain centre facing north (+Z)
+  // Spawn above world centre facing +Z (north).
   float mid = m_planet.worldSize() * 0.5f;
   float ground = m_planet.heightAt(mid, mid);
   Vector3 startPos = {mid, ground + 12.0f, mid};
-
   m_player.init(startPos, Config::FLIGHT_ASSIST_DEFAULT);
-
-  // Camera setup
-  m_camera.fovy = Config::CAM_FOV;
-  m_camera.projection = CAMERA_PERSPECTIVE;
-  m_camera.up = {0.0f, 1.0f, 0.0f};
-
-  // Initialise follow camera at sensible position
-  Vector3 fwd = m_player.forward();
-  m_camera.position =
-      Vector3Add(startPos, Vector3Add(Vector3Scale(fwd, -Config::CAM_DISTANCE),
-                                      {0, Config::CAM_HEIGHT, 0}));
-  m_camera.target = Vector3Add(startPos, {0, 1.5f, 0});
-
-  // Start in follow mode
-  m_camMode = CamMode::Follow;
-
-  m_state = AppState::Playing;
-
-#ifdef DEV_MODE
-  openLog();
-#endif
 }
 
 // ================================================================
@@ -286,6 +286,23 @@ void GameState::handleDevKeys() {
       stopRecording();
     else
       startRecording();
+  }
+
+  // F5 — reroll terrain seed (regenerate world). Useful for confirming
+  // that two seeds produce visibly distinct landscapes.
+  if (IsKeyPressed(KEY_F5)) {
+    uint32_t newSeed =
+        static_cast<uint32_t>(std::time(nullptr)) ^ (m_seed * 2654435761u);
+    if (newSeed == 0) newSeed = 1;
+    TraceLog(LOG_INFO, "Reseeding terrain: 0x%08x -> 0x%08x", m_seed, newSeed);
+    loadWorld(newSeed);
+    // Re-anchor the camera so it doesn't lerp through the old world.
+    Vector3 startPos = m_player.position();
+    Vector3 fwd = m_player.forward();
+    m_camera.position = Vector3Add(
+        startPos, Vector3Add(Vector3Scale(fwd, -Config::CAM_DISTANCE),
+                             {0, Config::CAM_HEIGHT, 0}));
+    m_camera.target = Vector3Add(startPos, {0, 1.5f, 0});
   }
 
 #endif
@@ -582,7 +599,7 @@ void GameState::drawHUD() const {
   DrawText(controls, 12, sh - 20, 14, {180, 180, 180, 220});
 
 #ifdef DEV_MODE
-  DrawText("[DEV]  F1:cam  F2:assist  F4:rec",
+  DrawText("[DEV]  F1:cam  F2:assist  F4:rec  F5:reseed",
            sw - 280, sh - 20, 14, YELLOW);
 
   // Flight recorder indicator — large pulsing badge at top-center

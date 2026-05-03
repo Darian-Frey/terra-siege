@@ -5,11 +5,13 @@
 
 // ====================================================================
 // Heightmap
-// Diamond-Square fractal generation + smoothing + river carving +
-// lake flooding. Produces a water-type map alongside height data so
-// the renderer can colour ocean / lake / river differently.
+// Fourier-synthesis (sine wave) terrain generation, plus river carving
+// and lake flooding. Produces a water-type map alongside height data so
+// the renderer can colour ocean / lake / river distinctly.
 // Size must be (2^n + 1): 129, 257, 513, 1025 etc.
 // Heights stored normalised [0,1].
+// Coordinates wrap toroidally — sample() handles negative and out-of-
+// range queries.
 // ====================================================================
 
 enum class WaterType : uint8_t {
@@ -19,23 +21,29 @@ enum class WaterType : uint8_t {
   River = 3, // flowing river (lighter, animated later)
 };
 
+struct SineWaveTerm {
+  float freqX;     // spatial frequency in X (rad per cell)
+  float freqZ;     // spatial frequency in Z (rad per cell)
+  float amplitude; // contribution weight
+  float phase;     // seed-derived offset (radians)
+};
+
 class Heightmap {
 public:
   Heightmap() = default;
 
-  void generate(int size, float roughness = 0.55f, uint32_t seed = 0);
+  void generate(int size, uint32_t seed = 0);
 
-  float get(int x, int z) const;
-  float sample(float x, float z) const;
+  float get(int x, int z) const;        // wraps toroidally
+  float sample(float x, float z) const; // bilinear, wraps toroidally
   WaterType waterAt(int x, int z) const;
 
   int size() const { return m_size; }
 
 private:
   // Generation pipeline
-  void diamondSquare(float roughness);
-  void smooth(int passes);
-  void applyRadialFalloff();
+  void buildSineTerms(uint32_t seed, std::vector<SineWaveTerm> &terms);
+  void sineWaveGenerate(uint32_t seed);
   void normalise();
   void classifyOcean();
   void carveRivers();

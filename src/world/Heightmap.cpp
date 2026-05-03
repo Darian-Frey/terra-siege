@@ -7,7 +7,7 @@
 #include <queue>
 
 // ================================================================
-// RNG
+// RNG — xorshift32
 // ================================================================
 uint32_t Heightmap::nextRand() {
   m_rng ^= m_rng << 13;
@@ -22,23 +22,27 @@ float Heightmap::randF(float lo, float hi) {
 }
 
 // ================================================================
+// Toroidal index wrap helper.
+// The heightmap stores m_size cells; cell (m_size-1) is geometrically
+// identical to cell 0 because the world wraps. We wrap modulo
+// (m_size - 1) so the duplicated edge column never causes a stutter.
+// ================================================================
+static inline int wrapIdx(int v, int period) {
+  v %= period;
+  if (v < 0) v += period;
+  return v;
+}
+
+// ================================================================
 // generate — full pipeline
 // ================================================================
-void Heightmap::generate(int size, float roughness, uint32_t seed) {
+void Heightmap::generate(int size, uint32_t seed) {
   m_size = size;
   m_data.assign(static_cast<size_t>(size * size), 0.0f);
   m_water.assign(static_cast<size_t>(size * size), WaterType::None);
   m_rng = (seed == 0) ? static_cast<uint32_t>(std::time(nullptr)) : seed;
 
-  int last = size - 1;
-  set(0, 0, randF(0.3f, 0.7f));
-  set(last, 0, randF(0.3f, 0.7f));
-  set(0, last, randF(0.3f, 0.7f));
-  set(last, last, randF(0.3f, 0.7f));
-
-  diamondSquare(roughness);
-  smooth(12);
-  applyRadialFalloff();
+  sineWaveGenerate(m_rng);
   normalise();
   classifyOcean();
   carveRivers();
@@ -46,99 +50,122 @@ void Heightmap::generate(int size, float roughness, uint32_t seed) {
 }
 
 // ================================================================
-// Diamond-Square
+// buildSineTerms — assemble the 16-term Fourier basis from the seed.
+//
+// Every (kx, kz) pair below is an INTEGER number of cycles over one
+// tile period (m_size - 1 cells). With ω = 2π / tilePeriod, each
+// term's spatial frequency is k·ω, so sin(k·ω·tilePeriod) = sin(2π·k)
+// — identical to sin(0). The terrain therefore wraps EXACTLY at the
+// tile boundary. Coprime small primes (5, 7, 11, 13, 19, …, 43) keep
+// the visible variation high within each tile.
+//
+// This is the property the chunk-tiling renderer needs: without it,
+// adjacent tile copies disagree about height and slope across the
+// seam and a visible cliff appears.
 // ================================================================
-void Heightmap::diamondSquare(float roughness) {
-  int step = m_size - 1;
-  float scale = 1.0f;
+void Heightmap::buildSineTerms(uint32_t seed,
+                               std::vector<SineWaveTerm> &terms) {
+  const float omega = 2.0f * 3.14159265f / static_cast<float>(m_size - 1);
 
-  while (step > 1) {
-    int half = step / 2;
+  uint32_t rng = seed ^ 0xDEADBEEF;
+  auto nextPhase = [&]() -> float {
+    rng ^= rng << 13;
+    rng ^= rng >> 17;
+    rng ^= rng << 5;
+    return static_cast<float>(rng) / static_cast<float>(0xFFFFFFFFu) * 6.28318f;
+  };
 
-    for (int z = 0; z < m_size - 1; z += step)
-      for (int x = 0; x < m_size - 1; x += step) {
-        float avg = (get(x, z) + get(x + step, z) + get(x, z + step) +
-                     get(x + step, z + step)) *
-                    0.25f;
-        set(x + half, z + half, avg + randF(-scale, scale));
-      }
+  terms.clear();
+  terms.reserve(static_cast<size_t>(Config::SINE_CONTINENTAL_COUNT +
+                                    Config::SINE_REGIONAL_COUNT +
+                                    Config::SINE_LOCAL_COUNT));
 
-    for (int z = 0; z < m_size; z += half)
-      for (int x = (z + half) % step; x < m_size; x += step) {
-        float sum = 0.0f;
-        int cnt = 0;
-        if (z - half >= 0) {
-          sum += get(x, z - half);
-          ++cnt;
-        }
-        if (z + half < m_size) {
-          sum += get(x, z + half);
-          ++cnt;
-        }
-        if (x - half >= 0) {
-          sum += get(x - half, z);
-          ++cnt;
-        }
-        if (x + half < m_size) {
-          sum += get(x + half, z);
-          ++cnt;
-        }
-        set(x, z, (sum / static_cast<float>(cnt)) + randF(-scale, scale));
-      }
+  // ---- Continental (4) — broad plateaus, deep valleys, ranges ----
+  // 1–3 cycles per world. Different X/Z multipliers break grid alignment.
+  const int CONT_K[4][2] = {
+      {1, 1}, {1, 3}, {3, 1}, {3, 3},
+  };
+  for (int i = 0; i < Config::SINE_CONTINENTAL_COUNT; ++i) {
+    float fx = static_cast<float>(CONT_K[i][0]) * omega;
+    float fz = static_cast<float>(CONT_K[i][1]) * omega;
+    terms.push_back({fx, fz, Config::SINE_CONTINENTAL_AMP, nextPhase()});
+  }
 
-    step = half;
-    scale *= std::pow(2.0f, -roughness);
+  // ---- Regional (6) — hills, ridges, river valleys (~6–13 cycles/tile) ----
+  const int REG_K[6][2] = {
+      {5, 7}, {7, 11}, {11, 5}, {5, 13}, {13, 7}, {11, 9},
+  };
+  for (int i = 0; i < Config::SINE_REGIONAL_COUNT; ++i) {
+    float fx = static_cast<float>(REG_K[i][0]) * omega;
+    float fz = static_cast<float>(REG_K[i][1]) * omega;
+    float amp =
+        Config::SINE_REGIONAL_AMP * (1.0f - 0.1f * static_cast<float>(i));
+    terms.push_back({fx, fz, amp, nextPhase()});
+  }
+
+  // ---- Local (6) — surface texture (~19–43 cycles/tile) ----
+  const int LOC_K[6][2] = {
+      {19, 23}, {23, 29}, {29, 31}, {31, 37}, {37, 41}, {41, 43},
+  };
+  for (int i = 0; i < Config::SINE_LOCAL_COUNT; ++i) {
+    float fx = static_cast<float>(LOC_K[i][0]) * omega;
+    float fz = static_cast<float>(LOC_K[i][1]) * omega;
+    float amp =
+        Config::SINE_LOCAL_AMP * (1.0f - 0.08f * static_cast<float>(i));
+    terms.push_back({fx, fz, amp, nextPhase()});
   }
 }
 
 // ================================================================
-// Smooth — box blur
+// sineWaveGenerate — fill m_data[] via Fourier synthesis with domain
+// warping. ~16 sinf calls per cell; <100 ms for 1025² on modern CPUs.
 // ================================================================
-void Heightmap::smooth(int passes) {
-  std::vector<float> tmp(m_data.size());
-  for (int p = 0; p < passes; ++p) {
-    for (int z = 0; z < m_size; ++z)
-      for (int x = 0; x < m_size; ++x) {
-        float sum = 0.0f;
-        int cnt = 0;
-        for (int dz = -1; dz <= 1; ++dz)
-          for (int dx = -1; dx <= 1; ++dx) {
-            int nx = x + dx, nz = z + dz;
-            if (inBounds(nx, nz)) {
-              sum += m_data[static_cast<size_t>(nz * m_size + nx)];
-              ++cnt;
-            }
-          }
-        tmp[static_cast<size_t>(z * m_size + x)] =
-            sum / static_cast<float>(cnt);
-      }
-    m_data = tmp;
-  }
-}
+void Heightmap::sineWaveGenerate(uint32_t seed) {
+  std::vector<SineWaveTerm> terms;
+  buildSineTerms(seed, terms);
 
-// ================================================================
-// Radial falloff — taper edges to ocean
-// ================================================================
-void Heightmap::applyRadialFalloff() {
-  float centre = static_cast<float>(m_size - 1) * 0.5f;
-  float maxR = centre * 0.82f;
+  // Per-seed warp phase so the warping pattern varies between worlds.
+  uint32_t rng2 = seed ^ 0xCAFEBABE;
+  rng2 ^= rng2 << 13;
+  rng2 ^= rng2 >> 17;
+  rng2 ^= rng2 << 5;
+  const float warpPhase =
+      static_cast<float>(rng2) / static_cast<float>(0xFFFFFFFFu) * 6.28318f;
 
-  for (int z = 0; z < m_size; ++z)
+  // Warp frequency must also be an integer multiple of ω so the domain
+  // warp is itself periodic at the tile boundary. Otherwise the warped
+  // sample coordinates disagree across the seam and the wrap is broken.
+  const float omega = 2.0f * 3.14159265f / static_cast<float>(m_size - 1);
+  const float warpFreq = static_cast<float>(Config::SINE_WARP_CYCLES) * omega;
+
+  float totalAmp = 0.0f;
+  for (const auto &t : terms) totalAmp += t.amplitude;
+  if (totalAmp <= 0.0f) totalAmp = 1.0f;
+
+  for (int z = 0; z < m_size; ++z) {
     for (int x = 0; x < m_size; ++x) {
-      float dx = static_cast<float>(x) - centre;
-      float dz = static_cast<float>(z) - centre;
-      float r = sqrtf(dx * dx + dz * dz);
-      float factor = 1.0f;
-      if (r > maxR) {
-        float t = std::min((r - maxR) / (centre - maxR), 1.0f);
-        factor = (cosf(t * 3.14159f) + 1.0f) * 0.5f;
-      }
-      m_data[static_cast<size_t>(z * m_size + x)] *= factor;
+      float fx = static_cast<float>(x);
+      float fz = static_cast<float>(z);
+
+      float warpX =
+          fx + Config::SINE_WARP_AMPLITUDE * sinf(fx * warpFreq + warpPhase);
+      float warpZ = fz + Config::SINE_WARP_AMPLITUDE *
+                             sinf(fz * warpFreq + warpPhase + 1.5708f);
+
+      float h = 0.0f;
+      for (const auto &t : terms)
+        h += t.amplitude *
+             sinf(t.freqX * warpX + t.freqZ * warpZ + t.phase);
+
+      // Map roughly [-totalAmp, +totalAmp] → [0, 1]
+      h = (h / totalAmp) * 0.5f + 0.5f;
+      m_data[static_cast<size_t>(z * m_size + x)] = h;
     }
+  }
 }
 
 // ================================================================
-// Normalise
+// Normalise to exactly [0,1]
 // ================================================================
 void Heightmap::normalise() {
   float lo = 1e9f, hi = -1e9f;
@@ -166,7 +193,7 @@ void Heightmap::classifyOcean() {
 // ================================================================
 
 // Walk downhill from (startX,startZ), recording path.
-// Returns true if path reaches the ocean or map edge.
+// Returns true if path reaches the ocean.
 bool Heightmap::flowDownhill(int startX, int startZ,
                              std::vector<std::pair<int, int>> &path) {
   const int dx8[] = {-1, 0, 1, -1, 1, -1, 0, 1};
@@ -181,18 +208,17 @@ bool Heightmap::flowDownhill(int startX, int startZ,
     path.push_back({cx, cz});
     visited[static_cast<size_t>(cz * m_size + cx)] = true;
 
-    // Reached ocean or edge — success
-    if (waterAt(cx, cz) == WaterType::Ocean || cx <= 0 || cx >= m_size - 1 ||
-        cz <= 0 || cz >= m_size - 1)
+    // Reached ocean — success. (No edge termination — toroidal world has
+    // no edges; the river either reaches sea or dies in a local minimum.)
+    if (waterAt(cx, cz) == WaterType::Ocean)
       return true;
 
-    // Find steepest descent neighbour
+    // Find steepest descent neighbour (using wrapping get())
     float lowestH = get(cx, cz);
     int bestX = -1, bestZ = -1;
     for (int d = 0; d < 8; ++d) {
-      int nx = cx + dx8[d], nz = cz + dz8[d];
-      if (!inBounds(nx, nz))
-        continue;
+      int nx = wrapIdx(cx + dx8[d], m_size - 1);
+      int nz = wrapIdx(cz + dz8[d], m_size - 1);
       if (visited[static_cast<size_t>(nz * m_size + nx)])
         continue;
       float h = get(nx, nz);
@@ -204,7 +230,7 @@ bool Heightmap::flowDownhill(int startX, int startZ,
     }
 
     if (bestX < 0)
-      return false; // trapped in local minimum
+      return false; // local minimum
     cx = bestX;
     cz = bestZ;
   }
@@ -218,9 +244,8 @@ void Heightmap::carveChannel(const std::vector<std::pair<int, int>> &path) {
   for (auto &[px, pz] : path) {
     for (int dz = -W; dz <= W; ++dz)
       for (int dx = -W; dx <= W; ++dx) {
-        int nx = px + dx, nz = pz + dz;
-        if (!inBounds(nx, nz))
-          continue;
+        int nx = wrapIdx(px + dx, m_size - 1);
+        int nz = wrapIdx(pz + dz, m_size - 1);
 
         // Taper carve depth toward channel edges
         float dist = sqrtf(static_cast<float>(dx * dx + dz * dz));
@@ -233,7 +258,6 @@ void Heightmap::carveChannel(const std::vector<std::pair<int, int>> &path) {
         if (h < 0.0f)
           h = 0.0f;
 
-        // Mark as river if above ocean level, else ocean takes over
         if (h >= Config::SEA_LEVEL)
           waterRef(nx, nz) = WaterType::River;
         else
@@ -247,11 +271,11 @@ void Heightmap::carveRivers() {
   const float sourceMin = Config::RIVER_SOURCE_MIN_H;
   const int minLen = Config::RIVER_MIN_LENGTH;
 
-  // Collect candidate source cells (high ground, dry land)
+  // High-ground dry-land sources, anywhere on the toroidal map.
   std::vector<std::pair<int, int>> candidates;
-  candidates.reserve(1024);
-  for (int z = m_size / 4; z < 3 * m_size / 4; ++z)
-    for (int x = m_size / 4; x < 3 * m_size / 4; ++x)
+  candidates.reserve(2048);
+  for (int z = 0; z < m_size; ++z)
+    for (int x = 0; x < m_size; ++x)
       if (get(x, z) >= sourceMin && waterAt(x, z) == WaterType::None)
         candidates.push_back({x, z});
 
@@ -264,7 +288,6 @@ void Heightmap::carveRivers() {
 
   while (carved < count && attempts < maxAttempts) {
     ++attempts;
-    // Pick a random candidate
     size_t idx = static_cast<size_t>(nextRand() %
                                      static_cast<uint32_t>(candidates.size()));
     auto [sx, sz] = candidates[idx];
@@ -284,8 +307,7 @@ void Heightmap::carveRivers() {
 // ================================================================
 void Heightmap::floodFillLake(int startX, int startZ) {
   const int maxCells = Config::LAKE_MAX_CELLS;
-  float lakeLevel =
-      get(startX, startZ) + 0.02f; // fill slightly above local min
+  float lakeLevel = get(startX, startZ) + 0.02f;
 
   std::queue<std::pair<int, int>> q;
   std::vector<bool> visited(static_cast<size_t>(m_size * m_size), false);
@@ -310,9 +332,8 @@ void Heightmap::floodFillLake(int startX, int startZ) {
     ++filled;
 
     for (int d = 0; d < 4; ++d) {
-      int nx = cx + dx4[d], nz = cz + dz4[d];
-      if (!inBounds(nx, nz))
-        continue;
+      int nx = wrapIdx(cx + dx4[d], m_size - 1);
+      int nz = wrapIdx(cz + dz4[d], m_size - 1);
       size_t ni = static_cast<size_t>(nz * m_size + nx);
       if (visited[ni])
         continue;
@@ -328,14 +349,13 @@ void Heightmap::floodLakes() {
   const float minH = Config::LAKE_MIN_H;
   const float maxH = Config::LAKE_MAX_H;
 
-  // Find local minima on dry land in the valid height band
   std::vector<std::pair<int, int>> minima;
   const int dx8[] = {-1, 0, 1, -1, 1, -1, 0, 1};
   const int dz8[] = {-1, -1, -1, 0, 0, 1, 1, 1};
 
-  const int margin = m_size / 6; // exclude outer ~17% — falloff zone
-  for (int z = margin; z < m_size - margin; ++z)
-    for (int x = margin; x < m_size - margin; ++x) {
+  // No margin needed — toroidal world has no falloff zone to exclude.
+  for (int z = 0; z < m_size; ++z)
+    for (int x = 0; x < m_size; ++x) {
       if (waterAt(x, z) != WaterType::None)
         continue;
       float h = get(x, z);
@@ -344,7 +364,9 @@ void Heightmap::floodLakes() {
 
       bool isMin = true;
       for (int d = 0; d < 8; ++d) {
-        if (get(x + dx8[d], z + dz8[d]) < h) {
+        int nx = wrapIdx(x + dx8[d], m_size - 1);
+        int nz = wrapIdx(z + dz8[d], m_size - 1);
+        if (get(nx, nz) < h) {
           isMin = false;
           break;
         }
@@ -353,7 +375,6 @@ void Heightmap::floodLakes() {
         minima.push_back({x, z});
     }
 
-  // Shuffle and take up to count
   for (size_t i = minima.size(); i > 1; --i) {
     size_t j = static_cast<size_t>(nextRand() % static_cast<uint32_t>(i));
     std::swap(minima[i - 1], minima[j]);
@@ -371,41 +392,56 @@ void Heightmap::floodLakes() {
 }
 
 // ================================================================
-// Accessors
+// Accessors — toroidal wrapping.
+// Cell column/row (m_size-1) is identical to 0 by construction, so we
+// wrap modulo (m_size - 1) to avoid a duplicated-edge stutter.
 // ================================================================
 bool Heightmap::inBounds(int x, int z) const {
   return x >= 0 && x < m_size && z >= 0 && z < m_size;
 }
 
 void Heightmap::set(int x, int z, float value) {
-  x = std::clamp(x, 0, m_size - 1);
-  z = std::clamp(z, 0, m_size - 1);
+  x = wrapIdx(x, m_size - 1);
+  z = wrapIdx(z, m_size - 1);
   m_data[static_cast<size_t>(z * m_size + x)] = value;
 }
 
 float Heightmap::get(int x, int z) const {
-  x = std::clamp(x, 0, m_size - 1);
-  z = std::clamp(z, 0, m_size - 1);
+  int period = m_size - 1;
+  x = wrapIdx(x, period);
+  z = wrapIdx(z, period);
   return m_data[static_cast<size_t>(z * m_size + x)];
 }
 
 float Heightmap::sample(float x, float z) const {
+  const float period = static_cast<float>(m_size - 1);
+  // fmodf returns a value with the sign of the dividend — add period if negative.
+  x = fmodf(x, period);
+  if (x < 0.0f) x += period;
+  z = fmodf(z, period);
+  if (z < 0.0f) z += period;
+
   int ix = static_cast<int>(x);
   int iz = static_cast<int>(z);
   float fx = x - static_cast<float>(ix);
   float fz = z - static_cast<float>(iz);
-  return get(ix, iz) * (1 - fx) * (1 - fz) + get(ix + 1, iz) * fx * (1 - fz) +
-         get(ix, iz + 1) * (1 - fx) * fz + get(ix + 1, iz + 1) * fx * fz;
+
+  // get() already wraps, so ix+1 / iz+1 will tile correctly even at the seam.
+  return get(ix, iz) * (1 - fx) * (1 - fz) +
+         get(ix + 1, iz) * fx * (1 - fz) +
+         get(ix, iz + 1) * (1 - fx) * fz +
+         get(ix + 1, iz + 1) * fx * fz;
 }
 
 WaterType &Heightmap::waterRef(int x, int z) {
-  x = std::clamp(x, 0, m_size - 1);
-  z = std::clamp(z, 0, m_size - 1);
+  x = wrapIdx(x, m_size - 1);
+  z = wrapIdx(z, m_size - 1);
   return m_water[static_cast<size_t>(z * m_size + x)];
 }
 
 WaterType Heightmap::waterAt(int x, int z) const {
-  x = std::clamp(x, 0, m_size - 1);
-  z = std::clamp(z, 0, m_size - 1);
+  int period = m_size - 1;
+  x = wrapIdx(x, period);
+  z = wrapIdx(z, period);
   return m_water[static_cast<size_t>(z * m_size + x)];
 }

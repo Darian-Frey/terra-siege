@@ -69,13 +69,13 @@ constexpr float CAM_FOV = 75.0f;     // degrees
 constexpr float CAM_LERP = 8.0f;     // follow lag per second
 
 // ----------------------------------------------------------------
-// Terrain / planet
+// Terrain / planet — Fourier (sine) synthesis, toroidal world
 // ----------------------------------------------------------------
-constexpr int HEIGHTMAP_SIZE = 2049;  // must be 2^n + 1 (was 1025)
-constexpr int CHUNK_COUNT = 32;       // 2048/32 = 64 cells per chunk (unchanged per-chunk density)
+constexpr int HEIGHTMAP_SIZE = 1025;  // must be 2^n + 1
+constexpr int CHUNK_COUNT = 16;       // 1024/16 = 64 cells per chunk
 constexpr int CHUNK_VERTS = 32;       // quads per chunk edge
-constexpr float TERRAIN_SCALE = 4.0f; // world units per heightmap cell (world ~8192×8192)
-constexpr float TERRAIN_HEIGHT_MAX = 180.0f; // much taller mountains (was 55)
+constexpr float TERRAIN_SCALE = 8.0f; // world units per heightmap cell (world ~8192×8192)
+constexpr float TERRAIN_HEIGHT_MAX = 120.0f; // peak elevation, world units
 constexpr float TERRAIN_CURVATURE = 0.00015f; // curvature cosine coefficient
 constexpr float FOG_NEAR = 700.0f;
 constexpr float FOG_FAR = 2000.0f;
@@ -177,24 +177,41 @@ constexpr int SOUND_CHANNELS = 4; // concurrent weapon fire channels
 constexpr float AUDIO_MAX_DISTANCE = 300.0f;
 
 // ----------------------------------------------------------------
-// Terrain generation
+// Terrain generation — Fourier synthesis, exact-tiling.
+// 16 sine terms across three octaves (Continental + Regional + Local).
+// Each term uses an integer number of cycles per (HEIGHTMAP_SIZE-1)
+// cells so the terrain wraps SEAMLESSLY at the world boundary — the
+// chunk-tiling renderer relies on this to show an infinite landscape
+// with no visible edge or slope kink.
+// Coprime small primes for cycle counts (5, 7, 11, 13, 19, …, 43)
+// keep the visible variation high within a tile while guaranteeing
+// exact periodicity. Domain warp uses a single tile-cycle so it is
+// also periodic.
 // ----------------------------------------------------------------
-constexpr float TERRAIN_ROUGHNESS = 0.55f; // lower = smoother, larger features
-constexpr float SEA_LEVEL = 0.20f;         // fraction of HEIGHT_MAX
+constexpr float SEA_LEVEL = 0.30f; // fraction of HEIGHT_MAX — ~30% ocean
+
+constexpr int SINE_CONTINENTAL_COUNT = 4;
+constexpr int SINE_REGIONAL_COUNT = 6;
+constexpr int SINE_LOCAL_COUNT = 6;
+
+constexpr float SINE_CONTINENTAL_AMP = 0.50f;
+constexpr float SINE_REGIONAL_AMP = 0.25f;
+constexpr float SINE_LOCAL_AMP = 0.06f;
+
+constexpr float SINE_WARP_AMPLITUDE = 18.0f; // cells of input perturbation
+constexpr int SINE_WARP_CYCLES = 1;          // cycles of warp per tile period
 
 // Rivers
-constexpr int RIVER_COUNT = 20; // number of rivers to carve (scaled for 4× area)
-constexpr float RIVER_SOURCE_MIN_H =
-    0.60f; // min normalised height for river source
-constexpr float RIVER_CARVE_DEPTH = 0.04f; // how deep to cut the channel
-constexpr int RIVER_WIDTH = 2;             // cells either side of centreline
-constexpr int RIVER_MIN_LENGTH = 40;       // discard rivers shorter than this
+constexpr int RIVER_COUNT = 8; // number of rivers to carve
+constexpr float RIVER_SOURCE_MIN_H = 0.65f;
+constexpr float RIVER_CARVE_DEPTH = 0.035f;
+constexpr int RIVER_WIDTH = 3;
+constexpr int RIVER_MIN_LENGTH = 60;
 
 // Lakes
-constexpr int LAKE_COUNT = 40;      // max inland lakes (scaled for 4× area)
-constexpr float LAKE_MIN_H = 0.22f; // must be above sea level
-constexpr float LAKE_MAX_H = 0.55f; // not on mountain tops
-constexpr int LAKE_MAX_CELLS = 800; // max flood-fill size   // fraction of
-                                    // HEIGHT_MAX — below this is flat ocean
+constexpr int LAKE_COUNT = 16;
+constexpr float LAKE_MIN_H = 0.30f;
+constexpr float LAKE_MAX_H = 0.60f;
+constexpr int LAKE_MAX_CELLS = 1200;
 
 } // namespace Config

@@ -16,7 +16,9 @@ public:
   ~TerrainChunk() = default;
 
   void build(const Heightmap &hmap, int originX, int originZ, int cellsPerEdge);
-  void draw(Vector3 cameraPos) const;
+  // Draw at a world-space offset. Planet picks the tile offset closest to
+  // the camera so the toroidal world appears infinite in every direction.
+  void draw(Vector3 offset) const;
   void unload();
 
   bool isBuilt() const { return m_built; }

@@ -6,14 +6,18 @@
 // ================================================================
 
 Color TerrainChunk::landColor(float h) const {
-  // h is normalised [0,1]
-  if (h < 0.25f)
+  // h is normalised [0,1]. Remap land portion (above SEA_LEVEL) to [0,1]
+  // so colour bands track sea-level changes without re-tuning thresholds.
+  float landH = (h - Config::SEA_LEVEL) / (1.0f - Config::SEA_LEVEL);
+  if (landH < 0.0f) landH = 0.0f;
+
+  if (landH < 0.08f)
     return {210, 190, 120, 255}; // sand / beach
-  else if (h < 0.55f)
+  else if (landH < 0.40f)
     return {100, 155, 65, 255}; // grassland
-  else if (h < 0.72f)
+  else if (landH < 0.65f)
     return {145, 125, 95, 255}; // rock
-  else if (h < 0.86f)
+  else if (landH < 0.82f)
     return {120, 115, 115, 255}; // high rock
   else
     return {240, 245, 255, 255}; // snow
@@ -195,10 +199,10 @@ void TerrainChunk::build(const Heightmap &hmap, int originX, int originZ,
 // ================================================================
 // draw / unload
 // ================================================================
-void TerrainChunk::draw(Vector3 /*cameraPos*/) const {
+void TerrainChunk::draw(Vector3 offset) const {
   if (!m_built)
     return;
-  DrawModel(m_model, {0, 0, 0}, 1.0f, WHITE);
+  DrawModel(m_model, offset, 1.0f, WHITE);
 }
 
 void TerrainChunk::unload() {

@@ -264,16 +264,19 @@ void Player::applyPhysics(float dt, const Planet &planet) {
     if (m_vel.y > 0.0f) m_vel.y = 0.0f;
   }
 
-  // ---- Toroidal world wrap (no-op until terrain rebuild adds wrap) ----
-  wrapPosition(planet.worldSize());
+  // No position wrap — terrain renders tiled around the camera, so the
+  // world appears infinite in every direction. Letting coordinates grow
+  // unbounded is preferable to teleporting: it keeps the camera-follow
+  // lerp continuous and avoids any visible edge. Heightmap queries wrap
+  // internally so terrain lookups stay correct at any coordinate. Single
+  // precision floats hold sub-metre accuracy out to ~8M units, far
+  // beyond practical play distances.
+  (void)planet;
 }
 
-void Player::wrapPosition(float worldSize) {
-  if (worldSize <= 0.0f) return;
-  if (m_pos.x < 0.0f)         m_pos.x += worldSize;
-  if (m_pos.x >= worldSize)   m_pos.x -= worldSize;
-  if (m_pos.z < 0.0f)         m_pos.z += worldSize;
-  if (m_pos.z >= worldSize)   m_pos.z -= worldSize;
+void Player::wrapPosition(float /*worldSize*/) {
+  // Retained for API compatibility; world wrapping happens implicitly
+  // via Planet::draw's per-chunk offset and Heightmap's wrapping query.
 }
 
 // ====================================================================
