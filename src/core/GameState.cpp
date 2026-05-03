@@ -171,6 +171,7 @@ static void recordSample(const Camera3D &cam, const Player &player,
 // ================================================================
 void GameState::init() {
   double t0 = GetTime();
+  m_particles.init();
   loadWorld(12345u); // stable default seed — DEV_MODE F5 rerolls
   double t1 = GetTime();
   TraceLog(LOG_INFO, "Terrain generation: %.2f seconds (%d x %d heightmap)",
@@ -249,6 +250,7 @@ void GameState::loadWorld(uint32_t seed) {
   };
 
   m_planet.generate(seed, progressCb);
+  m_particles.clear();
 
   // Spawn above world centre facing +Z (north).
   float mid = m_planet.worldSize() * 0.5f;
@@ -649,6 +651,17 @@ void GameState::update(float dt) {
       handleCameraZoom();
       m_player.update(dt, m_planet);
       updateCamera(dt);
+
+      // Engine exhaust — emit while thrust is on. Thruster sits below
+      // the ship's belly along its local-down axis; exhaust direction
+      // is local-down (= -up()). Particles inherit ship velocity.
+      if (m_player.isThrusting()) {
+        Vector3 down = Vector3Negate(m_player.up());
+        Vector3 thrusterPos =
+            Vector3Add(m_player.position(), Vector3Scale(down, 0.6f));
+        m_particles.emitExhaust(thrusterPos, down, m_player.velocity(), dt);
+      }
+      m_particles.update(dt, m_planet);
     } else {
       // Free-roam: player suspended; keys 1–5 are ignored.
       updateFreeCamera(dt);
@@ -696,7 +709,9 @@ void GameState::render(float alpha) {
       rlMatrixMode(RL_MODELVIEW);
     }
     m_planet.draw(m_camera.position);
+    m_player.renderGroundShadow(m_planet);
     m_player.render();
+    m_particles.render(m_camera);
     EndMode3D();
 
     drawHUD();
@@ -1337,6 +1352,7 @@ void GameState::shutdown() {
   closeLog();
   stopRecording();
 #endif
+  m_particles.unload();
   m_player.unload();
   m_planet.unload();
 }

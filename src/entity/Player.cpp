@@ -200,7 +200,16 @@ void Player::applyPhysics(float dt, const Planet &planet) {
   // ---- Thrust along local UP ----
   // Charge drains while thrusting and rebuilds whenever it isn't. With
   // m_infiniteCharge (DEV F3) the meter is pinned at MAX and never drains.
-  if (m_thrusting && !ceilingCut && m_thrustCharge > 0.0f) {
+  // applyingThrust reflects whether thrust force is ACTUALLY being added
+  // this tick (input held AND below ceiling AND have charge). Setting
+  // m_thrusting to this at the end keeps isThrusting() / HUD / exhaust
+  // particles in sync with physical reality — without it, holding the
+  // thrust key above the flight ceiling kept m_thrusting==true even
+  // though no force was applied, leaving the exhaust still firing.
+  bool applyingThrust =
+      m_thrusting && !ceilingCut && m_thrustCharge > 0.0f;
+
+  if (applyingThrust) {
     Vector3 thrustDir = up();
     m_vel = Vector3Add(m_vel, Vector3Scale(thrustDir,
                                            Config::NEWTON_THRUST * dt));
@@ -208,7 +217,7 @@ void Player::applyPhysics(float dt, const Planet &planet) {
       m_thrustCharge -= Config::NEWTON_THRUST_DRAIN_RATE * dt;
       if (m_thrustCharge <= 0.0f) {
         m_thrustCharge = 0.0f;
-        m_thrusting = false;
+        applyingThrust = false;
       }
     }
   } else if (!m_infiniteCharge) {
@@ -218,6 +227,8 @@ void Player::applyPhysics(float dt, const Planet &planet) {
   }
   if (m_infiniteCharge)
     m_thrustCharge = Config::NEWTON_THRUST_CHARGE_MAX;
+
+  m_thrusting = applyingThrust;
 
   // ---- Gravity (always world -Y) ----
   m_vel.y -= Config::NEWTON_GRAVITY * dt;
@@ -469,5 +480,67 @@ void Player::render() const {
 
   rlDisableBackfaceCulling();
   DrawMesh(m_mesh, m_model.materials[0], worldMat);
+  rlEnableBackfaceCulling();
+}
+
+// ====================================================================
+// Ground shadow — translucent dark disk on the terrain directly below
+// the ship. Alpha fades linearly with AGL and radius shrinks (atmospheric
+// scatter convention) so high-altitude shadows are small and faint.
+//
+// Each fan vertex samples the terrain height at its own world coords so
+// the disk drapes over uneven ground rather than a single flat Y. This
+// kills the z-fighting glitch you'd get when the flat disk's edge dips
+// below a rising slope. Per-vertex margin keeps the disk above the
+// chunk surface without floating visibly.
+// ====================================================================
+void Player::renderGroundShadow(const Planet &planet) const {
+  if (!m_built) return;
+
+  float centreGround = planet.heightAt(m_pos.x, m_pos.z);
+  float agl = m_pos.y - centreGround;
+  if (agl < 0.0f) agl = 0.0f;
+  if (agl >= Config::SHADOW_FADE_MAX_AGL) return;
+
+  // Alpha: pow(1 − t, e) with e>1 — more aggressive than linear in the
+  // mid-range, so the shadow reads as faint surprisingly quickly.
+  float linT = agl / Config::SHADOW_FADE_MAX_AGL;
+  float fade = powf(1.0f - linT, Config::SHADOW_FADE_EXPONENT);
+  unsigned char alpha =
+      static_cast<unsigned char>(fade * Config::SHADOW_BASE_ALPHA);
+  Color shadowCol = {0, 0, 0, alpha};
+
+  // Radius: shrinks from 100% at AGL=0 to (1 − SHRINK) at fade max.
+  const float r = Config::SHADOW_RADIUS *
+                  (1.0f - Config::SHADOW_SHRINK * linT);
+
+  // Per-vertex ground sampling — each fan vertex sits at its own local
+  // terrain height plus a margin. Margin is generous (0.5) because
+  // bilinear interpolation between vertices can dip the shadow's
+  // triangle interior below the terrain even when all three vertices
+  // are above their respective ground samples; the larger margin pushes
+  // the whole disk far enough above to clear that case without visible
+  // float at low AGL.
+  constexpr int SEGS = 24;
+  const float MARGIN = Config::SHADOW_MARGIN;
+
+  Vector3 centre = {m_pos.x, centreGround + MARGIN, m_pos.z};
+
+  rlDisableBackfaceCulling();
+  Vector3 prev;
+  {
+    float px = m_pos.x + r;
+    float pz = m_pos.z;
+    prev = {px, planet.heightAt(px, pz) + MARGIN, pz};
+  }
+  for (int i = 1; i <= SEGS; ++i) {
+    float a = 6.28318530f * static_cast<float>(i) / static_cast<float>(SEGS);
+    float vx = m_pos.x + r * cosf(a);
+    float vz = m_pos.z + r * sinf(a);
+    float vy = planet.heightAt(vx, vz) + MARGIN;
+    Vector3 v = {vx, vy, vz};
+    DrawTriangle3D(centre, v, prev, shadowCol);
+    prev = v;
+  }
   rlEnableBackfaceCulling();
 }

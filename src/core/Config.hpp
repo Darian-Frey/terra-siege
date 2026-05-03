@@ -197,7 +197,32 @@ constexpr int PRESET_ASSIST[4] = {0, 1, 2, 3};
 // ----------------------------------------------------------------
 constexpr int PARTICLE_POOL_SIZE = 2000;
 constexpr float EXPLOSION_LIFETIME = 0.8f;
-constexpr float EXHAUST_LIFETIME = 0.3f;
+// Original Zarch/Virus exhaust (lander.bbcelite.com BounceParticle):
+// all 3 velocity components halved on bounce, Y reflected. Lifespan
+// counter = 8 ticks (≈0.3s at original frame rate). 8 particles per
+// emit cycle. Small pixel-dot visuals — flat-shaded cubes here match
+// the geometric, hard-edged look the user remembers.
+constexpr float EXHAUST_LIFETIME = 0.45f;
+constexpr float EXHAUST_EMIT_RATE = 130.0f;     // particles/sec while thrusting
+constexpr float EXHAUST_INITIAL_SIZE = 0.30f;   // world units (cube side)
+constexpr float EXHAUST_INITIAL_SPEED = 22.0f;  // m/s downward (local-down)
+constexpr float EXHAUST_SPREAD = 1.6f;          // m/s lateral random spread
+constexpr float EXHAUST_GRAVITY = 9.8f;         // matches world NEWTON_GRAVITY
+constexpr float EXHAUST_RESTITUTION = 0.5f;     // Y kept on bounce (original 1/2)
+constexpr float EXHAUST_BOUNCE_FRICTION = 0.5f; // X/Z kept on bounce (original 1/2)
+
+// ----------------------------------------------------------------
+// Ground shadow — player ship's drop shadow on terrain. Both alpha
+// and radius fall off rapidly with altitude (atmospheric scatter
+// convention) so the shadow reads as a strong altitude cue at low
+// AGL and disappears at modest height.
+// ----------------------------------------------------------------
+constexpr float SHADOW_RADIUS = 3.2f;          // world units, AGL=0
+constexpr float SHADOW_FADE_MAX_AGL = 80.0f;   // fully transparent above this
+constexpr float SHADOW_FADE_EXPONENT = 1.6f;   // >1 = more aggressive mid-range
+constexpr float SHADOW_BASE_ALPHA = 180.0f;    // alpha at AGL=0 (max 255)
+constexpr float SHADOW_SHRINK = 0.7f;          // 1 − 0.7 = 30% radius at fade max
+constexpr float SHADOW_MARGIN = 0.5f;          // height above local terrain
 
 // ----------------------------------------------------------------
 // Audio

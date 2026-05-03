@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/Particles.hpp"
 #include "entity/Player.hpp"
 #include "raylib.h"
 #include "world/Planet.hpp"
@@ -84,6 +85,7 @@ private:
   // World
   Planet m_planet;
   Player m_player;
+  ParticleSystem m_particles;
 
   // Camera
   Camera3D m_camera = {};

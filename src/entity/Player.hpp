@@ -23,6 +23,10 @@ public:
             int flightAssistLevel = Config::FLIGHT_ASSIST_DEFAULT);
   void update(float dt, const Planet &planet);
   void render() const;
+  // Drop-shadow on the terrain directly below the ship. Fades with
+  // altitude. Called from GameState between planet and player render
+  // so the shadow sits on the terrain below the ship.
+  void renderGroundShadow(const Planet &planet) const;
   void unload();
 
   // ---- State accessors ----

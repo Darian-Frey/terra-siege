@@ -39,6 +39,8 @@ set(SOURCES
     src/core/GameState.hpp
     src/core/Clock.hpp
     src/core/Config.hpp
+    src/core/Particles.cpp
+    src/core/Particles.hpp
 
     src/world/Planet.cpp
     src/world/Planet.hpp
