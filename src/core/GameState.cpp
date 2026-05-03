@@ -90,7 +90,7 @@ static void startRecording() {
                     std::ios::out | std::ios::trunc);
   if (g_recordFile.is_open()) {
     g_recordFile
-        << "t,ship_x,ship_y,ship_z,vel_x,vel_y,vel_z,speed,fuel,"
+        << "t,ship_x,ship_y,ship_z,vel_x,vel_y,vel_z,speed,thrust_charge,"
            "yaw_rad,pitch_rad,roll_rad,yaw_deg,pitch_deg,roll_deg,"
            "fwd_x,fwd_y,fwd_z,agl,thrusting,"
            "cam_x,cam_y,cam_z,cam_off_x,cam_off_y,cam_off_z,cam_dist,cam_fov,"
@@ -147,7 +147,7 @@ static void recordSample(const Camera3D &cam, const Player &player,
   g_recordFile << t << ","
                << p.x << "," << p.y << "," << p.z << ","
                << v.x << "," << v.y << "," << v.z << ","
-               << player.speed() << "," << player.fuel() << ","
+               << player.speed() << "," << player.thrustCharge() << ","
                << player.yaw() << "," << player.pitch() << ","
                << player.roll() << ","
                << player.yaw() * rad2deg << ","
@@ -497,7 +497,7 @@ void GameState::drawHUD() const {
 
   float pitchDeg = m_player.pitch() * (180.0f / 3.14159f);
   float rollDeg = m_player.roll() * (180.0f / 3.14159f);
-  float fuelPct = m_player.fuel();
+  float chargePct = m_player.thrustCharge();
   bool thrusting = m_player.isThrusting();
 
   int panelLines = m_camMode == CamMode::FreeRoam ? 11 : 10;
@@ -527,8 +527,8 @@ void GameState::drawHUD() const {
   snprintf(buf, sizeof(buf), "Roll: %+6.1f°", rollDeg);
   DrawText(buf, px, py, 14, col);
   py += lh;
-  snprintf(buf, sizeof(buf), "Fuel: %5.1f", fuelPct);
-  DrawText(buf, px, py, 14, fuelPct < 20.0f ? Color{255, 100, 80, 240} : col);
+  snprintf(buf, sizeof(buf), "Chg:  %5.1f", chargePct);
+  DrawText(buf, px, py, 14, chargePct < 20.0f ? Color{255, 100, 80, 240} : col);
   py += lh;
   snprintf(buf, sizeof(buf), "Asst: %s", assistStr);
   DrawText(buf, px, py, 14, col);
@@ -540,7 +540,7 @@ void GameState::drawHUD() const {
   }
 #endif
 
-  // ---- Health bar (HULL) and fuel bar (FUEL), bottom-left ----
+  // ---- Health bar (HULL) and thrust charge bar (THRUST), bottom-left ----
   const int bx = 12, bw = 160, bh = 14;
   // Hull
   {
@@ -554,17 +554,18 @@ void GameState::drawHUD() const {
     DrawRectangle(bx, by, healthW, bh, hpCol);
     DrawText("HULL", bx, by - 14, 12, col);
   }
-  // Fuel
+  // Thrust charge
   {
     int by = sh - 56;
     DrawRectangle(bx - 1, by - 1, bw + 2, bh + 2, {0, 0, 0, 160});
     DrawRectangle(bx, by, bw, bh, {50, 50, 50, 255});
-    int fuelW =
-        static_cast<int>(bw * m_player.fuel() / Config::NEWTON_FUEL_MAX);
-    Color fCol = m_player.fuel() < 20.0f ? Color{255, 100, 80, 255}
-                                         : Color{80, 180, 255, 255};
-    DrawRectangle(bx, by, fuelW, bh, fCol);
-    DrawText("FUEL", bx, by - 14, 12, col);
+    int chgW = static_cast<int>(bw * m_player.thrustCharge() /
+                                Config::NEWTON_THRUST_CHARGE_MAX);
+    Color cCol = m_player.thrustCharge() < 20.0f
+                     ? Color{255, 100, 80, 255}
+                     : Color{80, 180, 255, 255};
+    DrawRectangle(bx, by, chgW, bh, cCol);
+    DrawText("THRUST", bx, by - 14, 12, col);
   }
   // Landed indicator
   if (m_player.isLanded()) {

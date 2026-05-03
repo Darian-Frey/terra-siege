@@ -45,9 +45,10 @@ constexpr float NEWTON_ROLL_RATE = 2.0f;           // keyboard roll rad/s
 constexpr float NEWTON_CRASH_SPEED = 12.0f;        // |vel.y| above this = crash
 constexpr float NEWTON_LAND_SPEED = 3.0f;          // safe landing speed
 constexpr float NEWTON_LAND_ATTITUDE = 0.14f;      // ~8° pitch+roll tolerance for soft landing
-constexpr float NEWTON_FUEL_MAX = 100.0f;          // fuel units
-constexpr float NEWTON_FUEL_BURN_RATE = 3.5f;      // units/sec while thrusting
-constexpr float NEWTON_FLIGHT_CEILING = 250.0f;    // AGL above which thrust cuts
+constexpr float NEWTON_THRUST_CHARGE_MAX = 100.0f;   // thrust charge units
+constexpr float NEWTON_THRUST_DRAIN_RATE = 18.0f;    // units/sec while thrusting
+constexpr float NEWTON_THRUST_RECHARGE_RATE = 14.0f; // units/sec while not thrusting
+constexpr float NEWTON_FLIGHT_CEILING = 250.0f;      // AGL above which thrust cuts
 
 // Flight-assist Level 3 terrain look-ahead
 constexpr float ASSIST_PULLUP_LOOKAHEAD = 0.4f; // seconds ahead

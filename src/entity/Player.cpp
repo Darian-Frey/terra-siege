@@ -16,7 +16,7 @@ void Player::init(Vector3 startPos, int flightAssistLevel) {
   m_pitch = 0.0f;
   m_roll = 0.0f;
   m_smoothMouse = {0.0f, 0.0f};
-  m_fuel = Config::NEWTON_FUEL_MAX;
+  m_thrustCharge = Config::NEWTON_THRUST_CHARGE_MAX;
   m_health = 100.0f;
   m_thrusting = false;
   m_landed = false;
@@ -138,9 +138,9 @@ void Player::handleInput(float dt) {
   if (m_roll < -Config::NEWTON_ROLL_MAX)
     m_roll = -Config::NEWTON_ROLL_MAX;
 
-  // ---- Thrust (W or LMB) ----
+  // ---- Thrust (W or LMB) — gated on charge being non-empty ----
   m_thrusting = (IsKeyDown(KEY_W) || IsMouseButtonDown(MOUSE_BUTTON_LEFT)) &&
-                m_fuel > 0.0f;
+                m_thrustCharge > 0.0f;
 }
 
 // ====================================================================
@@ -198,12 +198,20 @@ void Player::applyPhysics(float dt, const Planet &planet) {
   bool ceilingCut = (agl > Config::NEWTON_FLIGHT_CEILING);
 
   // ---- Thrust along local UP ----
-  if (m_thrusting && !ceilingCut && m_fuel > 0.0f) {
+  // Charge drains while thrusting and rebuilds whenever it isn't.
+  if (m_thrusting && !ceilingCut && m_thrustCharge > 0.0f) {
     Vector3 thrustDir = up();
     m_vel = Vector3Add(m_vel, Vector3Scale(thrustDir,
                                            Config::NEWTON_THRUST * dt));
-    m_fuel -= Config::NEWTON_FUEL_BURN_RATE * dt;
-    if (m_fuel < 0.0f) m_fuel = 0.0f;
+    m_thrustCharge -= Config::NEWTON_THRUST_DRAIN_RATE * dt;
+    if (m_thrustCharge <= 0.0f) {
+      m_thrustCharge = 0.0f;
+      m_thrusting = false; // hard cutoff once charge runs out
+    }
+  } else {
+    m_thrustCharge += Config::NEWTON_THRUST_RECHARGE_RATE * dt;
+    if (m_thrustCharge > Config::NEWTON_THRUST_CHARGE_MAX)
+      m_thrustCharge = Config::NEWTON_THRUST_CHARGE_MAX;
   }
 
   // ---- Gravity (always world -Y) ----

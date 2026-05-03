@@ -37,7 +37,7 @@ public:
   float roll() const { return m_roll; }
   float pitchVis() const { return -m_pitch; } // render-space pitch
   float speed() const;
-  float fuel() const { return m_fuel; }
+  float thrustCharge() const { return m_thrustCharge; }
   float health() const { return m_health; }
   bool isAlive() const { return m_health > 0.0f; }
   bool isThrusting() const { return m_thrusting; }
@@ -67,7 +67,7 @@ private:
 
   Vector2 m_smoothMouse = {0.0f, 0.0f}; // lowpass-filtered mouse delta
 
-  float m_fuel = Config::NEWTON_FUEL_MAX;
+  float m_thrustCharge = Config::NEWTON_THRUST_CHARGE_MAX;
   float m_health = 100.0f;
   bool m_thrusting = false;
   bool m_landed = false;
