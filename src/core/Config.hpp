@@ -21,107 +21,51 @@ constexpr float FIXED_DT = 1.0f / 120.0f; // 120 Hz physics
 constexpr float MAX_FRAME_TIME = 0.05f;   // spiral-of-death guard
 
 // ----------------------------------------------------------------
-// Player craft physics
+// Newtonian flight model — single physics path, Virus/Zarch style.
+// Thrust along the ship's LOCAL UP axis. Constant world gravity.
+// Near-zero drag. Player tilts the ship to redirect the thrust
+// vector — "tilt and burn".
 // ----------------------------------------------------------------
-constexpr float PLAYER_THRUST = 28.0f;
-constexpr float PLAYER_DRAG = 0.92f; // velocity multiplier per tick
-constexpr float PLAYER_MAX_SPEED = 40.0f;
-constexpr float PLAYER_BANK_RATE = 3.5f;    // roll rad/s driven by lateral vel
-constexpr float PLAYER_MIN_ALTITUDE = 5.0f; // hard floor metres above terrain
-constexpr float PLAYER_MAX_ALTITUDE = 500.0f;
-constexpr float PLAYER_TURN_RATE = 1.8f;  // rad/s yaw
-constexpr float PLAYER_ALT_RATE = 18.0f;  // units/s manual altitude
-constexpr float PLAYER_PITCH_VIS = 0.18f; // visual pitch coefficient
+constexpr float PLAYER_MIN_ALTITUDE = 5.0f;   // hard floor AGL
+constexpr float PLAYER_MAX_ALTITUDE = 500.0f; // hard ceiling AGL
+
+constexpr float NEWTON_GRAVITY = 9.8f;         // m/s² world-down
+constexpr float NEWTON_THRUST = 24.0f;         // m/s² along local UP
+constexpr float NEWTON_DRAG = 0.02f;           // near-zero linear damping per second
+constexpr float NEWTON_PITCH_MAX = 1.30f;      // ~74° — steep but not inverted
+constexpr float NEWTON_ROLL_MAX = 0.78f;       // ±45° banking limit
+constexpr float NEWTON_MAX_SPEED = 70.0f;      // hard clamp to prevent runaway
+constexpr float NEWTON_MOUSE_PITCH_SENS = 0.0025f; // rad per pixel
+constexpr float NEWTON_MOUSE_YAW_SENS = 0.003f;    // rad per pixel
+constexpr float NEWTON_MOUSE_ROLL_SENS = 0.002f;   // rad per pixel
+constexpr float NEWTON_INPUT_SMOOTH = 12.0f;       // lowpass per second on mouse
+constexpr float NEWTON_PITCH_RATE = 1.8f;          // keyboard pitch rad/s
+constexpr float NEWTON_YAW_RATE = 1.4f;            // keyboard yaw rad/s
+constexpr float NEWTON_ROLL_RATE = 2.0f;           // keyboard roll rad/s
+constexpr float NEWTON_CRASH_SPEED = 12.0f;        // |vel.y| above this = crash
+constexpr float NEWTON_LAND_SPEED = 3.0f;          // safe landing speed
+constexpr float NEWTON_LAND_ATTITUDE = 0.14f;      // ~8° pitch+roll tolerance for soft landing
+constexpr float NEWTON_FUEL_MAX = 100.0f;          // fuel units
+constexpr float NEWTON_FUEL_BURN_RATE = 3.5f;      // units/sec while thrusting
+constexpr float NEWTON_FLIGHT_CEILING = 250.0f;    // AGL above which thrust cuts
+
+// Flight-assist Level 3 terrain look-ahead
+constexpr float ASSIST_PULLUP_LOOKAHEAD = 0.4f; // seconds ahead
+constexpr float ASSIST_PULLUP_STRENGTH = 12.0f; // upward correction strength
 
 // ----------------------------------------------------------------
-// Arcade flight model (Air Combat 22 / Ace Combat style)
-// Values from research report — see project-status/research.
-// ----------------------------------------------------------------
-constexpr float ARCADE_MIN_SPEED = 12.0f;
-constexpr float ARCADE_CRUISE_SPEED = 30.0f;
-constexpr float ARCADE_MAX_SPEED = 45.0f;
-constexpr float ARCADE_BOOST_SPEED = 65.0f;
-constexpr float ARCADE_THROTTLE_RATE = 30.0f; // target speed Δ per second (W/S)
-constexpr float ARCADE_ACCEL_K = 1.2f;        // current → target lerp factor
-constexpr float ARCADE_PITCH_RATE = 1.2f;     // rad/s max pitch response
-constexpr float ARCADE_PITCH_MAX = 1.22f;     // ~70° clamp
-constexpr float ARCADE_ROLL_RATE = 2.5f;      // rad/s max roll response
-constexpr float ARCADE_BANK_MAX = 1.31f;      // ~75° clamp
-constexpr float ARCADE_TURN_COEFF = 1.6f;     // yaw_rate = bank * coeff
-constexpr float ARCADE_BANK_RESPONSE = 4.0f;  // P-gain for bank target tracking
-constexpr float ARCADE_ENERGY_TRADE = 0.4f;   // climb/dive speed exchange
-constexpr float ARCADE_GRAVITY = 9.81f;
-constexpr float ARCADE_MOUSE_PITCH_SENS = 0.003f; // rad per pixel
-constexpr float ARCADE_MOUSE_ROLL_SENS = 0.0035f; // rad per pixel
-
-// Input smoothing — lowpass filters on mouse delta and control rates.
-// Higher = faster (more responsive but less smooth). Lower = smoother
-// but laggier. These give "glider" feel.
-constexpr float ARCADE_MOUSE_SMOOTH = 20.0f;  // mouse delta lowpass per second
-constexpr float ARCADE_RATE_SMOOTH = 8.0f;    // control rate lowpass per second
-
-// Speed-aware terrain pullup. When AGL drops into the danger zone,
-// the auto-pitch-up engages proportionally to how deep we've descended.
-// Faster speed = bigger danger zone (more altitude needed to recover).
-constexpr float ARCADE_PULLUP_BASE = 8.0f;          // base danger AGL (m)
-constexpr float ARCADE_PULLUP_SPEED_FACTOR = 0.35f; // extra AGL per u/s of speed
-constexpr float ARCADE_PULLUP_STRENGTH = 10.0f;     // max recovery rate at floor
-
-// ----------------------------------------------------------------
-// Classic flight model — Newtonian Virus-style
-//   Thrust along ship's LOCAL UP axis only; constant gravity pulls
-//   down; near-zero drag. Player flies by tilting the ship to
-//   redirect the thrust vector, balancing against gravity.
-// ----------------------------------------------------------------
-constexpr float CLASSIC_GRAVITY = 12.0f;      // world-down acceleration (m/s²)
-constexpr float CLASSIC_THRUST = 22.0f;       // acceleration from full thrust (m/s²)
-constexpr float CLASSIC_THRUST_IDLE = 0.0f;   // thrust at rest (none — gravity wins)
-constexpr float CLASSIC_DRAG = 0.03f;         // near-zero linear damping per tick
-constexpr float CLASSIC_PITCH_RATE = 1.8f;    // manual pitch response (rad/s)
-constexpr float CLASSIC_ROLL_RATE = 2.4f;     // manual roll response (rad/s)
-constexpr float CLASSIC_YAW_RATE = 1.2f;      // manual yaw (Q/E or shoulder buttons)
-constexpr float CLASSIC_PITCH_MAX = 1.55f;    // ~88° — allow near-vertical
-constexpr float CLASSIC_ROLL_MAX = 3.14f;     // full ±180° (can flip upside-down)
-constexpr float CLASSIC_MAX_SPEED = 80.0f;    // hard clamp to prevent runaway
-constexpr float CLASSIC_GROUND_IMPACT = 14.0f; // above this vertical speed = crash
-constexpr float CLASSIC_GROUND_BOUNCE = 0.3f;  // vertical velocity multiplier on light touch
-constexpr float CLASSIC_MOUSE_PITCH_SENS = 0.004f;
-constexpr float CLASSIC_MOUSE_ROLL_SENS = 0.005f;
-constexpr float CLASSIC_INPUT_SMOOTH = 15.0f;  // input lowpass per second
-
-// ----------------------------------------------------------------
-// Classic camera — higher and further back than arcade, wider FOV
-// ----------------------------------------------------------------
-constexpr float CLASSIC_CAM_HEIGHT = 12.0f;
-constexpr float CLASSIC_CAM_DISTANCE = 22.0f;
-constexpr float CLASSIC_CAM_FOV = 85.0f;
-constexpr float CLASSIC_CAM_LERP = 6.0f;
-
-// Speed-dependent chase camera — pulls back at high speed to give a
-// strong sensation of acceleration. Distance lerps between min and max.
-constexpr float ARCADE_CAM_DISTANCE_MIN = 14.0f; // at cruise speed
-constexpr float ARCADE_CAM_DISTANCE_MAX = 26.0f; // at full boost
-constexpr float ARCADE_CAM_HEIGHT_MIN = 6.0f;
-constexpr float ARCADE_CAM_HEIGHT_MAX = 8.0f;
-constexpr float ARCADE_CAM_FOV_MIN = 70.0f;
-constexpr float ARCADE_CAM_FOV_MAX = 82.0f; // FOV widens during boost
-
-// ----------------------------------------------------------------
-// Flight assist (0 = raw, 3 = full)
+// Flight assist (0 = raw, 3 = full) — corrective layer on top of Newtonian
 // ----------------------------------------------------------------
 constexpr int FLIGHT_ASSIST_DEFAULT = 2; // Standard / Recruit
 constexpr float ASSIST_LEVEL_COEFFS[4] = {0.0f, 0.18f, 0.42f, 0.75f};
-constexpr float ASSIST_TERRAIN_LOOKAHEAD =
-    0.35f; // seconds ahead for terrain raycast
 
 // ----------------------------------------------------------------
-// Camera
+// Camera (single follow camera — five-view system in camera_system.md)
 // ----------------------------------------------------------------
-constexpr float CAM_FOLLOW_LAG = 0.08f;  // position lerp per tick
-constexpr float CAM_FOLLOW_SPEED = 6.0f; // lerp speed factor
-constexpr float CAM_HEIGHT = 6.0f;
-constexpr float CAM_DISTANCE = 14.0f;
-constexpr float CAM_FOV = 70.0f; // degrees
+constexpr float CAM_HEIGHT = 8.0f;
+constexpr float CAM_DISTANCE = 18.0f;
+constexpr float CAM_FOV = 75.0f;     // degrees
+constexpr float CAM_LERP = 8.0f;     // follow lag per second
 
 // ----------------------------------------------------------------
 // Terrain / planet

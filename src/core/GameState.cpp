@@ -90,9 +90,9 @@ static void startRecording() {
                     std::ios::out | std::ios::trunc);
   if (g_recordFile.is_open()) {
     g_recordFile
-        << "t,ship_x,ship_y,ship_z,vel_x,vel_y,vel_z,speed,target_speed,"
+        << "t,ship_x,ship_y,ship_z,vel_x,vel_y,vel_z,speed,fuel,"
            "yaw_rad,pitch_rad,roll_rad,yaw_deg,pitch_deg,roll_deg,"
-           "fwd_x,fwd_y,fwd_z,agl,boost,"
+           "fwd_x,fwd_y,fwd_z,agl,thrusting,"
            "cam_x,cam_y,cam_z,cam_off_x,cam_off_y,cam_off_z,cam_dist,cam_fov,"
            "keys,mouse_dx,mouse_dy\n";
     g_recordStartTime = static_cast<float>(GetTime());
@@ -147,7 +147,7 @@ static void recordSample(const Camera3D &cam, const Player &player,
   g_recordFile << t << ","
                << p.x << "," << p.y << "," << p.z << ","
                << v.x << "," << v.y << "," << v.z << ","
-               << player.speed() << "," << player.targetSpeed() << ","
+               << player.speed() << "," << player.fuel() << ","
                << player.yaw() << "," << player.pitch() << ","
                << player.roll() << ","
                << player.yaw() * rad2deg << ","
@@ -155,7 +155,7 @@ static void recordSample(const Camera3D &cam, const Player &player,
                << player.roll() * rad2deg << ","
                << f.x << "," << f.y << "," << f.z << ","
                << agl << ","
-               << (player.boosting() ? 1 : 0) << ","
+               << (player.isThrusting() ? 1 : 0) << ","
                << cam.position.x << "," << cam.position.y << "," << cam.position.z << ","
                << camOff.x << "," << camOff.y << "," << camOff.z << ","
                << camDist << "," << cam.fovy << ","
@@ -231,8 +231,7 @@ void GameState::init() {
   float ground = m_planet.heightAt(mid, mid);
   Vector3 startPos = {mid, ground + 12.0f, mid};
 
-  m_player.init(startPos, Config::FLIGHT_ASSIST_DEFAULT, CraftType::Saucer);
-  m_player.setFlightMode(FlightMode::Classic);
+  m_player.init(startPos, Config::FLIGHT_ASSIST_DEFAULT);
 
   // Camera setup
   m_camera.fovy = Config::CAM_FOV;
@@ -289,19 +288,6 @@ void GameState::handleDevKeys() {
       startRecording();
   }
 
-  // F5 — cycle craft type
-  if (IsKeyPressed(KEY_F5)) {
-    int next = (static_cast<int>(m_player.craft()) + 1) %
-               static_cast<int>(CraftType::_Count);
-    m_player.setCraft(static_cast<CraftType>(next));
-  }
-
-  // F6 — toggle FlightMode (Classic <-> Arcade)
-  if (IsKeyPressed(KEY_F6)) {
-    FlightMode next = (m_player.flightMode() == FlightMode::Classic)
-                       ? FlightMode::Arcade : FlightMode::Classic;
-    m_player.setFlightMode(next);
-  }
 #endif
 }
 
@@ -309,65 +295,34 @@ void GameState::handleDevKeys() {
 // Follow camera
 // ================================================================
 void GameState::updateFollowCamera(float dt) {
+  // Single fixed-distance chase camera. Speed-dependent zoom is gone with
+  // the Arcade model. The five-view system in camera_system.md replaces
+  // this with key-1..5 view selection in Step 3 of the rebuild.
   Vector3 playerPos = m_player.position();
-
-  // Camera uses HORIZONTAL forward only (yaw axis). The ship's pitch
-  // does not tilt the camera — instead the ship visually tilts within
-  // the view while the camera stays locked to the horizon. This is the
-  // classic Ace Combat / Air Combat 22 chase cam behavior.
   float playerYaw = m_player.yaw();
   Vector3 horizFwd = {sinf(playerYaw), 0.0f, cosf(playerYaw)};
 
-  // Speed-dependent distance, height, and FOV. As the player accelerates
-  // past cruise speed, the camera pulls back, lifts slightly, and FOV
-  // widens — three classic tricks that make speed feel visceral.
-  float speedT = (m_player.speed() - Config::ARCADE_CRUISE_SPEED) /
-                 (Config::ARCADE_BOOST_SPEED - Config::ARCADE_CRUISE_SPEED);
-  if (speedT < 0.0f) speedT = 0.0f;
-  if (speedT > 1.0f) speedT = 1.0f;
-
-  float camDistance = Config::ARCADE_CAM_DISTANCE_MIN +
-                      speedT * (Config::ARCADE_CAM_DISTANCE_MAX -
-                                Config::ARCADE_CAM_DISTANCE_MIN);
-  float camHeight = Config::ARCADE_CAM_HEIGHT_MIN +
-                    speedT * (Config::ARCADE_CAM_HEIGHT_MAX -
-                              Config::ARCADE_CAM_HEIGHT_MIN);
-  float camFov = Config::ARCADE_CAM_FOV_MIN +
-                 speedT * (Config::ARCADE_CAM_FOV_MAX -
-                           Config::ARCADE_CAM_FOV_MIN);
-
-  // Lerp FOV smoothly so it doesn't snap when the speed changes abruptly
-  m_camera.fovy += (camFov - m_camera.fovy) * 4.0f * dt;
-
-  // Desired camera position: behind (in horizontal plane) and above
-  // the player. Pitch does NOT affect camera position.
   Vector3 desiredPos = Vector3Add(
-      playerPos, Vector3Add(Vector3Scale(horizFwd, -camDistance),
-                            {0.0f, camHeight, 0.0f}));
+      playerPos, Vector3Add(Vector3Scale(horizFwd, -Config::CAM_DISTANCE),
+                            {0.0f, Config::CAM_HEIGHT, 0.0f}));
 
-  // Terrain clamping — keep camera above the ground
-  {
-    float camGroundH = m_planet.heightAt(desiredPos.x, desiredPos.z);
-    float camMinY = camGroundH + 3.5f;
-    if (desiredPos.y < camMinY)
-      desiredPos.y = camMinY;
-  }
+  // Terrain clamping — keep camera above the ground (do not remove this)
+  float camGroundH = m_planet.heightAt(desiredPos.x, desiredPos.z);
+  float camMinY = camGroundH + 3.5f;
+  if (desiredPos.y < camMinY) desiredPos.y = camMinY;
   if (desiredPos.y < playerPos.y + 2.0f)
     desiredPos.y = playerPos.y + 2.0f;
 
-  // Fast lerp — visible turn motion without jarring snap
-  float lerpSpeed = 30.0f * dt;
-  if (lerpSpeed > 1.0f)
-    lerpSpeed = 1.0f;
+  // Smooth follow lerp — frame-rate independent
+  float lerpSpeed = Config::CAM_LERP * dt;
+  if (lerpSpeed > 1.0f) lerpSpeed = 1.0f;
   m_camera.position = Vector3Lerp(m_camera.position, desiredPos, lerpSpeed);
 
-  // Look target — ahead of the ship in the HORIZONTAL plane only.
-  // The ship visually pitches within the view; the horizon stays level.
+  // Look ahead of the ship in horizontal plane — horizon stays level.
   m_camera.target = Vector3Add(
       playerPos, Vector3Add(Vector3Scale(horizFwd, 8.0f), {0.0f, 1.5f, 0.0f}));
-
-  // Camera always level
   m_camera.up = {0.0f, 1.0f, 0.0f};
+  m_camera.fovy = Config::CAM_FOV;
 }
 
 // ================================================================
@@ -542,8 +497,8 @@ void GameState::drawHUD() const {
 
   float pitchDeg = m_player.pitch() * (180.0f / 3.14159f);
   float rollDeg = m_player.roll() * (180.0f / 3.14159f);
-  float tgtSpd = m_player.targetSpeed();
-  bool boost = m_player.boosting();
+  float fuelPct = m_player.fuel();
+  bool thrusting = m_player.isThrusting();
 
   int panelLines = m_camMode == CamMode::FreeRoam ? 11 : 10;
   DrawRectangle(px - 8, py - 4, 216, lh * panelLines + 8, {0, 0, 0, 120});
@@ -560,9 +515,8 @@ void GameState::drawHUD() const {
   snprintf(buf, sizeof(buf), "AGL:  %6.1f m", agl);
   DrawText(buf, px, py, 14, col);
   py += lh;
-  snprintf(buf, sizeof(buf), "Spd:  %5.1f / %.0f%s", spd, tgtSpd,
-           boost ? " B" : "");
-  DrawText(buf, px, py, 14, boost ? Color{255, 200, 80, 240} : col);
+  snprintf(buf, sizeof(buf), "Spd:  %5.1f%s", spd, thrusting ? " ^" : "");
+  DrawText(buf, px, py, 14, thrusting ? Color{255, 200, 80, 240} : col);
   py += lh;
   snprintf(buf, sizeof(buf), "Hdg:  %5.1f  %s", yawDeg, compass);
   DrawText(buf, px, py, 14, col);
@@ -572,6 +526,9 @@ void GameState::drawHUD() const {
   py += lh;
   snprintf(buf, sizeof(buf), "Roll: %+6.1f°", rollDeg);
   DrawText(buf, px, py, 14, col);
+  py += lh;
+  snprintf(buf, sizeof(buf), "Fuel: %5.1f", fuelPct);
+  DrawText(buf, px, py, 14, fuelPct < 20.0f ? Color{255, 100, 80, 240} : col);
   py += lh;
   snprintf(buf, sizeof(buf), "Asst: %s", assistStr);
   DrawText(buf, px, py, 14, col);
@@ -583,47 +540,49 @@ void GameState::drawHUD() const {
   }
 #endif
 
-  // ---- Health bar ----
-  const int bx = 12, by = sh - 60, bw = 160, bh = 14;
-  DrawRectangle(bx - 1, by - 1, bw + 2, bh + 2, {0, 0, 0, 160});
-  DrawRectangle(bx, by, bw, bh, {50, 50, 50, 255});
-  int healthW = static_cast<int>(bw * m_player.health() / 100.0f);
-  Color hpCol = healthW > bw / 2   ? Color{40, 200, 60, 255}
-                : healthW > bw / 4 ? Color{220, 180, 0, 255}
-                                   : Color{210, 40, 40, 255};
-  DrawRectangle(bx, by, healthW, bh, hpCol);
-  DrawText("HULL", bx, by - 16, 12, col);
+  // ---- Health bar (HULL) and fuel bar (FUEL), bottom-left ----
+  const int bx = 12, bw = 160, bh = 14;
+  // Hull
+  {
+    int by = sh - 80;
+    DrawRectangle(bx - 1, by - 1, bw + 2, bh + 2, {0, 0, 0, 160});
+    DrawRectangle(bx, by, bw, bh, {50, 50, 50, 255});
+    int healthW = static_cast<int>(bw * m_player.health() / 100.0f);
+    Color hpCol = healthW > bw / 2   ? Color{40, 200, 60, 255}
+                  : healthW > bw / 4 ? Color{220, 180, 0, 255}
+                                     : Color{210, 40, 40, 255};
+    DrawRectangle(bx, by, healthW, bh, hpCol);
+    DrawText("HULL", bx, by - 14, 12, col);
+  }
+  // Fuel
+  {
+    int by = sh - 56;
+    DrawRectangle(bx - 1, by - 1, bw + 2, bh + 2, {0, 0, 0, 160});
+    DrawRectangle(bx, by, bw, bh, {50, 50, 50, 255});
+    int fuelW =
+        static_cast<int>(bw * m_player.fuel() / Config::NEWTON_FUEL_MAX);
+    Color fCol = m_player.fuel() < 20.0f ? Color{255, 100, 80, 255}
+                                         : Color{80, 180, 255, 255};
+    DrawRectangle(bx, by, fuelW, bh, fCol);
+    DrawText("FUEL", bx, by - 14, 12, col);
+  }
+  // Landed indicator
+  if (m_player.isLanded()) {
+    DrawText("LANDED", bx + bw + 12, sh - 80, 14, {120, 220, 140, 255});
+  }
 
   // ---- Controls bar ----
   DrawRectangle(0, sh - 28, sw, 28, {0, 0, 0, 140});
 
   const char *controls =
       m_camMode == CamMode::Follow
-          ? "W/S: throttle  |  A/D: bank  |  Mouse: pitch+bank  |  Shift: boost"
+          ? "Mouse: pitch+yaw  |  W/LMB: thrust  |  A/D: yaw  |  Q/E: roll"
           : "WASD: fly  |  Q/E: up/down  |  Shift: fast  (F1: back to ship)";
   DrawText(controls, 12, sh - 20, 14, {180, 180, 180, 220});
 
-  // Craft name (above the controls bar)
-  {
-    char cbuf[48];
-    snprintf(cbuf, sizeof(cbuf), "CRAFT: %s", craftName(m_player.craft()));
-    DrawText(cbuf, 12, sh - 46, 14, {200, 220, 255, 220});
-  }
-
-  // Flight mode indicator — just above the craft label
-  {
-    char mbuf[48];
-    snprintf(mbuf, sizeof(mbuf), "MODE:  %s",
-             flightModeName(m_player.flightMode()));
-    Color mCol = (m_player.flightMode() == FlightMode::Classic)
-                 ? Color{255, 200, 100, 220}   // warm for Classic
-                 : Color{150, 200, 255, 220};  // cool for Arcade
-    DrawText(mbuf, 12, sh - 64, 14, mCol);
-  }
-
 #ifdef DEV_MODE
-  DrawText("[DEV]  F1:cam  F2:assist  F4:rec  F5:craft  F6:mode",
-           sw - 420, sh - 20, 14, YELLOW);
+  DrawText("[DEV]  F1:cam  F2:assist  F4:rec",
+           sw - 280, sh - 20, 14, YELLOW);
 
   // Flight recorder indicator — large pulsing badge at top-center
   if (isRecording()) {
