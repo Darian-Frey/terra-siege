@@ -46,6 +46,10 @@ public:
   void setFlightAssist(int level);
   int flightAssist() const { return m_assistLevel; }
 
+  // Dev toggle — when true, thrust charge never drains (HUD pinned at MAX).
+  void setInfiniteCharge(bool on) { m_infiniteCharge = on; }
+  bool infiniteCharge() const { return m_infiniteCharge; }
+
   void applyDamage(float amount);
 
 private:
@@ -71,6 +75,7 @@ private:
   float m_health = 100.0f;
   bool m_thrusting = false;
   bool m_landed = false;
+  bool m_infiniteCharge = false;
   int m_assistLevel = Config::FLIGHT_ASSIST_DEFAULT;
 
   // Mesh / model

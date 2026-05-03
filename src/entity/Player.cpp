@@ -198,21 +198,26 @@ void Player::applyPhysics(float dt, const Planet &planet) {
   bool ceilingCut = (agl > Config::NEWTON_FLIGHT_CEILING);
 
   // ---- Thrust along local UP ----
-  // Charge drains while thrusting and rebuilds whenever it isn't.
+  // Charge drains while thrusting and rebuilds whenever it isn't. With
+  // m_infiniteCharge (DEV F3) the meter is pinned at MAX and never drains.
   if (m_thrusting && !ceilingCut && m_thrustCharge > 0.0f) {
     Vector3 thrustDir = up();
     m_vel = Vector3Add(m_vel, Vector3Scale(thrustDir,
                                            Config::NEWTON_THRUST * dt));
-    m_thrustCharge -= Config::NEWTON_THRUST_DRAIN_RATE * dt;
-    if (m_thrustCharge <= 0.0f) {
-      m_thrustCharge = 0.0f;
-      m_thrusting = false; // hard cutoff once charge runs out
+    if (!m_infiniteCharge) {
+      m_thrustCharge -= Config::NEWTON_THRUST_DRAIN_RATE * dt;
+      if (m_thrustCharge <= 0.0f) {
+        m_thrustCharge = 0.0f;
+        m_thrusting = false;
+      }
     }
-  } else {
+  } else if (!m_infiniteCharge) {
     m_thrustCharge += Config::NEWTON_THRUST_RECHARGE_RATE * dt;
     if (m_thrustCharge > Config::NEWTON_THRUST_CHARGE_MAX)
       m_thrustCharge = Config::NEWTON_THRUST_CHARGE_MAX;
   }
+  if (m_infiniteCharge)
+    m_thrustCharge = Config::NEWTON_THRUST_CHARGE_MAX;
 
   // ---- Gravity (always world -Y) ----
   m_vel.y -= Config::NEWTON_GRAVITY * dt;

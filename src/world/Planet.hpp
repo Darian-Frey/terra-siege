@@ -5,6 +5,7 @@
 #include "core/Config.hpp"
 #include <cstdint>
 #include <functional>
+#include <string>
 #include <vector>
 
 // ====================================================================
@@ -35,6 +36,11 @@ public:
     return static_cast<float>(Config::HEIGHTMAP_SIZE - 1) *
            Config::TERRAIN_SCALE;
   }
+
+  // Dev introspection — write <stem>.png and <stem>.txt with the
+  // current heightmap as a greyscale image plus stats/histogram/ASCII
+  // preview. F6 in DEV_MODE calls this.
+  void exportHeightmap(const std::string &pathStem) const;
 
 private:
   Heightmap m_heightmap;

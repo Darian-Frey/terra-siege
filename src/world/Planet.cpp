@@ -63,6 +63,12 @@ void Planet::unload() {
   m_ready = false;
 }
 
+void Planet::exportHeightmap(const std::string &pathStem) const {
+  if (!m_ready) return;
+  m_heightmap.exportPng(pathStem + ".png");
+  m_heightmap.exportStats(pathStem + ".txt");
+}
+
 float Planet::heightAt(float worldX, float worldZ) const {
   // Wrap to toroidal world bounds. Heightmap::sample() also wraps, but
   // wrapping at the world-coord layer keeps callers (camera clamp,

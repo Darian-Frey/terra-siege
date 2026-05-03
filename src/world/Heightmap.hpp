@@ -1,17 +1,21 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 // ====================================================================
 // Heightmap
-// Fourier-synthesis (sine wave) terrain generation, plus river carving
-// and lake flooding. Produces a water-type map alongside height data so
-// the renderer can colour ocean / lake / river distinctly.
+// Tileable Perlin (gradient) noise + multi-octave fBM, plus 2D coupled
+// domain warp, plus river carving and lake flooding. Produces a
+// water-type map alongside height data so the renderer can colour
+// ocean / lake / river distinctly.
+//
 // Size must be (2^n + 1): 129, 257, 513, 1025 etc.
 // Heights stored normalised [0,1].
 // Coordinates wrap toroidally — sample() handles negative and out-of-
-// range queries.
+// range queries so the chunk-tiling renderer can show an "infinite"
+// landscape with no visible edge.
 // ====================================================================
 
 enum class WaterType : uint8_t {
@@ -19,13 +23,6 @@ enum class WaterType : uint8_t {
   Ocean = 1, // below sea level
   Lake = 2,  // inland lake (calm, darker blue)
   River = 3, // flowing river (lighter, animated later)
-};
-
-struct SineWaveTerm {
-  float freqX;     // spatial frequency in X (rad per cell)
-  float freqZ;     // spatial frequency in Z (rad per cell)
-  float amplitude; // contribution weight
-  float phase;     // seed-derived offset (radians)
 };
 
 class Heightmap {
@@ -40,11 +37,17 @@ public:
 
   int size() const { return m_size; }
 
+  // Dev introspection — write a greyscale PNG and a text dump
+  // (statistics, histogram, ASCII preview) at the given path stem.
+  // Stem should NOT include extension.
+  void exportPng(const std::string &path) const;
+  void exportStats(const std::string &path) const;
+
 private:
   // Generation pipeline
-  void buildSineTerms(uint32_t seed, std::vector<SineWaveTerm> &terms);
-  void sineWaveGenerate(uint32_t seed);
+  void noiseGenerate(uint32_t seed); // tileable Perlin fBM + 2D warp
   void normalise();
+  void shapeContrast();              // post-normalise non-linear shaping
   void classifyOcean();
   void carveRivers();
   void floodLakes();

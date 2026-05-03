@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <string>
 
 #ifdef DEV_MODE
 #include <filesystem>
@@ -280,12 +281,35 @@ void GameState::handleDevKeys() {
     m_player.setFlightAssist(next);
   }
 
+  // F3 — toggle infinite thrust charge (testing aid; full god mode in Phase 3+)
+  if (IsKeyPressed(KEY_F3)) {
+    bool on = !m_player.infiniteCharge();
+    m_player.setInfiniteCharge(on);
+    TraceLog(LOG_INFO, "Infinite thrust: %s", on ? "ON" : "OFF");
+  }
+
   // F4 — toggle flight recorder
   if (IsKeyPressed(KEY_F4)) {
     if (isRecording())
       stopRecording();
     else
       startRecording();
+  }
+
+  // F6 — dump current heightmap to disk for offline inspection.
+  // Writes a greyscale PNG and a text dump (stats + ASCII preview) to
+  // tests/logs/heightmap-<unixtime>.{png,txt}. The ASCII preview is
+  // human-readable so it can be inspected directly without an image
+  // viewer.
+  if (IsKeyPressed(KEY_F6)) {
+    ensureLogDir();
+    char buf[256];
+    std::snprintf(buf, sizeof(buf), "%s/heightmap-%lld",
+                  g_logDir.c_str(),
+                  static_cast<long long>(std::time(nullptr)));
+    std::string stem = buf;
+    m_planet.exportHeightmap(stem);
+    TraceLog(LOG_INFO, "Heightmap dumped: %s.{png,txt}", stem.c_str());
   }
 
   // F5 — reroll terrain seed (regenerate world). Useful for confirming
@@ -583,6 +607,8 @@ void GameState::drawHUD() const {
                      : Color{80, 180, 255, 255};
     DrawRectangle(bx, by, chgW, bh, cCol);
     DrawText("THRUST", bx, by - 14, 12, col);
+    if (m_player.infiniteCharge())
+      DrawText("INF", bx + bw + 8, by, 14, {255, 200, 80, 240});
   }
   // Landed indicator
   if (m_player.isLanded()) {
@@ -599,8 +625,27 @@ void GameState::drawHUD() const {
   DrawText(controls, 12, sh - 20, 14, {180, 180, 180, 220});
 
 #ifdef DEV_MODE
-  DrawText("[DEV]  F1:cam  F2:assist  F4:rec  F5:reseed",
-           sw - 280, sh - 20, 14, YELLOW);
+  // Render dev key labels right-aligned with a fixed gap between tokens so
+  // it stays legible no matter what each label's character count is.
+  {
+    const Color devCol = YELLOW;
+    const char *tokens[] = {"[DEV]",     "F1:cam",   "F2:assist",
+                            "F3:infthrust", "F4:rec", "F5:reseed",
+                            "F6:dump"};
+    const int tokenCount = sizeof(tokens) / sizeof(tokens[0]);
+    const int gap = 18;
+    const int rightMargin = 12;
+    int totalW = 0;
+    for (int i = 0; i < tokenCount; ++i) {
+      totalW += MeasureText(tokens[i], 14);
+      if (i + 1 < tokenCount) totalW += gap;
+    }
+    int x = sw - rightMargin - totalW;
+    for (int i = 0; i < tokenCount; ++i) {
+      DrawText(tokens[i], x, sh - 20, 14, devCol);
+      x += MeasureText(tokens[i], 14) + gap;
+    }
+  }
 
   // Flight recorder indicator — large pulsing badge at top-center
   if (isRecording()) {

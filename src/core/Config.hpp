@@ -31,7 +31,9 @@ constexpr float PLAYER_MAX_ALTITUDE = 500.0f; // hard ceiling AGL
 
 constexpr float NEWTON_GRAVITY = 9.8f;         // m/s² world-down
 constexpr float NEWTON_THRUST = 24.0f;         // m/s² along local UP
-constexpr float NEWTON_DRAG = 0.02f;           // near-zero linear damping per second
+constexpr float NEWTON_DRAG = 0.15f;           // linear damping per second
+                                               // ~14% velocity loss/sec at hover;
+                                               // ship coasts but eventually stops
 constexpr float NEWTON_PITCH_MAX = 1.30f;      // ~74° — steep but not inverted
 constexpr float NEWTON_ROLL_MAX = 0.78f;       // ±45° banking limit
 constexpr float NEWTON_MAX_SPEED = 70.0f;      // hard clamp to prevent runaway
@@ -75,7 +77,7 @@ constexpr int HEIGHTMAP_SIZE = 1025;  // must be 2^n + 1
 constexpr int CHUNK_COUNT = 16;       // 1024/16 = 64 cells per chunk
 constexpr int CHUNK_VERTS = 32;       // quads per chunk edge
 constexpr float TERRAIN_SCALE = 8.0f; // world units per heightmap cell (world ~8192×8192)
-constexpr float TERRAIN_HEIGHT_MAX = 120.0f; // peak elevation, world units
+constexpr float TERRAIN_HEIGHT_MAX = 220.0f; // peak elevation, world units
 constexpr float TERRAIN_CURVATURE = 0.00015f; // curvature cosine coefficient
 constexpr float FOG_NEAR = 700.0f;
 constexpr float FOG_FAR = 2000.0f;
@@ -177,29 +179,40 @@ constexpr int SOUND_CHANNELS = 4; // concurrent weapon fire channels
 constexpr float AUDIO_MAX_DISTANCE = 300.0f;
 
 // ----------------------------------------------------------------
-// Terrain generation — Fourier synthesis, exact-tiling.
-// 16 sine terms across three octaves (Continental + Regional + Local).
-// Each term uses an integer number of cycles per (HEIGHTMAP_SIZE-1)
-// cells so the terrain wraps SEAMLESSLY at the world boundary — the
-// chunk-tiling renderer relies on this to show an infinite landscape
-// with no visible edge or slope kink.
-// Coprime small primes for cycle counts (5, 7, 11, 13, 19, …, 43)
-// keep the visible variation high within a tile while guaranteeing
-// exact periodicity. Domain warp uses a single tile-cycle so it is
-// also periodic.
+// Terrain generation — tileable Perlin (gradient) noise + fBM.
+// Sine sums produced visible parallel ridge bands no matter how many
+// terms or how strong the warp; gradient noise has no preferred
+// direction. Tileability is preserved by wrapping the noise lattice
+// modulo the tile period — every octave's lattice cell size divides
+// (HEIGHTMAP_SIZE - 1) evenly so all octaves wrap exactly.
 // ----------------------------------------------------------------
 constexpr float SEA_LEVEL = 0.30f; // fraction of HEIGHT_MAX — ~30% ocean
 
-constexpr int SINE_CONTINENTAL_COUNT = 4;
-constexpr int SINE_REGIONAL_COUNT = 6;
-constexpr int SINE_LOCAL_COUNT = 6;
+constexpr int FBM_OCTAVES = 7;          // octaves accumulated for each cell
+constexpr int FBM_LARGEST_CELL = 512;   // largest lattice spacing (heightmap cells)
+                                        // 512, 256, 128, 64, 32, 16, 8 — all divide 1024
+constexpr float FBM_PERSISTENCE = 0.50f;// amplitude multiplier per octave
+                                        // Lower = bigger continents, fewer islands
+constexpr float FBM_SHAPE_EXPONENT = 1.40f; // symmetric contrast around 0.5
+                                        // >1 = peaks rise, valleys deepen,
+                                        // median stays put → SEA_LEVEL holds
+                                        // its meaning regardless of shaping
 
-constexpr float SINE_CONTINENTAL_AMP = 0.50f;
-constexpr float SINE_REGIONAL_AMP = 0.25f;
-constexpr float SINE_LOCAL_AMP = 0.06f;
+// Mountain layer — ridged fBM masked to high-elevation regions only.
+// `(1 - |perlin|)^2` gives sharp ridge lines (Musgrave's classic
+// ridged-multifractal trick); the smoothstep mask between LOW/HIGH
+// thresholds means flat lowlands stay flat and only the highlands get
+// crinkled up into peaks. Standard libnoise-style layered terrain.
+constexpr int FBM_MOUNTAIN_OCTAVES = 5;
+constexpr int FBM_MOUNTAIN_LARGEST_CELL = 128;
+constexpr float FBM_MOUNTAIN_AMP = 0.30f;
+constexpr float FBM_MOUNTAIN_THRESHOLD_LOW = 0.60f;
+constexpr float FBM_MOUNTAIN_THRESHOLD_HIGH = 0.90f;
 
-constexpr float SINE_WARP_AMPLITUDE = 18.0f; // cells of input perturbation
-constexpr int SINE_WARP_CYCLES = 1;          // cycles of warp per tile period
+// Domain warp — coupled 2D. warpX and warpZ each depend on both x and z
+// so the perturbation bends features diagonally instead of stretching
+// along the grid axes. Applied BEFORE Perlin sampling.
+constexpr float SINE_WARP_AMPLITUDE = 32.0f; // cells of input perturbation
 
 // Rivers
 constexpr int RIVER_COUNT = 8; // number of rivers to carve
@@ -208,10 +221,20 @@ constexpr float RIVER_CARVE_DEPTH = 0.035f;
 constexpr int RIVER_WIDTH = 3;
 constexpr int RIVER_MIN_LENGTH = 60;
 
-// Lakes
-constexpr int LAKE_COUNT = 16;
-constexpr float LAKE_MIN_H = 0.30f;
-constexpr float LAKE_MAX_H = 0.60f;
-constexpr int LAKE_MAX_CELLS = 1200;
+// Lakes — flood-fill from confirmed local minima, with a post-flood
+// size check so sub-threshold "speck" minima are dropped.
+//
+// Smooth Perlin terrain has lots of nearly-flat regions where a single
+// cell can dip slightly below its neighbours; without filtering these
+// produce 1-3 cell rectangular "lakes" littering the map. The size
+// floor and stricter neighbour-depth gate eliminate them.
+constexpr int LAKE_COUNT = 14;
+constexpr float LAKE_MIN_H = 0.42f;
+constexpr float LAKE_MAX_H = 0.65f;
+constexpr int LAKE_MAX_CELLS = 600;
+constexpr int LAKE_MIN_SIZE = 20;        // drop floods smaller than this
+constexpr float LAKE_FILL_EPSILON = 0.012f; // basin-fill height margin
+constexpr float LAKE_MIN_DEPTH = 0.003f;    // depth below higher neighbours
+constexpr int LAKE_MIN_HIGHER_NEIGHBOURS = 7; // of 8; lower = more lakes
 
 } // namespace Config
