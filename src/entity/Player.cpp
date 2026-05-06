@@ -39,6 +39,10 @@ void Player::setFlightAssist(int level) {
 }
 
 void Player::applyDamage(float amount) {
+  // God mode (DEV F3) — invincible. Skip damage entirely so HUD stays
+  // pristine and downstream state machines (GameOver transition etc.)
+  // never trigger during testing.
+  if (m_godMode) return;
   m_health -= amount;
   if (m_health < 0.0f)
     m_health = 0.0f;
@@ -99,11 +103,36 @@ float Player::speed() const { return Vector3Length(m_vel); }
 //   Q / E                  → optional roll left / right
 // ====================================================================
 void Player::handleInput(float dt) {
+  // Dead pilot — no input. The ship continues to fall under gravity
+  // (applyPhysics) but cannot thrust, fire, or steer. Once it hits
+  // the ground GameState fires the final explosion + GameOver.
+  if (m_health <= 0.0f) {
+    m_thrusting = false;
+    m_fireRequested = false;
+    return;
+  }
+
+  // Focus-loss defence — if the window lost focus (alt-tab, WM grab,
+  // etc.), KEYUP events may have been delivered to a different window
+  // and raylib's IsKeyDown can be left "stuck" reporting true on a key
+  // the user has actually released. Force-clear movement-relevant
+  // inputs while unfocused so a stuck thrust can't run away with the
+  // ship. Mouse delta is also unreliable when not focused.
+  if (!IsWindowFocused()) {
+    m_thrusting = false;
+    m_fireRequested = false;
+    m_smoothMouse = {0.0f, 0.0f};
+    return;
+  }
   // ---- Mouse delta with low-pass filter ----
   Vector2 raw = GetMouseDelta();
   float mouseSmooth = 1.0f - expf(-Config::NEWTON_INPUT_SMOOTH * dt);
   m_smoothMouse.x += (raw.x - m_smoothMouse.x) * mouseSmooth;
   m_smoothMouse.y += (raw.y - m_smoothMouse.y) * mouseSmooth;
+
+  // Inversion multipliers — flipped via the future settings menu.
+  const float pitchSign = m_invertPitch ? -1.0f : 1.0f;
+  const float yawSign = m_invertYaw ? -1.0f : 1.0f;
 
   // ---- Pitch (mouse Y + keyboard W/S, S/up arrow nose-up) ----
   // Mouse forward (dy negative) tilts nose DOWN — helicopter convention.
@@ -112,6 +141,7 @@ void Player::handleInput(float dt) {
     pitchDelta += Config::NEWTON_PITCH_RATE * dt;
   if (IsKeyDown(KEY_UP)) // push stick forward = nose down
     pitchDelta -= Config::NEWTON_PITCH_RATE * dt;
+  pitchDelta *= pitchSign;
   m_pitch += pitchDelta;
   if (m_pitch > Config::NEWTON_PITCH_MAX)
     m_pitch = Config::NEWTON_PITCH_MAX;
@@ -124,6 +154,7 @@ void Player::handleInput(float dt) {
     yawDelta -= Config::NEWTON_YAW_RATE * dt;
   if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT))
     yawDelta += Config::NEWTON_YAW_RATE * dt;
+  yawDelta *= yawSign;
   m_yaw += yawDelta;
 
   // ---- Roll (Q/E only — mouse roll is reserved for later) ----
@@ -138,9 +169,14 @@ void Player::handleInput(float dt) {
   if (m_roll < -Config::NEWTON_ROLL_MAX)
     m_roll = -Config::NEWTON_ROLL_MAX;
 
-  // ---- Thrust (W or LMB) — gated on charge being non-empty ----
-  m_thrusting = (IsKeyDown(KEY_W) || IsMouseButtonDown(MOUSE_BUTTON_LEFT)) &&
-                m_thrustCharge > 0.0f;
+  // ---- Thrust (W only — LMB now fires cannon) ----
+  // Mouse-only philosophy keeps thrust off the mouse buttons so the
+  // player can fire while thrusting without input conflicts.
+  m_thrusting = IsKeyDown(KEY_W) && m_thrustCharge > 0.0f;
+
+  // ---- Primary fire request — LMB or SPACE ----
+  m_fireRequested =
+      IsMouseButtonDown(MOUSE_BUTTON_LEFT) || IsKeyDown(KEY_SPACE);
 }
 
 // ====================================================================
@@ -151,6 +187,8 @@ void Player::handleInput(float dt) {
 //   Level 3: Full          — Standard + terrain-avoidance look-ahead
 // ====================================================================
 void Player::applyFlightAssist(float dt, const Planet &planet) {
+  // Dead pilot — avionics offline, no auto-stabilisation.
+  if (m_health <= 0.0f) return;
   if (m_assistLevel <= 0)
     return;
 
@@ -199,7 +237,7 @@ void Player::applyPhysics(float dt, const Planet &planet) {
 
   // ---- Thrust along local UP ----
   // Charge drains while thrusting and rebuilds whenever it isn't. With
-  // m_infiniteCharge (DEV F3) the meter is pinned at MAX and never drains.
+  // m_godMode (DEV F3) the meter is pinned at MAX and never drains.
   // applyingThrust reflects whether thrust force is ACTUALLY being added
   // this tick (input held AND below ceiling AND have charge). Setting
   // m_thrusting to this at the end keeps isThrusting() / HUD / exhaust
@@ -213,19 +251,19 @@ void Player::applyPhysics(float dt, const Planet &planet) {
     Vector3 thrustDir = up();
     m_vel = Vector3Add(m_vel, Vector3Scale(thrustDir,
                                            Config::NEWTON_THRUST * dt));
-    if (!m_infiniteCharge) {
+    if (!m_godMode) {
       m_thrustCharge -= Config::NEWTON_THRUST_DRAIN_RATE * dt;
       if (m_thrustCharge <= 0.0f) {
         m_thrustCharge = 0.0f;
         applyingThrust = false;
       }
     }
-  } else if (!m_infiniteCharge) {
+  } else if (!m_godMode) {
     m_thrustCharge += Config::NEWTON_THRUST_RECHARGE_RATE * dt;
     if (m_thrustCharge > Config::NEWTON_THRUST_CHARGE_MAX)
       m_thrustCharge = Config::NEWTON_THRUST_CHARGE_MAX;
   }
-  if (m_infiniteCharge)
+  if (m_godMode)
     m_thrustCharge = Config::NEWTON_THRUST_CHARGE_MAX;
 
   m_thrusting = applyingThrust;
@@ -302,6 +340,35 @@ void Player::update(float dt, const Planet &planet) {
   handleInput(dt);
   applyFlightAssist(dt, planet);
   applyPhysics(dt, planet);
+
+  // Cannon cooldown — counts down each tick. When zero AND fire input
+  // is held, arm a pending shot for GameState to consume + spawn.
+  if (m_cannonTimer > 0.0f) m_cannonTimer -= dt;
+  if (m_cannonTimer < 0.0f) m_cannonTimer = 0.0f;
+
+  if (m_fireRequested && m_cannonTimer <= 0.0f && m_health > 0.0f) {
+    Vector3 fwd = forward();
+    // Spawn just past the nose so the projectile doesn't overlap the
+    // ship mesh (ship half-length ≈ 2.4).
+    m_shotPos = Vector3Add(m_pos, Vector3Scale(fwd, 3.0f));
+    // Inherit ship velocity — tilt-and-burn flight makes nose ≠
+    // velocity common, and projectiles that ignore ship momentum
+    // feel wrong (cannons drop relative to a strafing ship).
+    m_shotVel =
+        Vector3Add(Vector3Scale(fwd, Config::CANNON_SPEED), m_vel);
+    m_pendingShot = true;
+    m_cannonTimer = Config::CANNON_FIRE_RATE;
+  }
+}
+
+// Consume any pending shot — GameState calls this after update() and
+// hands the resulting position+velocity to EntityManager.
+bool Player::consumePendingShot(Vector3 &outPos, Vector3 &outVel) {
+  if (!m_pendingShot) return false;
+  outPos = m_shotPos;
+  outVel = m_shotVel;
+  m_pendingShot = false;
+  return true;
 }
 
 // ====================================================================

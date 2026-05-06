@@ -1,10 +1,14 @@
 #pragma once
 
 #include "core/Particles.hpp"
+#include "core/Settings.hpp"
+#include "entity/EntityManager.hpp"
 #include "entity/Player.hpp"
 #include "raylib.h"
 #include "world/Planet.hpp"
+#include <array>
 #include <cstdint>
+#include <string>
 
 // ====================================================================
 // GameState — top-level state machine
@@ -67,6 +71,38 @@ private:
   void drawClassicCompassRose() const;  // world-north reference (Classic view)
   void drawFlightHUD() const;           // wireframe attitude/heading/FPV/speed
 
+  // Menu system — drawn over the live world. Mouse cursor is enabled
+  // while any of these are open; Player input is suspended in Paused
+  // and MainMenu states.
+  void drawMainMenu();
+  void drawPauseMenu();
+  void drawSettingsPanel();
+
+  // State transitions
+  void enterMainMenu();
+  void enterPlaying();   // first-time game start from main menu
+  void enterPaused();
+  void resumePlaying();  // unpause back to Playing without resetting world
+  void resetCombat();    // clear entities, respawn fighters, reset player
+
+  // Apply current settings to runtime state (player flags, etc.).
+  // Live-applied settings call this on each toggle.
+  void applyLiveSettings();
+
+  // Cursor visibility — toggled on state changes. raylib's
+  // DisableCursor locks for FPS-style mouse look while EnableCursor
+  // returns it for menu interaction.
+  void setCursorForGameplay(bool inGameplay);
+
+  // Edge-triggered key check — true ONLY on the physics tick where
+  // a key transitions from up to down. Required because raylib's
+  // IsKeyPressed() returns true on every IsKeyPressed call within a
+  // single render frame, and our fixed-timestep loop runs the physics
+  // tick (and therefore handleDevKeys) multiple times per render —
+  // so IsKeyPressed would fire repeatedly for one physical press,
+  // causing F-key actions to cycle multiple times per tap.
+  bool keyPressedEdge(int key);
+
   // State
   AppState m_state = AppState::MainMenu;
   CamMode m_camMode = CamMode::Follow;
@@ -82,10 +118,31 @@ private:
   // Defaults are loaded in init() from Config.
   float m_zoom[5] = {0};
 
+  // Menu / settings state
+  Settings m_settings;
+  std::string m_settingsPath;
+  bool m_settingsOpen = false;       // settings panel overlaid on Main/Pause
+  // main.cpp calls DisableCursor() at startup, so the cursor IS hidden
+  // when init() runs. The flag must match reality or setCursorForGameplay()
+  // will skip the EnableCursor() call when entering the main menu.
+  bool m_cursorHidden = true;
+  // Cached mouse-click state for one-shot click detection
+  bool m_lastClickState = false;
+
+  // Player has died but the world keeps running until the wreck
+  // hits the ground — then we fire the final explosion and switch
+  // to GameOver. Reset on every transition into Playing.
+  bool m_playerDeathHandled = false;
+
+  // Per-key was-down state for keyPressedEdge(). Sized large enough
+  // for raylib's KEY_KB_MENU (348) plus headroom.
+  std::array<bool, 512> m_keyWasDown{};
+
   // World
   Planet m_planet;
   Player m_player;
   ParticleSystem m_particles;
+  EntityManager m_em;
 
   // Camera
   Camera3D m_camera = {};

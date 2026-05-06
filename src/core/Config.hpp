@@ -183,6 +183,85 @@ constexpr float AI_EVADE_HEALTH = 0.25f; // fraction
 constexpr float SPATIAL_CELL_SIZE = 60.0f;
 
 // ----------------------------------------------------------------
+// Combat — TIME-TO-KILL BUDGET (combat_tuning.md authoritative)
+// HP values DERIVED from TTK targets. Adjust TTK first, never hull
+// directly. Cannon DPS = CANNON_DAMAGE / CANNON_FIRE_RATE = 100.
+// ----------------------------------------------------------------
+constexpr float CANNON_DPS = CANNON_DAMAGE / CANNON_FIRE_RATE;
+
+// TTK targets (seconds of sustained Cannon fire)
+constexpr float TTK_DRONE = 0.08f;
+constexpr float TTK_SEEDER = 0.50f;
+constexpr float TTK_FIGHTER = 2.00f;
+constexpr float TTK_BOMBER = 5.00f;
+constexpr float TTK_CARRIER = 25.0f;
+constexpr float TTK_TURRET = 4.00f;
+
+// Shield fractions per enemy type
+constexpr float SHIELD_FRAC_FIGHTER = 0.20f;
+constexpr float SHIELD_FRAC_BOMBER = 0.30f;
+constexpr float SHIELD_FRAC_CARRIER = 0.40f; // total split across 4 sectors
+
+// Total HP (for derivation)
+constexpr float TOTAL_DRONE = TTK_DRONE * CANNON_DPS;
+constexpr float TOTAL_SEEDER = TTK_SEEDER * CANNON_DPS;
+constexpr float TOTAL_FIGHTER = TTK_FIGHTER * CANNON_DPS;
+constexpr float TOTAL_BOMBER = TTK_BOMBER * CANNON_DPS;
+constexpr float TOTAL_CARRIER = TTK_CARRIER * CANNON_DPS;
+constexpr float TOTAL_TURRET = TTK_TURRET * CANNON_DPS;
+
+// Shield HP
+constexpr float SHIELD_DRONE = 0.0f;
+constexpr float SHIELD_SEEDER = 0.0f;
+constexpr float SHIELD_FIGHTER = TOTAL_FIGHTER * SHIELD_FRAC_FIGHTER; // 40
+constexpr float SHIELD_BOMBER = TOTAL_BOMBER * SHIELD_FRAC_BOMBER;    // 150
+constexpr float SHIELD_CARRIER_PER_SECTOR =
+    TOTAL_CARRIER * SHIELD_FRAC_CARRIER * 0.25f; // 250 per sector × 4
+constexpr float SHIELD_TURRET = 0.0f;
+
+// Hull HP (derived: total - shield)
+constexpr float HULL_DRONE = TOTAL_DRONE - SHIELD_DRONE;          // 8
+constexpr float HULL_SEEDER = TOTAL_SEEDER - SHIELD_SEEDER;       // 50
+constexpr float HULL_FIGHTER = TOTAL_FIGHTER - SHIELD_FIGHTER;    // 160
+constexpr float HULL_BOMBER = TOTAL_BOMBER - SHIELD_BOMBER;       // 350
+constexpr float HULL_CARRIER =
+    TOTAL_CARRIER - (SHIELD_CARRIER_PER_SECTOR * 4.0f);            // 1500
+constexpr float HULL_TURRET = TOTAL_TURRET - SHIELD_TURRET;       // 400
+
+// Shield recharge (delay before regen starts; rate while regenerating)
+constexpr float SHIELD_DELAY_FIGHTER = 4.0f;
+constexpr float SHIELD_DELAY_BOMBER = 5.0f;
+constexpr float SHIELD_DELAY_CARRIER = 2.0f;
+constexpr float SHIELD_RATE_FIGHTER = 20.0f;
+constexpr float SHIELD_RATE_BOMBER = 25.0f;
+constexpr float SHIELD_RATE_CARRIER = 80.0f;
+
+// Player combat
+constexpr float PLAYER_HULL_HP = 100.0f;
+constexpr float PLAYER_SHIELD_HP_PER_SECTOR = 100.0f; // ×4 sectors = 400
+constexpr float PLAYER_SHIELD_DELAY = 3.0f;
+constexpr float PLAYER_SHIELD_RATE = 8.0f;
+
+// Fighter return-fire stats — ~25 DPS per spec player-survivability table
+constexpr float FIGHTER_FIRE_RATE = 0.20f;     // sec between shots
+constexpr float FIGHTER_FIRE_DAMAGE = 5.0f;    // 5 / 0.20 = 25 DPS
+constexpr float FIGHTER_PROJ_SPEED = 90.0f;    // slower than player cannon
+constexpr float FIGHTER_PROJ_RANGE = 80.0f;
+constexpr float FIGHTER_THRUST = 18.0f;        // m/s² forward thrust
+constexpr float FIGHTER_MAX_SPEED = 35.0f;     // slower than player
+constexpr float FIGHTER_TURN_RATE = 1.2f;      // rad/s yaw rate
+constexpr float FIGHTER_PREFERRED_ALT = 60.0f; // AGL hover target
+
+// Pool sizes — pre-allocated, no heap in hot path
+constexpr int ENTITY_POOL_SIZE = 256;     // enemies + friendlies
+constexpr int PROJECTILE_POOL_SIZE = 512; // player + enemy projectiles
+
+// Collision
+constexpr float HIT_RADIUS_PROJECTILE = 0.4f; // projectile sphere radius
+constexpr float HIT_RADIUS_FIGHTER = 2.5f;
+constexpr float HIT_RADIUS_PLAYER = 2.0f;
+
+// ----------------------------------------------------------------
 // Difficulty modifiers (indexed by DifficultyPreset enum)
 // ----------------------------------------------------------------
 //                                   Veteran  Pilot  Recruit  Commander

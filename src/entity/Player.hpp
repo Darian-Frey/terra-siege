@@ -50,11 +50,26 @@ public:
   void setFlightAssist(int level);
   int flightAssist() const { return m_assistLevel; }
 
-  // Dev toggle — when true, thrust charge never drains (HUD pinned at MAX).
-  void setInfiniteCharge(bool on) { m_infiniteCharge = on; }
-  bool infiniteCharge() const { return m_infiniteCharge; }
+  // Dev god-mode toggle — when true: infinite thrust (charge pinned at
+  // MAX), invincibility (applyDamage no-op), and any future ammo /
+  // energy drain is bypassed. F3 in DEV_MODE.
+  void setGodMode(bool on) { m_godMode = on; }
+  bool godMode() const { return m_godMode; }
+
+  // Input inversion — settable from the future settings menu. Yaw
+  // defaults inverted because the user reports left/right reads
+  // backwards with the current convention.
+  void setInvertYaw(bool on) { m_invertYaw = on; }
+  bool invertYaw() const { return m_invertYaw; }
+  void setInvertPitch(bool on) { m_invertPitch = on; }
+  bool invertPitch() const { return m_invertPitch; }
 
   void applyDamage(float amount);
+
+  // Cannon firing — Player tracks the cooldown internally. Each tick
+  // GameState calls consumePendingShot(); if it returns true, a
+  // projectile should be spawned at outPos with outVel.
+  bool consumePendingShot(Vector3 &outPos, Vector3 &outVel);
 
 private:
   // Pipeline
@@ -79,8 +94,20 @@ private:
   float m_health = 100.0f;
   bool m_thrusting = false;
   bool m_landed = false;
-  bool m_infiniteCharge = false;
+  bool m_godMode = false;
+  bool m_invertYaw = true;   // user reports left/right reads backwards
+  bool m_invertPitch = false;
   int m_assistLevel = Config::FLIGHT_ASSIST_DEFAULT;
+
+  // Cannon firing state — handleInput sets m_fireRequested while LMB/
+  // SPACE is held; update ticks m_cannonTimer down and arms a pending
+  // shot when the timer hits zero. GameState consumes the shot,
+  // spawns the projectile via EntityManager, and the timer is reset.
+  bool m_fireRequested = false;
+  bool m_pendingShot = false;
+  float m_cannonTimer = 0.0f;
+  Vector3 m_shotPos = {};
+  Vector3 m_shotVel = {};
 
   // Mesh / model
   Mesh m_mesh = {};

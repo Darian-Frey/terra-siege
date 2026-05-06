@@ -192,7 +192,17 @@ void GameState::init() {
 
   m_camMode = CamMode::Follow;
   resetCameraZoom();
-  m_state = AppState::Playing;
+
+  // Load settings (creates the file on first save). Apply to player +
+  // camera before entering MainMenu so the menu reflects current state.
+  m_settingsPath = Settings::defaultPath();
+  m_settings.load(m_settingsPath);
+  applyLiveSettings();
+  m_cameraView = static_cast<CameraView>(m_settings.defaultView);
+
+  // Land in MainMenu. The world is already generated and visible
+  // behind the menu overlay so the user sees what they'll be flying.
+  enterMainMenu();
 
 #ifdef DEV_MODE
   openLog();
@@ -251,21 +261,43 @@ void GameState::loadWorld(uint32_t seed) {
 
   m_planet.generate(seed, progressCb);
   m_particles.clear();
+  m_em.clear();
 
   // Spawn above world centre facing +Z (north).
   float mid = m_planet.worldSize() * 0.5f;
   float ground = m_planet.heightAt(mid, mid);
   Vector3 startPos = {mid, ground + 12.0f, mid};
   m_player.init(startPos, Config::FLIGHT_ASSIST_DEFAULT);
+
+  // v1 combat smoke test — spawn 3 fighters in a loose ring around the
+  // player. They start in PURSUE state and converge. Will be replaced
+  // by WaveManager spawning in 5c.
+  for (int i = 0; i < 3; ++i) {
+    float a = i * 2.0944f; // 120° apart
+    float r = 120.0f;
+    Vector3 fpos = {startPos.x + r * sinf(a), startPos.y + 30.0f,
+                    startPos.z + r * cosf(a)};
+    m_em.spawnEnemy(EntityType::Fighter, fpos);
+  }
 }
 
 // ================================================================
 // Dev keys (only compiled/active in DEV_MODE)
 // ================================================================
+// Edge-triggered key check — see header for rationale.
+bool GameState::keyPressedEdge(int key) {
+  if (key < 0 || static_cast<size_t>(key) >= m_keyWasDown.size())
+    return false;
+  bool isDown = IsKeyDown(key);
+  bool edge = isDown && !m_keyWasDown[static_cast<size_t>(key)];
+  m_keyWasDown[static_cast<size_t>(key)] = isDown;
+  return edge;
+}
+
 void GameState::handleDevKeys() {
 #ifdef DEV_MODE
   // F1 — toggle camera mode
-  if (IsKeyPressed(KEY_F1)) {
+  if (keyPressedEdge(KEY_F1)) {
     if (m_camMode == CamMode::Follow) {
       m_camMode = CamMode::FreeRoam;
       // Initialise free-roam from current follow camera position
@@ -279,20 +311,22 @@ void GameState::handleDevKeys() {
   }
 
   // F2 — next flight assist level
-  if (IsKeyPressed(KEY_F2)) {
+  if (keyPressedEdge(KEY_F2)) {
     int next = (m_player.flightAssist() + 1) % 4;
     m_player.setFlightAssist(next);
   }
 
   // F3 — toggle infinite thrust charge (testing aid; full god mode in Phase 3+)
-  if (IsKeyPressed(KEY_F3)) {
-    bool on = !m_player.infiniteCharge();
-    m_player.setInfiniteCharge(on);
-    TraceLog(LOG_INFO, "Infinite thrust: %s", on ? "ON" : "OFF");
+  if (keyPressedEdge(KEY_F3)) {
+    bool on = !m_player.godMode();
+    m_player.setGodMode(on);
+    TraceLog(LOG_INFO, "God mode: %s (infinite thrust + invincible + "
+                       "infinite weapons)",
+             on ? "ON" : "OFF");
   }
 
   // F4 — toggle flight recorder
-  if (IsKeyPressed(KEY_F4)) {
+  if (keyPressedEdge(KEY_F4)) {
     if (isRecording())
       stopRecording();
     else
@@ -304,7 +338,7 @@ void GameState::handleDevKeys() {
   // tests/logs/heightmap-<unixtime>.{png,txt}. The ASCII preview is
   // human-readable so it can be inspected directly without an image
   // viewer.
-  if (IsKeyPressed(KEY_F6)) {
+  if (keyPressedEdge(KEY_F6)) {
     ensureLogDir();
     char buf[256];
     std::snprintf(buf, sizeof(buf), "%s/heightmap-%lld",
@@ -317,7 +351,7 @@ void GameState::handleDevKeys() {
 
   // F5 — reroll terrain seed (regenerate world). Useful for confirming
   // that two seeds produce visibly distinct landscapes.
-  if (IsKeyPressed(KEY_F5)) {
+  if (keyPressedEdge(KEY_F5)) {
     uint32_t newSeed =
         static_cast<uint32_t>(std::time(nullptr)) ^ (m_seed * 2654435761u);
     if (newSeed == 0) newSeed = 1;
@@ -542,9 +576,9 @@ void GameState::resetCameraZoom() {
 // FOV (50–90). Wheel-up = zoom in (lower FOV / lower altitude).
 void GameState::handleCameraZoom() {
   float wheel = GetMouseWheelMove();
-  bool stepIn = IsKeyPressed(KEY_LEFT_BRACKET);
-  bool stepOut = IsKeyPressed(KEY_RIGHT_BRACKET);
-  bool reset = IsKeyPressed(KEY_BACKSLASH);
+  bool stepIn = keyPressedEdge(KEY_LEFT_BRACKET);
+  bool stepOut = keyPressedEdge(KEY_RIGHT_BRACKET);
+  bool reset = keyPressedEdge(KEY_BACKSLASH);
   if (wheel == 0.0f && !stepIn && !stepOut && !reset) return;
 
   const int idx = static_cast<int>(m_cameraView);
@@ -581,11 +615,11 @@ void GameState::handleCameraZoom() {
 
 void GameState::handleCameraViewKeys() {
   CameraView newView = m_cameraView;
-  if (IsKeyPressed(KEY_ONE))   newView = CameraView::Chase;
-  if (IsKeyPressed(KEY_TWO))   newView = CameraView::Velocity;
-  if (IsKeyPressed(KEY_THREE)) newView = CameraView::Tactical;
-  if (IsKeyPressed(KEY_FOUR))  newView = CameraView::ThreatLock;
-  if (IsKeyPressed(KEY_FIVE))  newView = CameraView::Classic;
+  if (keyPressedEdge(KEY_ONE))   newView = CameraView::Chase;
+  if (keyPressedEdge(KEY_TWO))   newView = CameraView::Velocity;
+  if (keyPressedEdge(KEY_THREE)) newView = CameraView::Tactical;
+  if (keyPressedEdge(KEY_FOUR))  newView = CameraView::ThreatLock;
+  if (keyPressedEdge(KEY_FIVE))  newView = CameraView::Classic;
 
   if (newView != m_cameraView) {
     m_cameraView = newView;
@@ -646,6 +680,14 @@ void GameState::update(float dt) {
   case AppState::Playing: {
     handleDevKeys();
 
+    // Pause toggle — Esc or P. Only fires from Follow mode; FreeRoam
+    // dev cam keeps existing F1 behaviour for symmetry.
+    if (m_camMode == CamMode::Follow &&
+        (keyPressedEdge(KEY_ESCAPE) || keyPressedEdge(KEY_P))) {
+      enterPaused();
+      break;
+    }
+
     if (m_camMode == CamMode::Follow) {
       handleCameraViewKeys();
       handleCameraZoom();
@@ -662,6 +704,36 @@ void GameState::update(float dt) {
         m_particles.emitExhaust(thrusterPos, down, m_player.velocity(), dt);
       }
       m_particles.update(dt, m_planet);
+
+      // Spawn cannon projectiles armed by Player::update (LMB / Space).
+      Vector3 spos, svel;
+      if (m_player.consumePendingShot(spos, svel)) {
+        m_em.spawnProjectile(spos, svel, Config::CANNON_DAMAGE,
+                             Config::CANNON_RANGE, Config::CANNON_SPEED,
+                             ProjectileOwner::Player);
+      }
+
+      m_em.update(dt, m_planet, m_player, m_particles);
+
+      // Death flow — when the player loses all hull they keep falling
+      // (input + assist gated off in Player) until the wreck comes to
+      // rest on the ground, at which point we fire the final
+      // explosion and switch to GameOver. The scene keeps updating
+      // through the fall — the original Virus did the same and it
+      // reads as "lost power" rather than a hard cut.
+      if (!m_player.isAlive() && !m_playerDeathHandled) {
+        Vector3 ppos = m_player.position();
+        float spd = m_player.speed();
+        // Crash logic in Player::applyPhysics zeroes velocity on
+        // impact, so spd≈0 reliably signals the wreck has stopped.
+        if (spd < 1.0f) {
+          m_em.emitKillExplosion(ppos, m_particles);
+          m_playerDeathHandled = true;
+          m_state = AppState::GameOver;
+          setCursorForGameplay(false);
+          break;
+        }
+      }
     } else {
       // Free-roam: player suspended; keys 1–5 are ignored.
       updateFreeCamera(dt);
@@ -688,6 +760,63 @@ void GameState::update(float dt) {
 // ================================================================
 // render
 // ================================================================
+// ----------------------------------------------------------------
+// Menu UI helpers — defined here so render() and the menu methods
+// can both see them. Anonymous namespace = file-scope statics.
+// ----------------------------------------------------------------
+namespace {
+
+// Inline hand-rolled button. Returns true on click (rising edge).
+bool drawMenuButton(Rectangle r, const char *label, Vector2 mouse,
+                    bool clickEdge) {
+  bool hover = CheckCollisionPointRec(mouse, r);
+  Color bg = hover ? Color{60, 80, 120, 240} : Color{30, 40, 60, 220};
+  Color border = hover ? Color{220, 230, 255, 255} : Color{120, 140, 180, 200};
+  Color fg = hover ? Color{255, 255, 255, 255} : Color{200, 210, 230, 255};
+  DrawRectangleRec(r, bg);
+  DrawRectangleLinesEx(r, 2.0f, border);
+  int tw = MeasureText(label, 22);
+  DrawText(label, static_cast<int>(r.x + r.width / 2 - tw / 2),
+           static_cast<int>(r.y + r.height / 2 - 11), 22, fg);
+  return hover && clickEdge;
+}
+
+// Settings row — left-aligned label + right-aligned value/toggle button.
+// Returns true on click of the value button.
+bool drawSettingsToggleRow(Rectangle row, const char *label,
+                           const char *valueText, Vector2 mouse,
+                           bool clickEdge) {
+  DrawText(label, static_cast<int>(row.x + 14),
+           static_cast<int>(row.y + row.height / 2 - 9), 18,
+           {220, 225, 240, 255});
+
+  Rectangle btn = {row.x + row.width - 130.0f, row.y + 6.0f, 116.0f,
+                   row.height - 12.0f};
+  bool hover = CheckCollisionPointRec(mouse, btn);
+  Color bg = hover ? Color{80, 110, 160, 240} : Color{40, 60, 90, 220};
+  Color border = hover ? Color{220, 230, 255, 255} : Color{100, 130, 170, 200};
+  Color fg = hover ? Color{255, 255, 255, 255} : Color{220, 230, 250, 255};
+  DrawRectangleRec(btn, bg);
+  DrawRectangleLinesEx(btn, 1.5f, border);
+  int tw = MeasureText(valueText, 16);
+  DrawText(valueText, static_cast<int>(btn.x + btn.width / 2 - tw / 2),
+           static_cast<int>(btn.y + btn.height / 2 - 8), 16, fg);
+  return hover && clickEdge;
+}
+
+const char *cameraViewLabel(int v) {
+  switch (v) {
+  case 0: return "CHASE";
+  case 1: return "VELOCITY";
+  case 2: return "TACTICAL";
+  case 3: return "THREAT";
+  case 4: return "CLASSIC";
+  default: return "CHASE";
+  }
+}
+
+} // namespace
+
 void GameState::render(float alpha) {
   (void)alpha;
 
@@ -711,6 +840,7 @@ void GameState::render(float alpha) {
     m_planet.draw(m_camera.position);
     m_player.renderGroundShadow(m_planet);
     m_player.render();
+    m_em.render();
     m_particles.render(m_camera);
     EndMode3D();
 
@@ -718,16 +848,81 @@ void GameState::render(float alpha) {
     break;
   }
   case AppState::MainMenu:
-    ClearBackground(BLACK);
-    DrawText("MAIN MENU (todo)", 40, 40, 28, RAYWHITE);
+  case AppState::Paused: {
+    // Render the live (or frozen) world as a backdrop so the menu
+    // floats over the actual game surface — the player sees what
+    // they're about to fly into. Same render path as Playing minus
+    // the HUD; the menu draws its own dimming overlay on top.
+    ClearBackground({55, 80, 140, 255});
+    BeginMode3D(m_camera);
+    {
+      rlMatrixMode(RL_PROJECTION);
+      rlLoadIdentity();
+      double aspect = static_cast<double>(GetScreenWidth()) /
+                      static_cast<double>(GetScreenHeight());
+      double top = 0.05 * tan(m_camera.fovy * 0.5 * DEG2RAD);
+      double right = top * aspect;
+      rlFrustum(-right, right, -top, top, 0.05, 3000.0);
+      rlMatrixMode(RL_MODELVIEW);
+    }
+    m_planet.draw(m_camera.position);
+    m_player.renderGroundShadow(m_planet);
+    m_player.render();
+    m_em.render();
+    m_particles.render(m_camera);
+    EndMode3D();
+
+    if (m_state == AppState::MainMenu)
+      drawMainMenu();
+    else
+      drawPauseMenu();
     break;
-  case AppState::Paused:
-    DrawText("PAUSED", 40, 40, 28, RAYWHITE);
+  }
+  case AppState::GameOver: {
+    // Render the wreckage scene as a frozen backdrop, then a tinted
+    // overlay + restart / main-menu buttons. Same camera path as
+    // Playing so the player sees their final position.
+    ClearBackground({55, 80, 140, 255});
+    BeginMode3D(m_camera);
+    {
+      rlMatrixMode(RL_PROJECTION);
+      rlLoadIdentity();
+      double aspect = static_cast<double>(GetScreenWidth()) /
+                      static_cast<double>(GetScreenHeight());
+      double top = 0.05 * tan(m_camera.fovy * 0.5 * DEG2RAD);
+      double right = top * aspect;
+      rlFrustum(-right, right, -top, top, 0.05, 3000.0);
+      rlMatrixMode(RL_MODELVIEW);
+    }
+    m_planet.draw(m_camera.position);
+    m_player.renderGroundShadow(m_planet);
+    m_player.render(); // wreck stays visible at the crash site
+    m_em.render();
+    m_particles.render(m_camera);
+    EndMode3D();
+
+    int sw = GetScreenWidth();
+    int sh = GetScreenHeight();
+    Vector2 mouse = GetMousePosition();
+    bool clickNow = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+    bool clickEdge = clickNow && !m_lastClickState;
+
+    DrawRectangle(0, 0, sw, sh, {30, 0, 0, 180});
+    const char *title = "DESTROYED";
+    int tw = MeasureText(title, 64);
+    DrawText(title, sw / 2 - tw / 2, sh / 4, 64, {255, 100, 80, 255});
+
+    const float bw = 280.0f, bh = 50.0f;
+    float bx = sw / 2 - bw / 2;
+    float by = sh / 2 - 30;
+    if (drawMenuButton({bx, by, bw, bh}, "RESTART", mouse, clickEdge))
+      enterPlaying();
+    by += bh + 14;
+    if (drawMenuButton({bx, by, bw, bh}, "MAIN MENU", mouse, clickEdge))
+      enterMainMenu();
+    m_lastClickState = clickNow;
     break;
-  case AppState::GameOver:
-    ClearBackground(BLACK);
-    DrawText("GAME OVER", 40, 40, 28, RED);
-    break;
+  }
   case AppState::Victory:
     ClearBackground(BLACK);
     DrawText("VICTORY", 40, 40, 28, GREEN);
@@ -853,8 +1048,8 @@ void GameState::drawHUD() const {
                      : Color{80, 180, 255, 255};
     DrawRectangle(bx, by, chgW, bh, cCol);
     DrawText("THRUST", bx, by - 14, 12, col);
-    if (m_player.infiniteCharge())
-      DrawText("INF", bx + bw + 8, by, 14, {255, 200, 80, 240});
+    if (m_player.godMode())
+      DrawText("GOD", bx + bw + 8, by, 14, {255, 200, 80, 240});
   }
   // Landed indicator
   if (m_player.isLanded()) {
@@ -926,7 +1121,7 @@ void GameState::drawHUD() const {
   {
     const Color devCol = YELLOW;
     const char *tokens[] = {"[DEV]",     "F1:cam",   "F2:assist",
-                            "F3:infthrust", "F4:rec", "F5:reseed",
+                            "F3:godmode", "F4:rec", "F5:reseed",
                             "F6:dump"};
     const int tokenCount = sizeof(tokens) / sizeof(tokens[0]);
     const int gap = 18;
@@ -973,8 +1168,8 @@ void GameState::drawHUD() const {
 
   // Wireframe flight HUD — visible in every camera view. Provides the
   // attitude/heading/speed/FPV data a Newtonian pilot needs regardless
-  // of which camera is active.
-  drawFlightHUD();
+  // of which camera is active. Toggled via Settings (m_settings.wireframeHUD).
+  if (m_settings.wireframeHUD) drawFlightHUD();
 }
 
 // ================================================================
@@ -1347,6 +1542,272 @@ void GameState::drawFlightHUD() const {
 // ================================================================
 // shutdown
 // ================================================================
+// ================================================================
+// Menu system — Main / Pause / Settings overlays.
+//
+// All three are drawn over the live (or frozen) world so the player
+// sees the world they'll be flying. Mouse cursor is enabled while
+// any menu is open. Settings is a panel overlaid on top of Main or
+// Pause, dismissed by clicking BACK.
+//
+// UI primitives are hand-rolled — raylib has no widget kit. Hover
+// state via CheckCollisionPointRec, click via the m_lastClickState
+// edge-trigger so a single press doesn't repeat across frames.
+// ================================================================
+
+
+// ----------------------------------------------------------------
+// Cursor management — gameplay locks the cursor for FPS-style mouse
+// look (Player::handleInput uses GetMouseDelta). Menus need it free.
+// Only call the raylib functions on transitions; calling them every
+// frame causes a flicker on some Linux WMs.
+// ----------------------------------------------------------------
+void GameState::setCursorForGameplay(bool inGameplay) {
+  if (inGameplay && !m_cursorHidden) {
+    DisableCursor();
+    m_cursorHidden = true;
+  } else if (!inGameplay && m_cursorHidden) {
+    EnableCursor();
+    m_cursorHidden = false;
+  }
+}
+
+void GameState::applyLiveSettings() {
+  m_player.setInvertYaw(m_settings.invertYaw);
+  m_player.setInvertPitch(m_settings.invertPitch);
+  m_player.setGodMode(m_settings.godMode);
+  // wireframeHUD is checked per-frame in drawHUD() — no apply needed.
+  // defaultView is only consumed at game-start; live changes don't
+  // override the player's current view.
+}
+
+void GameState::resetCombat() {
+  m_em.clear();
+  m_particles.clear();
+
+  // Respawn player above world centre
+  float mid = m_planet.worldSize() * 0.5f;
+  float ground = m_planet.heightAt(mid, mid);
+  Vector3 startPos = {mid, ground + 12.0f, mid};
+  m_player.init(startPos, Config::FLIGHT_ASSIST_DEFAULT);
+
+  // Re-anchor camera so it doesn't lerp through the old position
+  Vector3 fwd = m_player.forward();
+  m_camera.position = Vector3Add(
+      startPos, Vector3Add(Vector3Scale(fwd, -Config::CAM_DISTANCE),
+                           {0, Config::CAM_HEIGHT, 0}));
+  m_camera.target = Vector3Add(startPos, {0, 1.5f, 0});
+
+  // Re-spawn fighter ring (v1 placeholder until WaveManager lands)
+  for (int i = 0; i < 3; ++i) {
+    float a = i * 2.0944f;
+    float r = 120.0f;
+    Vector3 fpos = {startPos.x + r * sinf(a), startPos.y + 30.0f,
+                    startPos.z + r * cosf(a)};
+    m_em.spawnEnemy(EntityType::Fighter, fpos);
+  }
+
+  applyLiveSettings();
+  m_cameraView = static_cast<CameraView>(m_settings.defaultView);
+  resetCameraZoom();
+
+  // Fresh life — re-arm the death pipeline.
+  m_playerDeathHandled = false;
+}
+
+void GameState::enterMainMenu() {
+  m_state = AppState::MainMenu;
+  m_settingsOpen = false;
+  setCursorForGameplay(false);
+}
+
+void GameState::enterPlaying() {
+  resetCombat();
+  m_state = AppState::Playing;
+  m_settingsOpen = false;
+  setCursorForGameplay(true);
+}
+
+void GameState::enterPaused() {
+  m_state = AppState::Paused;
+  setCursorForGameplay(false);
+}
+
+void GameState::resumePlaying() {
+  m_state = AppState::Playing;
+  m_settingsOpen = false;
+  setCursorForGameplay(true);
+}
+
+// ----------------------------------------------------------------
+// drawMainMenu / drawPauseMenu / drawSettingsPanel
+//
+// Each method also handles its own input (mouse hover + click). The
+// click edge is computed once per render via m_lastClickState so a
+// long-held mouse button only triggers one action per click.
+// ----------------------------------------------------------------
+void GameState::drawMainMenu() {
+  int sw = GetScreenWidth();
+  int sh = GetScreenHeight();
+  Vector2 mouse = GetMousePosition();
+  bool clickNow = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+  bool clickEdge = clickNow && !m_lastClickState;
+
+  // Dimming overlay so the menu reads against any terrain background
+  DrawRectangle(0, 0, sw, sh, {0, 0, 0, 140});
+
+  // Title
+  const char *title = "TERRA-SIEGE";
+  int tw = MeasureText(title, 64);
+  DrawText(title, sw / 2 - tw / 2, sh / 4 - 32, 64, {220, 240, 255, 255});
+
+  const char *sub = "a modern reimagining of Virus (1988)";
+  int sbw = MeasureText(sub, 16);
+  DrawText(sub, sw / 2 - sbw / 2, sh / 4 + 40, 16, {180, 200, 220, 200});
+
+  if (m_settingsOpen) {
+    drawSettingsPanel();
+    m_lastClickState = clickNow;
+    return;
+  }
+
+  // Buttons
+  const float bw = 280.0f, bh = 50.0f;
+  float bx = sw / 2 - bw / 2;
+  float by = sh / 2 - 30;
+
+  if (drawMenuButton({bx, by, bw, bh}, "START GAME", mouse, clickEdge))
+    enterPlaying();
+  by += bh + 14;
+  if (drawMenuButton({bx, by, bw, bh}, "SETTINGS", mouse, clickEdge))
+    m_settingsOpen = true;
+  by += bh + 14;
+  if (drawMenuButton({bx, by, bw, bh}, "QUIT", mouse, clickEdge)) {
+    // raylib WindowShouldClose reads this on next frame
+    CloseWindow();
+  }
+
+  m_lastClickState = clickNow;
+}
+
+void GameState::drawPauseMenu() {
+  int sw = GetScreenWidth();
+  int sh = GetScreenHeight();
+  Vector2 mouse = GetMousePosition();
+  bool clickNow = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+  bool clickEdge = clickNow && !m_lastClickState;
+
+  DrawRectangle(0, 0, sw, sh, {0, 0, 0, 140});
+
+  const char *title = "PAUSED";
+  int tw = MeasureText(title, 48);
+  DrawText(title, sw / 2 - tw / 2, sh / 4, 48, {230, 235, 255, 255});
+
+  if (m_settingsOpen) {
+    drawSettingsPanel();
+    m_lastClickState = clickNow;
+    return;
+  }
+
+  const float bw = 280.0f, bh = 50.0f;
+  float bx = sw / 2 - bw / 2;
+  float by = sh / 2 - 30;
+
+  if (drawMenuButton({bx, by, bw, bh}, "RESUME", mouse, clickEdge))
+    resumePlaying();
+  by += bh + 14;
+  if (drawMenuButton({bx, by, bw, bh}, "SETTINGS", mouse, clickEdge))
+    m_settingsOpen = true;
+  by += bh + 14;
+  if (drawMenuButton({bx, by, bw, bh}, "MAIN MENU", mouse, clickEdge))
+    enterMainMenu();
+
+  m_lastClickState = clickNow;
+}
+
+void GameState::drawSettingsPanel() {
+  int sw = GetScreenWidth();
+  int sh = GetScreenHeight();
+  Vector2 mouse = GetMousePosition();
+  bool clickNow = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+  bool clickEdge = clickNow && !m_lastClickState;
+
+  // Panel background
+  const float pw = 480.0f, ph = 380.0f;
+  float px = sw / 2 - pw / 2;
+  float py = sh / 2 - ph / 2;
+  DrawRectangle(static_cast<int>(px), static_cast<int>(py),
+                static_cast<int>(pw), static_cast<int>(ph),
+                {18, 24, 36, 240});
+  DrawRectangleLinesEx({px, py, pw, ph}, 2.0f, {120, 150, 200, 220});
+
+  const char *title = "SETTINGS";
+  int tw = MeasureText(title, 28);
+  DrawText(title, static_cast<int>(px + pw / 2 - tw / 2),
+           static_cast<int>(py + 20), 28, {220, 235, 255, 255});
+
+  // Rows
+  const float rowH = 44.0f;
+  float ry = py + 70;
+  Rectangle rowRect{px + 20, ry, pw - 40, rowH};
+
+  // Invert Yaw
+  if (drawSettingsToggleRow(rowRect, "Invert Yaw (Mouse-X)",
+                            m_settings.invertYaw ? "ON" : "OFF", mouse,
+                            clickEdge)) {
+    m_settings.invertYaw = !m_settings.invertYaw;
+    applyLiveSettings();
+    m_settings.save(m_settingsPath);
+  }
+  rowRect.y += rowH + 6;
+
+  // Invert Pitch
+  if (drawSettingsToggleRow(rowRect, "Invert Pitch (Mouse-Y)",
+                            m_settings.invertPitch ? "ON" : "OFF", mouse,
+                            clickEdge)) {
+    m_settings.invertPitch = !m_settings.invertPitch;
+    applyLiveSettings();
+    m_settings.save(m_settingsPath);
+  }
+  rowRect.y += rowH + 6;
+
+  // God Mode
+  if (drawSettingsToggleRow(rowRect, "God Mode (F3)",
+                            m_settings.godMode ? "ON" : "OFF", mouse,
+                            clickEdge)) {
+    m_settings.godMode = !m_settings.godMode;
+    applyLiveSettings();
+    m_settings.save(m_settingsPath);
+  }
+  rowRect.y += rowH + 6;
+
+  // Default View — clicking cycles 0→1→…→4→0
+  if (drawSettingsToggleRow(rowRect, "Default Camera View",
+                            cameraViewLabel(m_settings.defaultView), mouse,
+                            clickEdge)) {
+    m_settings.defaultView = (m_settings.defaultView + 1) % 5;
+    m_settings.save(m_settingsPath);
+  }
+  rowRect.y += rowH + 6;
+
+  // Wireframe HUD
+  if (drawSettingsToggleRow(rowRect, "Wireframe Flight HUD",
+                            m_settings.wireframeHUD ? "ON" : "OFF", mouse,
+                            clickEdge)) {
+    m_settings.wireframeHUD = !m_settings.wireframeHUD;
+    m_settings.save(m_settingsPath);
+  }
+  rowRect.y += rowH + 6;
+
+  // Back button
+  Rectangle back{px + pw / 2 - 80, py + ph - 60, 160, 40};
+  if (drawMenuButton(back, "BACK", mouse, clickEdge)) {
+    m_settingsOpen = false;
+  }
+
+  m_lastClickState = clickNow;
+}
+
 void GameState::shutdown() {
 #ifdef DEV_MODE
   closeLog();

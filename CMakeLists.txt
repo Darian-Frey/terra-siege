@@ -41,6 +41,8 @@ set(SOURCES
     src/core/Config.hpp
     src/core/Particles.cpp
     src/core/Particles.hpp
+    src/core/Settings.cpp
+    src/core/Settings.hpp
 
     src/world/Planet.cpp
     src/world/Planet.hpp
