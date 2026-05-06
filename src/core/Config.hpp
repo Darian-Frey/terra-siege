@@ -168,11 +168,25 @@ constexpr float SHIELD_RECHARGE_RATE = 8.0f;  // HP/sec
 constexpr float SHIELD_RECHARGE_DELAY = 3.0f; // sec after last hit
 
 // ----------------------------------------------------------------
-// Radar
+// Radar — Tier 1 baseline (radar_system.md). Tier 2+3 reserve unused
+// constants so adding the missile warning ring and ghost-blip pool
+// later doesn't require Config changes.
 // ----------------------------------------------------------------
-constexpr float RADAR_BASE_RANGE = 300.0f;
-constexpr float RADAR_BOOST_RANGE = 500.0f; // when Radar Booster alive
-constexpr float RADAR_BLINK_NEAR = 80.0f; // distance at which blip blinks fast
+constexpr float RADAR_BASE_RANGE = 300.0f;     // world units (default)
+constexpr float RADAR_BOOST_RANGE = 500.0f;    // with Radar Booster alive
+constexpr float RADAR_ALT_STRIP_RANGE = 150.0f; // ±units shown on alt strip
+constexpr float RADAR_BLINK_NEAR = 80.0f;      // distance for fast blink
+constexpr float RADAR_BLINK_FAR = 250.0f;      // distance for slow blink
+constexpr float RADAR_BLINK_FAST = 0.12f;      // sec/cycle (near)
+constexpr float RADAR_BLINK_SLOW = 0.60f;      // sec/cycle (far)
+constexpr float RADAR_GHOST_LIFETIME = 8.0f;   // ghost blip persistence
+constexpr float RADAR_VECTOR_MAX_LEN = 18.0f;  // px at max world speed
+constexpr float RADAR_JAM_MAX_OFFSET = 12.0f;  // px jitter near Carrier
+constexpr float RADAR_MISSILE_WARN_MIN = 120.0f; // dist to start warning ring
+constexpr float RADAR_DISC_RADIUS_PX = 60.0f;  // half of 120px disc
+constexpr float RADAR_INNER_RING_FRAC = 0.35f; // cannon range ring
+constexpr float RADAR_OUTER_RING_FRAC = 0.75f; // missile range ring
+constexpr float RADAR_CLASSIC_VIEW_SCALE = 1.20f; // disc scale-up factor in Classic view
 
 // ----------------------------------------------------------------
 // AI
@@ -255,6 +269,15 @@ constexpr float FIGHTER_PREFERRED_ALT = 60.0f; // AGL hover target
 // Pool sizes — pre-allocated, no heap in hot path
 constexpr int ENTITY_POOL_SIZE = 256;     // enemies + friendlies
 constexpr int PROJECTILE_POOL_SIZE = 512; // player + enemy projectiles
+
+// Wave manager — staggered spawning + intermission between waves.
+// Wave list is hardcoded for now; difficulty escalates after the
+// table runs out (count grows linearly past the last defined wave).
+constexpr float WAVE_INTERMISSION = 5.0f;     // sec between waves
+constexpr float WAVE_FIRST_DELAY = 2.0f;      // sec before wave 1 starts
+constexpr float WAVE_SPAWN_RING_MIN = 130.0f; // min radius around player
+constexpr float WAVE_SPAWN_RING_MAX = 220.0f; // max radius
+constexpr float WAVE_SPAWN_ALT_OFFSET = 25.0f;// spawn altitude above player
 
 // Collision
 constexpr float HIT_RADIUS_PROJECTILE = 0.4f; // projectile sphere radius

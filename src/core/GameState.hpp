@@ -4,7 +4,9 @@
 #include "core/Settings.hpp"
 #include "entity/EntityManager.hpp"
 #include "entity/Player.hpp"
+#include "hud/Radar.hpp"
 #include "raylib.h"
+#include "wave/WaveManager.hpp"
 #include "world/Planet.hpp"
 #include <array>
 #include <cstdint>
@@ -143,6 +145,8 @@ private:
   Player m_player;
   ParticleSystem m_particles;
   EntityManager m_em;
+  Radar m_radar;
+  WaveManager m_waves;
 
   // Camera
   Camera3D m_camera = {};

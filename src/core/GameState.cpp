@@ -269,16 +269,10 @@ void GameState::loadWorld(uint32_t seed) {
   Vector3 startPos = {mid, ground + 12.0f, mid};
   m_player.init(startPos, Config::FLIGHT_ASSIST_DEFAULT);
 
-  // v1 combat smoke test — spawn 3 fighters in a loose ring around the
-  // player. They start in PURSUE state and converge. Will be replaced
-  // by WaveManager spawning in 5c.
-  for (int i = 0; i < 3; ++i) {
-    float a = i * 2.0944f; // 120° apart
-    float r = 120.0f;
-    Vector3 fpos = {startPos.x + r * sinf(a), startPos.y + 30.0f,
-                    startPos.z + r * cosf(a)};
-    m_em.spawnEnemy(EntityType::Fighter, fpos);
-  }
+  // WaveManager drives all enemy spawning from here on — first wave
+  // begins after WAVE_FIRST_DELAY seconds so the player has time to
+  // orient before the first contact.
+  m_waves.reset();
 }
 
 // ================================================================
@@ -714,6 +708,11 @@ void GameState::update(float dt) {
       }
 
       m_em.update(dt, m_planet, m_player, m_particles);
+      m_radar.update(dt, m_em, m_player.position(), m_player.yaw(),
+                     static_cast<float>(GetTime()));
+      // WaveManager spawns enemies on a stagger and drives the
+      // wave-clear / intermission pacing.
+      m_waves.update(dt, m_em, m_player);
 
       // Death flow — when the player loses all hull they keep falling
       // (input + assist gated off in Player) until the wreck comes to
@@ -1161,6 +1160,54 @@ void GameState::drawHUD() const {
   }
 #endif
 
+  // Wave status — small thin bar at top-centre showing the current
+  // wave number plus either intermission countdown or remaining-
+  // enemies-this-wave. Sits clear of the heading-tape (which is
+  // ~50px wide centered, this bar is wider). Intermission is
+  // highlighted brighter so a "next wave coming" alert is obvious.
+  {
+    char buf[64];
+    Color barCol = {0, 0, 0, 140};
+    Color textCol = {220, 230, 250, 230};
+
+    switch (m_waves.state()) {
+    case WaveManager::State::FirstDelay:
+      snprintf(buf, sizeof(buf), "WAVE %d  STARTING IN %.0fs",
+               m_waves.currentWave(),
+               ceilf(m_waves.firstDelayTimer()));
+      textCol = {255, 220, 120, 240};
+      break;
+    case WaveManager::State::Spawning: {
+      int alive = m_waves.aliveEnemyCount(m_em);
+      int pending = m_waves.remainingToSpawn();
+      snprintf(buf, sizeof(buf), "WAVE %d  %d ENEMIES",
+               m_waves.currentWave(), alive + pending);
+      break;
+    }
+    case WaveManager::State::WaveActive: {
+      int alive = m_waves.aliveEnemyCount(m_em);
+      snprintf(buf, sizeof(buf), "WAVE %d  %d ENEMIES",
+               m_waves.currentWave(), alive);
+      break;
+    }
+    case WaveManager::State::Intermission:
+      snprintf(buf, sizeof(buf), "WAVE %d CLEAR  NEXT IN %.0fs",
+               m_waves.currentWave(),
+               ceilf(m_waves.intermissionTimer()));
+      textCol = {120, 240, 160, 240};
+      barCol = {20, 60, 30, 180};
+      break;
+    }
+
+    // Stack below the heading tape (which occupies ~y=18-58).
+    int tw = MeasureText(buf, 16);
+    int bx = sw / 2 - (tw + 24) / 2;
+    int by = 64;
+    DrawRectangle(bx, by, tw + 24, 22, barCol);
+    DrawRectangleLines(bx, by, tw + 24, 22, {120, 150, 180, 180});
+    DrawText(buf, bx + 12, by + 4, 16, textCol);
+  }
+
   // Camera-view overlays — fade label on switch, plus per-view UI.
   drawCameraViewLabel();
   drawTacticalShipArrow();
@@ -1170,6 +1217,32 @@ void GameState::drawHUD() const {
   // attitude/heading/speed/FPV data a Newtonian pilot needs regardless
   // of which camera is active. Toggled via Settings (m_settings.wireframeHUD).
   if (m_settings.wireframeHUD) drawFlightHUD();
+
+  // Radar Tier 1 — bottom-right disc + altitude strip. Tactical view
+  // hides the disc since the screen IS effectively a radar in that
+  // mode; only the altitude strip stays for vertical-cue parity.
+  // Classic view scales the disc up 20% (camera blindspots are wider
+  // there so the player needs more radar info).
+  {
+    const int sw = GetScreenWidth();
+    const int sh = GetScreenHeight();
+    if (m_cameraView == CameraView::Tactical) {
+      // Strip-only mode top-right corner.
+      const float stripW = 16.0f;
+      const float stripH = 120.0f;
+      Vector2 stripTL = {sw - stripW - 28.0f, 12.0f};
+      m_radar.drawAltitudeStripOnly(stripTL, stripH, stripW);
+    } else {
+      float scale = (m_cameraView == CameraView::Classic)
+                        ? Config::RADAR_CLASSIC_VIEW_SCALE
+                        : 1.0f;
+      float r = Config::RADAR_DISC_RADIUS_PX * scale;
+      // Leave room for the altitude strip + margin to the right.
+      Vector2 discCentre = {static_cast<float>(sw) - r - 36.0f,
+                            static_cast<float>(sh) - r - 38.0f};
+      m_radar.draw(discCentre, r);
+    }
+  }
 }
 
 // ================================================================
@@ -1598,14 +1671,8 @@ void GameState::resetCombat() {
                            {0, Config::CAM_HEIGHT, 0}));
   m_camera.target = Vector3Add(startPos, {0, 1.5f, 0});
 
-  // Re-spawn fighter ring (v1 placeholder until WaveManager lands)
-  for (int i = 0; i < 3; ++i) {
-    float a = i * 2.0944f;
-    float r = 120.0f;
-    Vector3 fpos = {startPos.x + r * sinf(a), startPos.y + 30.0f,
-                    startPos.z + r * cosf(a)};
-    m_em.spawnEnemy(EntityType::Fighter, fpos);
-  }
+  // Reset the wave manager — wave 1 begins after WAVE_FIRST_DELAY.
+  m_waves.reset();
 
   applyLiveSettings();
   m_cameraView = static_cast<CameraView>(m_settings.defaultView);
