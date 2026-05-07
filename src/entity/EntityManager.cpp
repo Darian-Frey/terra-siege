@@ -105,6 +105,17 @@ Entity *EntityManager::spawnEnemy(EntityType type, Vector3 pos) {
     e->shieldHP = 0.0f;
     e->radius = Config::HIT_RADIUS_DRONE;
     break;
+  case EntityType::Bomber:
+    // Heavy bruiser — high HP, has a shield with the slowest recharge
+    // delay so sustained pressure keeps the shield down.
+    e->hullMax = Config::HULL_BOMBER;
+    e->hullHP = e->hullMax;
+    e->shieldMax = Config::SHIELD_BOMBER;
+    e->shieldHP = e->shieldMax;
+    e->shieldDelay = Config::SHIELD_DELAY_BOMBER;
+    e->shieldRate = Config::SHIELD_RATE_BOMBER;
+    e->radius = Config::HIT_RADIUS_BOMBER;
+    break;
   case EntityType::Seeder:
     // Slow flying drone-dispenser. Fragile, no shield. fireTimer is
     // re-purposed as the deploy cooldown — first drop after the
@@ -187,6 +198,9 @@ void EntityManager::update(float dt, const Planet &planet, Player &player,
       break;
     case EntityType::Drone:
       updateDrone(e, dt, planet, player, particles);
+      break;
+    case EntityType::Bomber:
+      updateBomber(e, dt, planet, player, particles);
       break;
     case EntityType::Seeder:
       updateSeeder(e, dt, planet, player);
@@ -353,6 +367,150 @@ void EntityManager::fireFighterShot(Entity &e, const Player &player) {
   spawnProjectile(spawn, vel, Config::FIGHTER_FIRE_DAMAGE,
                   Config::FIGHTER_PROJ_RANGE,
                   Config::FIGHTER_PROJ_SPEED, ProjectileOwner::Enemy);
+}
+
+// ====================================================================
+// Bomber — heavier, slower Fighter variant. Same PURSUE/ATTACK/EVADE
+// state machine but with: lower turn rate (player can out-strafe a
+// committed bomber), lower top speed, slow but punishing fire pattern
+// (~31 DPS in 25-damage chunks), heavy hull + shield. STRAFE_FRIENDLY
+// state is deferred to 5g — when friendly units land, that branch
+// will redirect the bomber away from the player and onto whatever
+// friendly target is nearest.
+//
+// Same engine-damage limp-home behaviour as Fighter when hull drops
+// into the EVADE band (≤25%): scale thrust + turn + top-speed and
+// emit a smoke trail. Reuses the same evadeScale formula since the
+// "limping" feel should be consistent across enemy types.
+// ====================================================================
+void EntityManager::updateBomber(Entity &e, float dt, const Planet &planet,
+                                 const Player &player,
+                                 ParticleSystem &particles) {
+  Vector3 toPlayer = Vector3Subtract(player.position(), e.pos);
+  Vector3 toPlayerH = {toPlayer.x, 0.0f, toPlayer.z};
+  float distH = Vector3Length(toPlayerH);
+  float dist = Vector3Length(toPlayer);
+
+  // EVADE entry/exit — same fraction threshold as Fighter so all
+  // shielded fliers behave consistently when wounded.
+  bool wantEvade = (e.hullMax > 0.0f) &&
+                   ((e.hullHP / e.hullMax) < Config::AI_EVADE_HEALTH);
+  if (wantEvade && dist < Config::AI_PURSUE_RANGE * 1.5f) {
+    e.aiState = AIState::Evade;
+  } else if (e.aiState == AIState::Evade && !wantEvade) {
+    e.aiState = AIState::Pursue;
+  }
+
+  float evadeScale = 1.0f;
+  if (e.aiState == AIState::Evade && e.hullMax > 0.0f) {
+    float hpFrac = e.hullHP / e.hullMax;
+    float bandT = 1.0f - (hpFrac / Config::AI_EVADE_HEALTH);
+    if (bandT < 0.0f) bandT = 0.0f;
+    if (bandT > 1.0f) bandT = 1.0f;
+    evadeScale = 0.60f - 0.35f * bandT; // 0.60 → 0.25, mirrors Fighter
+  }
+
+  // Aim — toward player normally, away in EVADE.
+  if (distH > 0.001f) {
+    float desiredYaw = atan2f(toPlayerH.x, toPlayerH.z);
+    if (e.aiState == AIState::Evade) {
+      desiredYaw += 3.14159f;
+    }
+    float yawErr = desiredYaw - e.yaw;
+    while (yawErr > 3.14159f) yawErr -= 6.28318f;
+    while (yawErr < -3.14159f) yawErr += 6.28318f;
+    float maxStep = Config::BOMBER_TURN_RATE * evadeScale * dt;
+    if (yawErr > maxStep) yawErr = maxStep;
+    else if (yawErr < -maxStep) yawErr = -maxStep;
+    e.yaw += yawErr;
+  }
+
+  Vector3 fwd = {sinf(e.yaw), 0.0f, cosf(e.yaw)};
+  if (e.aiState != AIState::Evade) {
+    if (dist < Config::AI_ATTACK_RANGE) {
+      e.aiState = AIState::Attack;
+    } else if (dist < Config::AI_PURSUE_RANGE) {
+      e.aiState = AIState::Pursue;
+    }
+  }
+
+  // Bombers ease the throttle in ATTACK so the slow projectiles get
+  // a stable firing platform; full thrust during PURSUE to close.
+  float thrustScale = (e.aiState == AIState::Attack) ? 0.35f : 1.0f;
+  thrustScale *= evadeScale;
+  e.vel.x += fwd.x * Config::BOMBER_THRUST * thrustScale * dt;
+  e.vel.z += fwd.z * Config::BOMBER_THRUST * thrustScale * dt;
+
+  // Damaged engine smoke — same emission as Fighter when in EVADE so
+  // the player gets consistent "limping" feedback across enemy types.
+  if (e.aiState == AIState::Evade) {
+    e.fireTimer -= dt; // re-using fireTimer as smoke-emit cooldown in EVADE
+    if (e.fireTimer <= 0.0f) {
+      Vector3 trailVel = Vector3Scale(e.vel, -0.3f);
+      trailVel.y += 1.5f;
+      Color smoke = {110, 90, 80, 220};
+      particles.emit(e.pos, trailVel, smoke, 0.45f, 0.55f,
+                     ParticleSystem::Shape::Cube,
+                     ParticleSystem::FLAG_GRAVITY);
+      e.fireTimer = 0.06f;
+    }
+  }
+
+  // Altitude hold (lower than Fighter — bomber lumbers near the deck).
+  float ground = planet.heightAt(e.pos.x, e.pos.z);
+  float targetY = ground + Config::BOMBER_PREFERRED_ALT;
+  float altErr = targetY - e.pos.y;
+  e.vel.y += altErr * 0.4f * dt;
+  e.vel.y *= 1.0f - 1.0f * dt;
+
+  // Speed cap (also scaled by evadeScale).
+  float spd = Vector3Length(e.vel);
+  float maxSpeed = Config::BOMBER_MAX_SPEED * evadeScale;
+  if (spd > maxSpeed) {
+    e.vel = Vector3Scale(e.vel, maxSpeed / spd);
+  }
+
+  // Drag.
+  float drag = 0.4f * dt;
+  if (drag > 1.0f) drag = 1.0f;
+  e.vel.x *= 1.0f - drag;
+  e.vel.z *= 1.0f - drag;
+
+  // Integrate.
+  e.pos = Vector3Add(e.pos, Vector3Scale(e.vel, dt));
+
+  // Don't sink.
+  float floor = planet.heightAt(e.pos.x, e.pos.z) + 6.0f;
+  if (e.pos.y < floor) {
+    e.pos.y = floor;
+    if (e.vel.y < 0.0f) e.vel.y = 0.0f;
+  }
+
+  // Fire — only outside EVADE, only when in attack range and aligned.
+  // Wider cone than Fighter (~25°) because bombers turn so slowly that
+  // a tight cone makes them effectively non-threatening.
+  if (e.aiState == AIState::Attack && e.fireTimer <= 0.0f) {
+    Vector3 toPlayerN =
+        Vector3Normalize(Vector3Subtract(player.position(), e.pos));
+    Vector3 fwd3 = {sinf(e.yaw), 0.0f, cosf(e.yaw)};
+    float dot = Vector3DotProduct(fwd3, toPlayerN);
+    if (dot > 0.90f) { // ~25° cone
+      fireBomberShot(e, player);
+      e.fireTimer = Config::BOMBER_FIRE_RATE;
+    }
+  }
+}
+
+void EntityManager::fireBomberShot(Entity &e, const Player &player) {
+  Vector3 toPlayer = Vector3Subtract(player.position(), e.pos);
+  float d = Vector3Length(toPlayer);
+  if (d < 0.001f) return;
+  Vector3 dir = Vector3Scale(toPlayer, 1.0f / d);
+  Vector3 vel = Vector3Scale(dir, Config::BOMBER_PROJ_SPEED);
+  Vector3 spawn = Vector3Add(e.pos, Vector3Scale(dir, 2.5f));
+  spawnProjectile(spawn, vel, Config::BOMBER_FIRE_DAMAGE,
+                  Config::BOMBER_PROJ_RANGE, Config::BOMBER_PROJ_SPEED,
+                  ProjectileOwner::Enemy);
 }
 
 // ====================================================================
@@ -820,6 +978,46 @@ void EntityManager::renderEnemy(const Entity &e) const {
     // Tiny bright pip on top for visibility against terrain.
     DrawCubeV({e.pos.x, e.pos.y + 0.7f, e.pos.z}, {0.4f, 0.4f, 0.4f},
               {255, 200, 255, 255});
+    break;
+  }
+  case EntityType::Bomber: {
+    // Heavy blocky fuselage in dark olive — visually obvious it's
+    // the slow target. Twin underwing pods + nose tip cue facing.
+    Color body = {120, 130, 80, 255};
+    Color pod = {90, 100, 60, 255};
+    Color nose = {220, 180, 90, 255};
+    if (e.damageFlashTimer > 0.0f) {
+      body = pod = nose = {255, 255, 255, 255};
+    }
+    DrawCubeV(e.pos, {5.0f, 2.2f, 6.0f}, body);
+    // Underwing pods — offset in local +X/-X along yaw.
+    float rx = cosf(e.yaw); // local-right direction in XZ
+    float rz = -sinf(e.yaw);
+    Vector3 podL = {e.pos.x - rx * 2.4f, e.pos.y - 0.8f,
+                    e.pos.z - rz * 2.4f};
+    Vector3 podR = {e.pos.x + rx * 2.4f, e.pos.y - 0.8f,
+                    e.pos.z + rz * 2.4f};
+    DrawCubeV(podL, {1.2f, 0.9f, 2.5f}, pod);
+    DrawCubeV(podR, {1.2f, 0.9f, 2.5f}, pod);
+    // Forward nose pip.
+    Vector3 noseV = {e.pos.x + sinf(e.yaw) * 3.0f, e.pos.y,
+                     e.pos.z + cosf(e.yaw) * 3.0f};
+    DrawCubeV(noseV, {1.0f, 0.8f, 1.0f}, nose);
+
+    // Hull + shield bars — same convention as Fighter.
+    if (e.hullMax > 0.0f) {
+      float t = e.hullHP / e.hullMax;
+      if (t < 0.0f) t = 0.0f;
+      Vector3 a = {e.pos.x - 2.5f, e.pos.y + 2.4f, e.pos.z};
+      Vector3 b = {e.pos.x - 2.5f + 5.0f * t, e.pos.y + 2.4f, e.pos.z};
+      DrawLine3D(a, b, {80, 220, 100, 220});
+    }
+    if (e.shieldMax > 0.0f && e.shieldHP > 0.0f) {
+      float t = e.shieldHP / e.shieldMax;
+      Vector3 a = {e.pos.x - 2.5f, e.pos.y + 2.8f, e.pos.z};
+      Vector3 b = {e.pos.x - 2.5f + 5.0f * t, e.pos.y + 2.8f, e.pos.z};
+      DrawLine3D(a, b, {120, 180, 255, 220});
+    }
     break;
   }
   case EntityType::Seeder: {

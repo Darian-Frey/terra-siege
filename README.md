@@ -8,45 +8,83 @@ Defend your planet against waves of alien attackers from the cockpit of a hoverc
 
 ## Status
 
-> **Active development — Phase 1.5 complete**
+> **Active development — Phase 3 in progress (5d.3 enemy roster)**
 
 | Phase | Description | Status |
 |-------|-------------|--------|
 | 1 | CMake scaffold, raylib, core loop, terrain, free-roam camera | ✅ Complete |
-| 1.5 | 1025² heightmap, river carving, lake flooding, debug HUD | ✅ Complete |
-| 2 | Player craft, physics, flight assist, follow camera | 🔧 Next |
-| 3 | Enemies, combat, wave manager, friendly units | ⏳ Planned |
+| 1.5 | 1025² heightmap, Perlin fBM + ridged mountains, rivers, lakes | ✅ Complete |
+| 2 | Newtonian flight model, five-view camera, ground shadow, exhaust | ✅ Complete |
+| 3 | Combat foundation, wave manager, radar tier 1, settings menu | 🔧 In progress |
 | 3.5 | Terrain objects — bases, towers, radar dishes, trees | ⏳ Planned |
-| 4 | Directional shields, HUD, radar, weapon display | ⏳ Planned |
-| 5 | Polish — particles, audio, day/night, weather | ⏳ Planned |
+| 4 | Directional shields, HUD, radar tier 2/3, weapon display | ⏳ Planned |
+| 5 | Polish — audio, day/night, weather, post-FX | ⏳ Planned |
 | 6 | Extended features — leaderboard, cockpit cam, replay | ⏳ Planned |
+
+### Phase 3 progress
+
+| Step | Description | Status |
+|------|-------------|--------|
+| 3a | Entity pools, Fighter AI, Cannon, projectile collision | ✅ |
+| 3b | Settings menu (start/pause), god mode, invert axes, lost-power death | ✅ |
+| 3c | Radar tier 1, wave manager, drop-shadow HUD font | ✅ |
+| 5d.1 | Drone (boids swarm) + Fighter EVADE engine damage | ✅ |
+| 5d.2 | Seeder (drone-dispenser) + Ground Turret + F7 skip-wave | ✅ |
+| 5d.3 | Bomber (heavy, slow, punishing fire) | ✅ |
+| 5d.4 | Carrier (4-sector shield, drone-spawning boss) | ⏳ Next |
+| 5e   | Full weapon roster (Plasma, Beam, Missiles, Auto Turret, EMP) | ⏳ |
+| 5f   | Round-start missile selection UI | ⏳ |
+| 5g   | Friendly units + Bomber STRAFE_FRIENDLY state | ⏳ |
 
 ---
 
 ## Features (current)
 
-- **Fractal terrain** — Diamond-Square generation with 12-pass smoothing and radial falloff producing a natural continent shape
+### World
+
+- **Tileable Perlin fBM terrain** — gradient noise with 7 octaves, domain warp, and shape exponent for proper continent/ocean balance
+- **Ridged mountains** — Musgrave-style ridged-multifractal masked to high-elevation regions
 - **Rivers** — downhill flow simulation carving channels from mountain sources to the ocean
 - **Lakes** — flood-fill inland water bodies at natural terrain depressions
 - **Flat-shaded rendering** — per-face colour and directional lighting for a clean low-poly aesthetic faithful to the original
 - **Height colour bands** — snow, high rock, rock, grassland, sand, shallow water, ocean, river, lake all distinctly coloured
-- **Debug HUD** — real-time position, altitude, AGL, heading and pitch overlay
-- **Dev mode** — compile-time flag enabling debug overlay and future cheat features
+
+### Flight
+
+- **Newtonian flight model** — Virus/Zarch-style "tilt and burn" along the local up axis with constant world gravity
+- **Thrust charge** — drains while burning, recharges while coasting; flight ceiling cuts thrust above 250m AGL
+- **Five-view camera** — Chase / Velocity / Tactical (overhead) / ThreatLock / Classic (fixed world-offset, 1988-style); per-view FOV and lerp speeds
+- **Wireframe HUD overlay** — toggleable artificial-horizon style instrument layer
+- **Ground shadow + drop-shadow HUD font** — DejaVu Sans Mono Bold loaded from system fonts with 1px black drop-shadow for legibility against any terrain colour
+- **Particle system** — pre-allocated 2000-slot pool, gravity + bounce flags, used for engine exhaust, hit bursts, kill explosions, damage smoke trails
+
+### Combat (Phase 3 in progress)
+
+- **Cannon** — 100 DPS hitscan-feel projectile (8 damage / 0.08s fire rate), 200m range
+- **Enemy roster:**
+  - **Drone** — kamikaze swarm with boids flocking (separation/alignment/cohesion + pursuit), 1-shot kill, contact damage
+  - **Fighter** — PURSUE/ATTACK/EVADE state machine, shielded, return-fire 25 DPS, engine-damage limp at <25% hull (smoke trail + reduced thrust/turn/top-speed)
+  - **Bomber** — heavy bruiser, slow turn, punishing 31 DPS in chunky 25-damage shots, same engine-damage behaviour
+  - **Seeder** — slow drone-dispenser, drifts in orbit and drops a fresh drone every 4s; fragile force-multiplier
+  - **Ground Turret** — stationary terrain-anchored, rotating barrel tracks player, 18 DPS in a 6° fire cone
+- **Wave manager** — staggered spawn cadence, 5s intermissions, ground-anchored placement for turrets, escalating wave table that introduces each type in isolation before mixing
+- **Radar tier 1** — 120px ego-centric disc bottom-right, IFF blip colours, proximity pulse blink, altitude strip, ghost-blip pool reserved for tier 3, camera-aware sizing
+- **Damage feedback** — 0.12s white flash per hit, hit-burst sparks (terrain + enemy contacts), kill-explosion fireballs, lost-power death (no more frozen scene — wreck falls and explodes on impact)
+- **Settings menu** — start + pause overlays, invert pitch/yaw, god mode (infinite thrust + invincible + infinite weapons), wireframe HUD toggle; persisted to `$HOME/.config/terra-siege/settings.cfg`
 
 ---
 
 ## Planned Features
 
-- Hovercraft physics with configurable flight assist (4 difficulty levels)
+- Carrier (4-sector shield boss, drone-spawning)
+- Friendly units — Collector, Repair Station, Radar Booster (lose them all = game over)
 - Directional shield system (front / rear / left / right quadrants)
-- Weapon slots — primary, secondary, special — with upgrade pickups
-- Auto-turret subsystem with independent targeting AI
-- Proportional navigation homing missiles
-- Ego-centric radar with altitude strip and friend/foe differentiation
-- Enemy variants — fighters, bombers, swarm drones, carriers, ground turrets
+- Full weapon slot loadout — Plasma, Beam Laser, Missiles (proportional navigation homing), Cluster, Depth Charge, Auto Turret, Shield Booster, EMP
+- Round-start missile selection UI
 - Procedural terrain objects — military bases, launch pads, radar dishes, radio towers, trees
+- Radar tier 2 (missile warning ring, jamming, ghost blips) and tier 3 (full target vector arrows)
 - Day/night cycle and weather effects
-- EMP, cluster missiles, depth charges, beam laser
+- Positional audio, leaderboard, replay system, cockpit camera mode
 
 ---
 
@@ -85,43 +123,65 @@ The codebase is cross-platform. MinGW-w64 or MSVC builds planned once Linux deve
 
 ---
 
-## Controls (current — free-roam camera)
+## Controls (current)
+
+### Gameplay
 
 | Key | Action |
 |-----|--------|
-| W / S | Move forward / back |
-| A / D | Strafe left / right |
-| Q / E | Altitude down / up |
-| Left Shift | Speed boost (4×) |
-| Mouse | Look around |
-| Escape | Quit |
+| Mouse | Pitch / yaw / roll the ship (Newtonian — "tilt and burn") |
+| W (hold) | Thrust along the ship's local up axis |
+| Mouse 1 | Fire cannon |
+| 1 / 2 / 3 / 4 / 5 | Switch camera view (Chase / Velocity / Tactical / ThreatLock / Classic) |
+| Escape / P | Pause (opens settings menu) |
+
+### Dev mode (`-DDEV_MODE=ON`)
+
+| Key | Action |
+|-----|--------|
+| F1 | Toggle camera mode (Follow / FreeRoam) |
+| F2 | Cycle flight-assist level (0–3) |
+| F3 | Toggle god mode (infinite thrust + invincible + infinite weapons) |
+| F4 | Toggle flight recorder |
+| F5 | Reroll terrain seed |
+| F6 | Dump heightmap to `tests/logs/heightmap-<unixtime>.{png,txt}` |
+| F7 | Skip wave (silently kill all enemies + flush pending spawns) |
+| `[` / `]` / `\` | Step in / out / reset (debug stepper) |
 
 ---
 
 ## Project Structure
 
-```
+```text
 terra-siege/
 ├── CMakeLists.txt
 ├── assets/
-│   └── shaders/          # GLSL shaders (terrain, shield, exhaust)
+│   └── shaders/                  # GLSL shaders (terrain, shield, exhaust — stubs)
 └── src/
     ├── main.cpp
     ├── core/
-    │   ├── Clock.hpp         # Fixed-timestep accumulator
-    │   ├── Config.hpp        # All tuning constants
-    │   ├── GameState.hpp/cpp # Top-level state machine
+    │   ├── Clock.hpp             # Fixed-timestep accumulator (120 Hz)
+    │   ├── Config.hpp            # All tuning constants — single source of truth
+    │   ├── GameState.hpp/cpp     # Top-level state machine + menu overlays
+    │   ├── Particles.hpp/cpp     # 2000-slot pool, gravity + bounce flags
+    │   └── Settings.hpp/cpp      # Persistent settings (~/.config/terra-siege)
     ├── world/
-    │   ├── Heightmap.hpp/cpp     # Diamond-Square + rivers + lakes
+    │   ├── Heightmap.hpp/cpp     # Perlin fBM + ridged mountains + rivers + lakes
     │   ├── TerrainChunk.hpp/cpp  # Flat-shaded mesh builder
-    │   └── Planet.hpp/cpp        # Chunk orchestration
-    ├── entity/               # Player, enemies, projectiles (Phase 2+)
-    ├── weapon/               # Weapon slots, missiles, turret (Phase 3+)
-    ├── shield/               # Directional shield system (Phase 4+)
-    ├── ai/                   # Enemy AI state machines (Phase 3+)
-    ├── hud/                  # Radar, weapon display, shield pie (Phase 4+)
-    ├── audio/                # Positional audio manager (Phase 5+)
-    └── wave/                 # Wave definitions and spawning (Phase 3+)
+    │   └── Planet.hpp/cpp        # Chunk orchestration, heightAt() query
+    ├── entity/
+    │   ├── Entity.hpp            # Type-tagged struct (single pool layout)
+    │   ├── Player.hpp/cpp        # Hovercraft mesh, Newtonian physics, input
+    │   └── EntityManager.hpp/cpp # Flat enemy + projectile pools, AI dispatch
+    ├── hud/
+    │   └── Radar.hpp/cpp         # Tier 1 ego-centric disc + altitude strip
+    ├── wave/
+    │   ├── WaveDef.hpp           # Declarative wave loadout
+    │   └── WaveManager.hpp/cpp   # Wave state machine + spawn placement
+    ├── weapon/                   # Plasma, Beam, Missiles, Auto Turret (Phase 3+, stubs)
+    ├── shield/                   # Directional shield system (Phase 4+, stubs)
+    ├── ai/                       # Bomber STRAFE_FRIENDLY, Carrier (5d.4+, stubs)
+    └── audio/                    # Positional audio manager (Phase 5+, stubs)
 ```
 
 ---

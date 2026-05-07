@@ -18,11 +18,13 @@ namespace {
 // Wave 1: drone swarm — fast spawn, harmless individually but
 // dangerous in numbers. Wave 2: fighters — track + shoot pressure.
 // Wave 3: first ground turret pair — introduces low-altitude risk in
-// isolation so the player learns to suppress them. Wave 4: drones +
-// turrets — combined air/ground pressure. Wave 5: first seeder —
-// player has to prioritise the carrier or the swarm never ends.
-// Later waves stack types and tighten cadence. When the full roster
-// (Bomber/Carrier) lands these tables grow into mixed-type waves.
+// isolation. Wave 4: drone + turret combined air/ground pressure.
+// Wave 5: fighters again. Wave 6: first seeder — prioritise-carrier
+// problem. Wave 7: more turrets. Wave 8: drone swarm + the first
+// bomber so the player meets the heavy on a relatively quiet field
+// before it gets stacked. Subsequent waves alternate and escalate.
+// When Carrier (5d.4) lands these tables grow into proper mixed
+// loadouts (vector of type/count pairs in WaveDef).
 constexpr WaveDef WAVE_TABLE[] = {
     {EntityType::Drone, 8, 0.5f},
     {EntityType::Fighter, 3, 1.5f},
@@ -31,11 +33,14 @@ constexpr WaveDef WAVE_TABLE[] = {
     {EntityType::Fighter, 5, 1.2f},
     {EntityType::Seeder, 1, 0.0f},
     {EntityType::GroundTurret, 3, 1.5f},
+    {EntityType::Bomber, 2, 2.5f},
     {EntityType::Drone, 16, 0.35f},
     {EntityType::Fighter, 8, 1.0f},
+    {EntityType::Bomber, 3, 2.0f},
     {EntityType::Seeder, 2, 3.0f},
     {EntityType::Drone, 24, 0.3f},
     {EntityType::Fighter, 12, 0.7f},
+    {EntityType::Bomber, 5, 1.5f},
 };
 constexpr int WAVE_TABLE_SIZE =
     static_cast<int>(sizeof(WAVE_TABLE) / sizeof(WAVE_TABLE[0]));

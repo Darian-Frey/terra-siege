@@ -297,6 +297,23 @@ constexpr float SEEDER_FIRST_DROP_DELAY = 2.0f;  // grace period after spawn
 constexpr float SEEDER_DRIFT_RADIUS = 120.0f;    // orbit radius around player
 constexpr float SEEDER_RETREAT_RANGE = 90.0f;    // closer than this = peel away
 
+// Bomber — heavy bruiser. Slower than Fighter on every axis (turn,
+// thrust, top speed) but heavier hull + shield (TTK 5s) and a slow
+// punishing fire pattern: ~31 DPS in chunky 25-damage shots that the
+// player can dodge by moving but punish a stationary hover. Same
+// PURSUE/ATTACK/EVADE state machine as Fighter, with the same
+// damaged-engines visual when below 25% hull. STRAFE_FRIENDLY state
+// is deferred to 5g when friendly units land.
+constexpr float BOMBER_FIRE_RATE = 0.80f;       // sec between shots (slow)
+constexpr float BOMBER_FIRE_DAMAGE = 25.0f;     // 25 / 0.8 = 31.25 DPS
+constexpr float BOMBER_PROJ_SPEED = 70.0f;      // slower tracer (dodgeable)
+constexpr float BOMBER_PROJ_RANGE = 110.0f;
+constexpr float BOMBER_THRUST = 14.0f;          // m/s² forward thrust
+constexpr float BOMBER_MAX_SPEED = 28.0f;       // top horizontal speed
+constexpr float BOMBER_TURN_RATE = 0.7f;        // rad/s yaw rate
+constexpr float BOMBER_PREFERRED_ALT = 50.0f;   // AGL hover target
+constexpr float BOMBER_HIT_RADIUS = 4.0f;       // big target
+
 // Ground Turret — stationary, terrain-anchored. Tracks the player
 // with a rotating barrel and fires when in range and aligned. First
 // low-altitude threat, makes hugging the ground risky. No shield,
@@ -334,6 +351,7 @@ constexpr float HIT_RADIUS_FIGHTER = 2.5f;
 constexpr float HIT_RADIUS_DRONE = 1.5f;
 constexpr float HIT_RADIUS_SEEDER = 3.0f;
 constexpr float HIT_RADIUS_TURRET = 2.8f;
+constexpr float HIT_RADIUS_BOMBER = 4.0f;
 constexpr float HIT_RADIUS_PLAYER = 2.0f;
 
 // ----------------------------------------------------------------

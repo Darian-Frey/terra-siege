@@ -79,6 +79,12 @@ private:
   void updateDrone(Entity &e, float dt, const Planet &planet,
                    Player &player, ParticleSystem &particles);
 
+  // Bomber — heavier, slower Fighter variant. Same state machine,
+  // different fire rhythm + handling.
+  void updateBomber(Entity &e, float dt, const Planet &planet,
+                    const Player &player, ParticleSystem &particles);
+  void fireBomberShot(Entity &e, const Player &player);
+
   // Seeder — slow drift + periodic drone deployment.
   void updateSeeder(Entity &e, float dt, const Planet &planet,
                     const Player &player);
