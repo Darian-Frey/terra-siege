@@ -14,13 +14,22 @@
 // ====================================================================
 namespace {
 
+// Wave 1: drone swarm — fast spawn, harmless individually but
+// dangerous in numbers. Wave 2: fighters with shields — different
+// engagement pattern (track + shoot vs swarm-stomp). Subsequent
+// waves alternate, escalating both counts and pace. When the full
+// roster lands (5d.2-5d.4) waves will mix multiple types, but the
+// alternation here at least lets the player feel two distinct
+// threat profiles right away.
 constexpr WaveDef WAVE_TABLE[] = {
+    {EntityType::Drone, 8, 0.5f},
     {EntityType::Fighter, 3, 1.5f},
+    {EntityType::Drone, 12, 0.4f},
     {EntityType::Fighter, 5, 1.2f},
-    {EntityType::Fighter, 7, 1.0f},
-    {EntityType::Fighter, 10, 0.8f},
-    {EntityType::Fighter, 14, 0.6f},
-    {EntityType::Fighter, 20, 0.5f},
+    {EntityType::Drone, 16, 0.35f},
+    {EntityType::Fighter, 8, 1.0f},
+    {EntityType::Drone, 24, 0.3f},
+    {EntityType::Fighter, 12, 0.7f},
 };
 constexpr int WAVE_TABLE_SIZE =
     static_cast<int>(sizeof(WAVE_TABLE) / sizeof(WAVE_TABLE[0]));

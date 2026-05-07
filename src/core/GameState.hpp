@@ -96,6 +96,24 @@ private:
   // returns it for menu interaction.
   void setCursorForGameplay(bool inGameplay);
 
+  // HUD typography — load a system TTF (DejaVu Sans Mono Bold on
+  // Mint/Ubuntu/Debian; falls back to raylib's bitmap default if no
+  // candidate path is found). drawHudText/measureHudText use the
+  // loaded font when available and add a 1-pixel black drop-shadow
+  // for legibility against busy world backgrounds. Replaces all
+  // direct DrawText / MeasureText calls in the HUD path.
+  void initHudFont();
+  void drawHudText(const char *text, int x, int y, int size, Color col) const;
+  int measureHudText(const char *text, int size) const;
+
+  // Menu / settings UI primitives — moved out of the anonymous
+  // namespace so they can use drawHudText. Returns true on click.
+  bool drawMenuButton(Rectangle r, const char *label, Vector2 mouse,
+                      bool clickEdge) const;
+  bool drawSettingsToggleRow(Rectangle row, const char *label,
+                             const char *value, Vector2 mouse,
+                             bool clickEdge) const;
+
   // Edge-triggered key check — true ONLY on the physics tick where
   // a key transitions from up to down. Required because raylib's
   // IsKeyPressed() returns true on every IsKeyPressed call within a
@@ -139,6 +157,11 @@ private:
   // Per-key was-down state for keyPressedEdge(). Sized large enough
   // for raylib's KEY_KB_MENU (348) plus headroom.
   std::array<bool, 512> m_keyWasDown{};
+
+  // HUD font handle. Loaded in init() via initHudFont(); falls back
+  // to the raylib default when no system TTF is found.
+  Font m_hudFont = {};
+  bool m_hudFontLoaded = false;
 
   // World
   Planet m_planet;

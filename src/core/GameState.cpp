@@ -172,6 +172,7 @@ static void recordSample(const Camera3D &cam, const Player &player,
 void GameState::init() {
   double t0 = GetTime();
   m_particles.init();
+  initHudFont();
   loadWorld(12345u); // stable default seed — DEV_MODE F5 rerolls
   double t1 = GetTime();
   TraceLog(LOG_INFO, "Terrain generation: %.2f seconds (%d x %d heightmap)",
@@ -220,7 +221,7 @@ void GameState::loadWorld(uint32_t seed) {
   // Throttle the loading-screen render to ~30 fps so we don't spend
   // meaningful time on UI during chunk meshing.
   double lastDraw = 0.0;
-  auto progressCb = [&lastDraw](const char *step, float progress) {
+  auto progressCb = [&lastDraw, this](const char *step, float progress) {
     double now = GetTime();
     if (progress < 1.0f && (now - lastDraw) < 0.033) return;
     lastDraw = now;
@@ -232,15 +233,15 @@ void GameState::loadWorld(uint32_t seed) {
     ClearBackground({18, 28, 48, 255});
 
     const char *title = "TERRA-SIEGE";
-    int tw = MeasureText(title, 48);
-    DrawText(title, sw / 2 - tw / 2, sh / 2 - 110, 48, {230, 235, 245, 255});
+    int tw = measureHudText(title, 48);
+    drawHudText(title, sw / 2 - tw / 2, sh / 2 - 110, 48, {230, 235, 245, 255});
 
     const char *sub = "a modern reimagining of Virus (1988)";
-    int sbw = MeasureText(sub, 16);
-    DrawText(sub, sw / 2 - sbw / 2, sh / 2 - 60, 16, {150, 165, 185, 220});
+    int sbw = measureHudText(sub, 16);
+    drawHudText(sub, sw / 2 - sbw / 2, sh / 2 - 60, 16, {150, 165, 185, 220});
 
-    int stepW = MeasureText(step, 20);
-    DrawText(step, sw / 2 - stepW / 2, sh / 2 + 5, 20, {200, 215, 235, 255});
+    int stepW = measureHudText(step, 20);
+    drawHudText(step, sw / 2 - stepW / 2, sh / 2 + 5, 20, {200, 215, 235, 255});
 
     const int barW = 440, barH = 18;
     const int barX = sw / 2 - barW / 2, barY = sh / 2 + 50;
@@ -253,8 +254,8 @@ void GameState::loadWorld(uint32_t seed) {
 
     char pct[16];
     snprintf(pct, sizeof(pct), "%d%%", static_cast<int>(progress * 100.0f));
-    int pw = MeasureText(pct, 18);
-    DrawText(pct, sw / 2 - pw / 2, barY + 30, 18, {180, 200, 225, 255});
+    int pw = measureHudText(pct, 18);
+    drawHudText(pct, sw / 2 - pw / 2, barY + 30, 18, {180, 200, 225, 255});
 
     EndDrawing();
   };
@@ -278,6 +279,100 @@ void GameState::loadWorld(uint32_t seed) {
 // ================================================================
 // Dev keys (only compiled/active in DEV_MODE)
 // ================================================================
+// ----------------------------------------------------------------
+// HUD typography — load a Linux system TTF (DejaVu Sans Mono Bold is
+// standard on Mint/Ubuntu/Debian). Anti-aliased glyphs at every size
+// instead of the blocky raylib bitmap default. drawHudText/measureHudText
+// are the one-stop replacements for DrawText / MeasureText across the
+// entire HUD path; they add a 1-pixel black drop-shadow for legibility.
+// ----------------------------------------------------------------
+void GameState::initHudFont() {
+  static const char *candidates[] = {
+      "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
+      "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+      "/usr/share/fonts/TTF/DejaVuSansMono-Bold.ttf",
+      "/usr/share/fonts/dejavu/DejaVuSansMono-Bold.ttf",
+      "/Library/Fonts/Menlo.ttc",
+  };
+  for (const char *path : candidates) {
+    if (!FileExists(path)) continue;
+    // 36-px atlas — supports HUD sizes 10-22 cleanly via bilinear
+    // filtering. Larger atlas would help the menu's 28pt + main-menu
+    // 64pt, but those few sites can request bigger sizes and accept
+    // mild blur.
+    Font f = LoadFontEx(path, 36, nullptr, 0);
+    if (f.texture.id == 0) continue;
+    SetTextureFilter(f.texture, TEXTURE_FILTER_BILINEAR);
+    m_hudFont = f;
+    m_hudFontLoaded = true;
+    TraceLog(LOG_INFO, "HUD font loaded: %s", path);
+    return;
+  }
+  TraceLog(LOG_INFO,
+           "HUD font: no system TTF found, falling back to raylib default");
+}
+
+void GameState::drawHudText(const char *text, int x, int y, int size,
+                            Color col) const {
+  Color shadow = {0, 0, 0, 200};
+  if (m_hudFontLoaded) {
+    Vector2 sp = {static_cast<float>(x + 1), static_cast<float>(y + 1)};
+    Vector2 p = {static_cast<float>(x), static_cast<float>(y)};
+    DrawTextEx(m_hudFont, text, sp, static_cast<float>(size), 1.0f, shadow);
+    DrawTextEx(m_hudFont, text, p, static_cast<float>(size), 1.0f, col);
+  } else {
+    drawHudText(text, x + 1, y + 1, size, shadow);
+    drawHudText(text, x, y, size, col);
+  }
+}
+
+int GameState::measureHudText(const char *text, int size) const {
+  if (m_hudFontLoaded) {
+    return static_cast<int>(
+        MeasureTextEx(m_hudFont, text, static_cast<float>(size), 1.0f).x);
+  }
+  return measureHudText(text, size);
+}
+
+// Menu UI primitives — moved from anonymous namespace so they can use
+// the loaded HUD font via drawHudText / measureHudText.
+bool GameState::drawMenuButton(Rectangle r, const char *label, Vector2 mouse,
+                               bool clickEdge) const {
+  bool hover = CheckCollisionPointRec(mouse, r);
+  Color bg = hover ? Color{60, 80, 120, 240} : Color{30, 40, 60, 220};
+  Color border = hover ? Color{220, 230, 255, 255}
+                       : Color{120, 140, 180, 200};
+  Color fg = hover ? Color{255, 255, 255, 255} : Color{200, 210, 230, 255};
+  DrawRectangleRec(r, bg);
+  DrawRectangleLinesEx(r, 2.0f, border);
+  int tw = measureHudText(label, 22);
+  drawHudText(label, static_cast<int>(r.x + r.width / 2 - tw / 2),
+              static_cast<int>(r.y + r.height / 2 - 11), 22, fg);
+  return hover && clickEdge;
+}
+
+bool GameState::drawSettingsToggleRow(Rectangle row, const char *label,
+                                      const char *valueText, Vector2 mouse,
+                                      bool clickEdge) const {
+  drawHudText(label, static_cast<int>(row.x + 14),
+              static_cast<int>(row.y + row.height / 2 - 9), 18,
+              {220, 225, 240, 255});
+
+  Rectangle btn = {row.x + row.width - 130.0f, row.y + 6.0f, 116.0f,
+                   row.height - 12.0f};
+  bool hover = CheckCollisionPointRec(mouse, btn);
+  Color bg = hover ? Color{80, 110, 160, 240} : Color{40, 60, 90, 220};
+  Color border = hover ? Color{220, 230, 255, 255}
+                       : Color{100, 130, 170, 200};
+  Color fg = hover ? Color{255, 255, 255, 255} : Color{220, 230, 250, 255};
+  DrawRectangleRec(btn, bg);
+  DrawRectangleLinesEx(btn, 1.5f, border);
+  int tw = measureHudText(valueText, 16);
+  drawHudText(valueText, static_cast<int>(btn.x + btn.width / 2 - tw / 2),
+              static_cast<int>(btn.y + btn.height / 2 - 8), 16, fg);
+  return hover && clickEdge;
+}
+
 // Edge-triggered key check — see header for rationale.
 bool GameState::keyPressedEdge(int key) {
   if (key < 0 || static_cast<size_t>(key) >= m_keyWasDown.size())
@@ -760,49 +855,9 @@ void GameState::update(float dt) {
 // render
 // ================================================================
 // ----------------------------------------------------------------
-// Menu UI helpers — defined here so render() and the menu methods
-// can both see them. Anonymous namespace = file-scope statics.
+// Camera-view label helper (kept at file scope; trivial pure function).
 // ----------------------------------------------------------------
 namespace {
-
-// Inline hand-rolled button. Returns true on click (rising edge).
-bool drawMenuButton(Rectangle r, const char *label, Vector2 mouse,
-                    bool clickEdge) {
-  bool hover = CheckCollisionPointRec(mouse, r);
-  Color bg = hover ? Color{60, 80, 120, 240} : Color{30, 40, 60, 220};
-  Color border = hover ? Color{220, 230, 255, 255} : Color{120, 140, 180, 200};
-  Color fg = hover ? Color{255, 255, 255, 255} : Color{200, 210, 230, 255};
-  DrawRectangleRec(r, bg);
-  DrawRectangleLinesEx(r, 2.0f, border);
-  int tw = MeasureText(label, 22);
-  DrawText(label, static_cast<int>(r.x + r.width / 2 - tw / 2),
-           static_cast<int>(r.y + r.height / 2 - 11), 22, fg);
-  return hover && clickEdge;
-}
-
-// Settings row — left-aligned label + right-aligned value/toggle button.
-// Returns true on click of the value button.
-bool drawSettingsToggleRow(Rectangle row, const char *label,
-                           const char *valueText, Vector2 mouse,
-                           bool clickEdge) {
-  DrawText(label, static_cast<int>(row.x + 14),
-           static_cast<int>(row.y + row.height / 2 - 9), 18,
-           {220, 225, 240, 255});
-
-  Rectangle btn = {row.x + row.width - 130.0f, row.y + 6.0f, 116.0f,
-                   row.height - 12.0f};
-  bool hover = CheckCollisionPointRec(mouse, btn);
-  Color bg = hover ? Color{80, 110, 160, 240} : Color{40, 60, 90, 220};
-  Color border = hover ? Color{220, 230, 255, 255} : Color{100, 130, 170, 200};
-  Color fg = hover ? Color{255, 255, 255, 255} : Color{220, 230, 250, 255};
-  DrawRectangleRec(btn, bg);
-  DrawRectangleLinesEx(btn, 1.5f, border);
-  int tw = MeasureText(valueText, 16);
-  DrawText(valueText, static_cast<int>(btn.x + btn.width / 2 - tw / 2),
-           static_cast<int>(btn.y + btn.height / 2 - 8), 16, fg);
-  return hover && clickEdge;
-}
-
 const char *cameraViewLabel(int v) {
   switch (v) {
   case 0: return "CHASE";
@@ -813,7 +868,6 @@ const char *cameraViewLabel(int v) {
   default: return "CHASE";
   }
 }
-
 } // namespace
 
 void GameState::render(float alpha) {
@@ -908,8 +962,8 @@ void GameState::render(float alpha) {
 
     DrawRectangle(0, 0, sw, sh, {30, 0, 0, 180});
     const char *title = "DESTROYED";
-    int tw = MeasureText(title, 64);
-    DrawText(title, sw / 2 - tw / 2, sh / 4, 64, {255, 100, 80, 255});
+    int tw = measureHudText(title, 64);
+    drawHudText(title, sw / 2 - tw / 2, sh / 4, 64, {255, 100, 80, 255});
 
     const float bw = 280.0f, bh = 50.0f;
     float bx = sw / 2 - bw / 2;
@@ -924,7 +978,7 @@ void GameState::render(float alpha) {
   }
   case AppState::Victory:
     ClearBackground(BLACK);
-    DrawText("VICTORY", 40, 40, 28, GREEN);
+    drawHudText("VICTORY", 40, 40, 28, GREEN);
     break;
   }
 }
@@ -985,39 +1039,39 @@ void GameState::drawHUD() const {
   DrawRectangle(px - 8, py - 4, 216, lh * panelLines + 8, {0, 0, 0, 120});
 
   snprintf(buf, sizeof(buf), "X: %7.1f", pos.x);
-  DrawText(buf, px, py, 14, col);
+  drawHudText(buf, px, py, 14, col);
   py += lh;
   snprintf(buf, sizeof(buf), "Z: %7.1f", pos.z);
-  DrawText(buf, px, py, 14, col);
+  drawHudText(buf, px, py, 14, col);
   py += lh;
   snprintf(buf, sizeof(buf), "Alt:  %6.1f m", pos.y);
-  DrawText(buf, px, py, 14, col);
+  drawHudText(buf, px, py, 14, col);
   py += lh;
   snprintf(buf, sizeof(buf), "AGL:  %6.1f m", agl);
-  DrawText(buf, px, py, 14, col);
+  drawHudText(buf, px, py, 14, col);
   py += lh;
   snprintf(buf, sizeof(buf), "Spd:  %5.1f%s", spd, thrusting ? " ^" : "");
-  DrawText(buf, px, py, 14, thrusting ? Color{255, 200, 80, 240} : col);
+  drawHudText(buf, px, py, 14, thrusting ? Color{255, 200, 80, 240} : col);
   py += lh;
   snprintf(buf, sizeof(buf), "Hdg:  %5.1f  %s", yawDeg, compass);
-  DrawText(buf, px, py, 14, col);
+  drawHudText(buf, px, py, 14, col);
   py += lh;
   snprintf(buf, sizeof(buf), "Pch:  %+6.1f°", pitchDeg);
-  DrawText(buf, px, py, 14, col);
+  drawHudText(buf, px, py, 14, col);
   py += lh;
   snprintf(buf, sizeof(buf), "Roll: %+6.1f°", rollDeg);
-  DrawText(buf, px, py, 14, col);
+  drawHudText(buf, px, py, 14, col);
   py += lh;
   snprintf(buf, sizeof(buf), "Chg:  %5.1f", chargePct);
-  DrawText(buf, px, py, 14, chargePct < 20.0f ? Color{255, 100, 80, 240} : col);
+  drawHudText(buf, px, py, 14, chargePct < 20.0f ? Color{255, 100, 80, 240} : col);
   py += lh;
   snprintf(buf, sizeof(buf), "Asst: %s", assistStr);
-  DrawText(buf, px, py, 14, col);
+  drawHudText(buf, px, py, 14, col);
   py += lh;
 
 #ifdef DEV_MODE
   if (m_camMode == CamMode::FreeRoam) {
-    DrawText("[ FREE CAM ]", px, py, 14, YELLOW);
+    drawHudText("[ FREE CAM ]", px, py, 14, YELLOW);
   }
 #endif
 
@@ -1033,7 +1087,7 @@ void GameState::drawHUD() const {
                   : healthW > bw / 4 ? Color{220, 180, 0, 255}
                                      : Color{210, 40, 40, 255};
     DrawRectangle(bx, by, healthW, bh, hpCol);
-    DrawText("HULL", bx, by - 14, 12, col);
+    drawHudText("HULL", bx, by - 14, 12, col);
   }
   // Thrust charge
   {
@@ -1046,13 +1100,13 @@ void GameState::drawHUD() const {
                      ? Color{255, 100, 80, 255}
                      : Color{80, 180, 255, 255};
     DrawRectangle(bx, by, chgW, bh, cCol);
-    DrawText("THRUST", bx, by - 14, 12, col);
+    drawHudText("THRUST", bx, by - 14, 12, col);
     if (m_player.godMode())
-      DrawText("GOD", bx + bw + 8, by, 14, {255, 200, 80, 240});
+      drawHudText("GOD", bx + bw + 8, by, 14, {255, 200, 80, 240});
   }
   // Landed indicator
   if (m_player.isLanded()) {
-    DrawText("LANDED", bx + bw + 12, sh - 80, 14, {120, 220, 140, 255});
+    drawHudText("LANDED", bx + bw + 12, sh - 80, 14, {120, 220, 140, 255});
   }
 
   // ---- AGL tape ----
@@ -1095,13 +1149,13 @@ void GameState::drawHUD() const {
     float ceilT = Config::NEWTON_FLIGHT_CEILING / maxAGL;
     int ceilY = aby + abh - static_cast<int>(abh * ceilT);
     DrawLine(abx - 4, ceilY, abx + abw + 4, ceilY, {255, 220, 80, 220});
-    DrawText("CLG", abx + abw + 6, ceilY - 5, 10, {255, 220, 80, 200});
+    drawHudText("CLG", abx + abw + 6, ceilY - 5, 10, {255, 220, 80, 200});
 
     // Label + numeric AGL
-    DrawText("AGL", abx - 6, aby - 14, 12, col);
+    drawHudText("AGL", abx - 6, aby - 14, 12, col);
     char abuf[16];
     snprintf(abuf, sizeof(abuf), "%dm", static_cast<int>(agl));
-    DrawText(abuf, abx + abw + 6, aby + abh - 12, 12, col);
+    drawHudText(abuf, abx + abw + 6, aby + abh - 12, 12, col);
   }
 
   // ---- Controls bar ----
@@ -1112,7 +1166,7 @@ void GameState::drawHUD() const {
           ? "Mouse: pitch+yaw  |  Wheel/[]: zoom  |  W/LMB: thrust  |  "
             "A/D: yaw  |  Q/E: roll  |  1-5: view  |  \\: zoom reset"
           : "WASD: fly  |  Q/E: up/down  |  Shift: fast  (F1: back to ship)";
-  DrawText(controls, 12, sh - 20, 14, {180, 180, 180, 220});
+  drawHudText(controls, 12, sh - 20, 14, {180, 180, 180, 220});
 
 #ifdef DEV_MODE
   // Render dev key labels right-aligned with a fixed gap between tokens so
@@ -1127,13 +1181,13 @@ void GameState::drawHUD() const {
     const int rightMargin = 12;
     int totalW = 0;
     for (int i = 0; i < tokenCount; ++i) {
-      totalW += MeasureText(tokens[i], 14);
+      totalW += measureHudText(tokens[i], 14);
       if (i + 1 < tokenCount) totalW += gap;
     }
     int x = sw - rightMargin - totalW;
     for (int i = 0; i < tokenCount; ++i) {
-      DrawText(tokens[i], x, sh - 20, 14, devCol);
-      x += MeasureText(tokens[i], 14) + gap;
+      drawHudText(tokens[i], x, sh - 20, 14, devCol);
+      x += measureHudText(tokens[i], 14) + gap;
     }
   }
 
@@ -1150,13 +1204,13 @@ void GameState::drawHUD() const {
     DrawRectangle(bx, by, bw, bh, bg);
     DrawRectangleLines(bx, by, bw, bh, fg);
     DrawCircle(bx + 22, by + bh / 2, 8, fg);
-    DrawText("REC", bx + 42, by + 8, 22, fg);
+    drawHudText("REC", bx + 42, by + 8, 22, fg);
 
     // Elapsed time
     float elapsed = static_cast<float>(GetTime()) - g_recordStartTime;
     char tbuf[16];
     snprintf(tbuf, sizeof(tbuf), "%.1fs", elapsed);
-    DrawText(tbuf, bx + 100, by + 10, 18, {255, 220, 220, 255});
+    drawHudText(tbuf, bx + 100, by + 10, 18, {255, 220, 220, 255});
   }
 #endif
 
@@ -1200,12 +1254,12 @@ void GameState::drawHUD() const {
     }
 
     // Stack below the heading tape (which occupies ~y=18-58).
-    int tw = MeasureText(buf, 16);
+    int tw = measureHudText(buf, 16);
     int bx = sw / 2 - (tw + 24) / 2;
     int by = 64;
     DrawRectangle(bx, by, tw + 24, 22, barCol);
     DrawRectangleLines(bx, by, tw + 24, 22, {120, 150, 180, 180});
-    DrawText(buf, bx + 12, by + 4, 16, textCol);
+    drawHudText(buf, bx + 12, by + 4, 16, textCol);
   }
 
   // Camera-view overlays — fade label on switch, plus per-view UI.
@@ -1264,11 +1318,11 @@ void GameState::drawCameraViewLabel() const {
   unsigned char bgAlpha = static_cast<unsigned char>(120.0f * a);
 
   int sw = GetScreenWidth();
-  int tw = MeasureText(label, 22);
+  int tw = measureHudText(label, 22);
   int px = sw / 2 - tw / 2;
   int py = 48;
   DrawRectangle(px - 12, py - 6, tw + 24, 34, {0, 0, 0, bgAlpha});
-  DrawText(label, px, py, 22, {200, 220, 255, alpha});
+  drawHudText(label, px, py, 22, {200, 220, 255, alpha});
 }
 
 void GameState::drawTacticalShipArrow() const {
@@ -1296,10 +1350,10 @@ void GameState::drawClassicCompassRose() const {
   const int cy = GetScreenHeight() - 95;
   const int r = 24;
   DrawCircleLines(cx, cy, static_cast<float>(r), {150, 160, 180, 160});
-  DrawText("N", cx - 4, cy - r - 14, 12, {220, 230, 255, 220});
-  DrawText("S", cx - 4, cy + r + 2, 12, {180, 190, 210, 160});
-  DrawText("E", cx + r + 3, cy - 5, 12, {180, 190, 210, 160});
-  DrawText("W", cx - r - 14, cy - 5, 12, {180, 190, 210, 160});
+  drawHudText("N", cx - 4, cy - r - 14, 12, {220, 230, 255, 220});
+  drawHudText("S", cx - 4, cy + r + 2, 12, {180, 190, 210, 160});
+  drawHudText("E", cx + r + 3, cy - 5, 12, {180, 190, 210, 160});
+  drawHudText("W", cx - r - 14, cy - 5, 12, {180, 190, 210, 160});
   // Tick at north
   DrawLine(cx, cy - r + 4, cx, cy - r + 10, {255, 230, 100, 220});
 }
@@ -1450,9 +1504,9 @@ void GameState::drawFlightHUD() const {
       snprintf(buf, sizeof(buf), "%+d", d);
       Vector2 lblL = worldFromLocal(-rungHalfLen - 26.0f, localY - 6.0f);
       Vector2 lblR = worldFromLocal(rungHalfLen + 4.0f, localY - 6.0f);
-      DrawText(buf, static_cast<int>(lblL.x), static_cast<int>(lblL.y), 11,
+      drawHudText(buf, static_cast<int>(lblL.x), static_cast<int>(lblL.y), 11,
                amber);
-      DrawText(buf, static_cast<int>(lblR.x), static_cast<int>(lblR.y), 11,
+      drawHudText(buf, static_cast<int>(lblR.x), static_cast<int>(lblR.y), 11,
                amber);
     }
   }
@@ -1540,8 +1594,8 @@ void GameState::drawFlightHUD() const {
         else if (dn == 180) snprintf(buf, sizeof(buf), "S");
         else if (dn == 270) snprintf(buf, sizeof(buf), "W");
         else                snprintf(buf, sizeof(buf), "%03d", dn);
-        int tw = MeasureText(buf, 11);
-        DrawText(buf, static_cast<int>(xpos) - tw / 2,
+        int tw = measureHudText(buf, 11);
+        drawHudText(buf, static_cast<int>(xpos) - tw / 2,
                  static_cast<int>(ty) + 2, 11, amber);
       }
     }
@@ -1590,7 +1644,7 @@ void GameState::drawFlightHUD() const {
       if (major && s > 0) {
         char buf[16];
         snprintf(buf, sizeof(buf), "%d", s);
-        DrawText(buf, static_cast<int>(tx) - 22, static_cast<int>(yPx) - 5,
+        drawHudText(buf, static_cast<int>(tx) - 22, static_cast<int>(yPx) - 5,
                  10, amberDim);
       }
     }
@@ -1603,11 +1657,11 @@ void GameState::drawFlightHUD() const {
     DrawLineEx(carM, carB, 1.5f, amber);
     DrawLineEx(carT, carB, 1.5f, amber);
 
-    DrawText("SPD", static_cast<int>(tx) - 4, static_cast<int>(ty) - 14, 11,
+    drawHudText("SPD", static_cast<int>(tx) - 4, static_cast<int>(ty) - 14, 11,
              amber);
     char sbuf[12];
     snprintf(sbuf, sizeof(sbuf), "%.0f", speed);
-    DrawText(sbuf, static_cast<int>(tx) - 4,
+    drawHudText(sbuf, static_cast<int>(tx) - 4,
              static_cast<int>(ty + tapeH) + 4, 14, amber);
   }
 }
@@ -1725,12 +1779,12 @@ void GameState::drawMainMenu() {
 
   // Title
   const char *title = "TERRA-SIEGE";
-  int tw = MeasureText(title, 64);
-  DrawText(title, sw / 2 - tw / 2, sh / 4 - 32, 64, {220, 240, 255, 255});
+  int tw = measureHudText(title, 64);
+  drawHudText(title, sw / 2 - tw / 2, sh / 4 - 32, 64, {220, 240, 255, 255});
 
   const char *sub = "a modern reimagining of Virus (1988)";
-  int sbw = MeasureText(sub, 16);
-  DrawText(sub, sw / 2 - sbw / 2, sh / 4 + 40, 16, {180, 200, 220, 200});
+  int sbw = measureHudText(sub, 16);
+  drawHudText(sub, sw / 2 - sbw / 2, sh / 4 + 40, 16, {180, 200, 220, 200});
 
   if (m_settingsOpen) {
     drawSettingsPanel();
@@ -1767,8 +1821,8 @@ void GameState::drawPauseMenu() {
   DrawRectangle(0, 0, sw, sh, {0, 0, 0, 140});
 
   const char *title = "PAUSED";
-  int tw = MeasureText(title, 48);
-  DrawText(title, sw / 2 - tw / 2, sh / 4, 48, {230, 235, 255, 255});
+  int tw = measureHudText(title, 48);
+  drawHudText(title, sw / 2 - tw / 2, sh / 4, 48, {230, 235, 255, 255});
 
   if (m_settingsOpen) {
     drawSettingsPanel();
@@ -1809,8 +1863,8 @@ void GameState::drawSettingsPanel() {
   DrawRectangleLinesEx({px, py, pw, ph}, 2.0f, {120, 150, 200, 220});
 
   const char *title = "SETTINGS";
-  int tw = MeasureText(title, 28);
-  DrawText(title, static_cast<int>(px + pw / 2 - tw / 2),
+  int tw = measureHudText(title, 28);
+  drawHudText(title, static_cast<int>(px + pw / 2 - tw / 2),
            static_cast<int>(py + 20), 28, {220, 235, 255, 255});
 
   // Rows
@@ -1883,4 +1937,8 @@ void GameState::shutdown() {
   m_particles.unload();
   m_player.unload();
   m_planet.unload();
+  if (m_hudFontLoaded) {
+    UnloadFont(m_hudFont);
+    m_hudFontLoaded = false;
+  }
 }

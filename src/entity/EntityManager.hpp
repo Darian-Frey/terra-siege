@@ -66,8 +66,12 @@ private:
 
   // Per-entity update bodies
   void updateFighter(Entity &e, float dt, const Planet &planet,
-                     const Player &player);
+                     const Player &player, ParticleSystem &particles);
   void fireFighterShot(Entity &e, const Player &player);
+
+  // Drone — boids flocking + pursuit + kamikaze contact damage.
+  void updateDrone(Entity &e, float dt, const Planet &planet,
+                   Player &player, ParticleSystem &particles);
 
   // Projectile update + collision
   void updateProjectile(Entity &p, float dt, const Planet &planet,

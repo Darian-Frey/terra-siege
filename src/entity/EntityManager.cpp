@@ -86,8 +86,15 @@ Entity *EntityManager::spawnEnemy(EntityType type, Vector3 pos) {
     e->shieldRate = Config::SHIELD_RATE_FIGHTER;
     e->radius = Config::HIT_RADIUS_FIGHTER;
     break;
+  case EntityType::Drone:
+    // Kamikaze swarm — 1-shot kill, no shield, contact damage only.
+    e->hullMax = Config::HULL_DRONE;
+    e->hullHP = e->hullMax;
+    e->shieldMax = 0.0f;
+    e->shieldHP = 0.0f;
+    e->radius = Config::HIT_RADIUS_DRONE;
+    break;
   default:
-    // v1 only spawns Fighters; other types added in 5d.
     e->hullMax = 100.0f;
     e->hullHP = 100.0f;
     e->radius = 1.5f;
@@ -142,7 +149,10 @@ void EntityManager::update(float dt, const Planet &planet, Player &player,
 
     switch (e.type) {
     case EntityType::Fighter:
-      updateFighter(e, dt, planet, player);
+      updateFighter(e, dt, planet, player, particles);
+      break;
+    case EntityType::Drone:
+      updateDrone(e, dt, planet, player, particles);
       break;
     default:
       break;
@@ -161,20 +171,49 @@ void EntityManager::update(float dt, const Planet &planet, Player &player,
 // ATTACK: in firing range and rough nose alignment, fire periodically.
 // ====================================================================
 void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
-                                  const Player &player) {
+                                  const Player &player,
+                                  ParticleSystem &particles) {
   Vector3 toPlayer = Vector3Subtract(player.position(), e.pos);
-  // Horizontal-only direction for yaw control
   Vector3 toPlayerH = {toPlayer.x, 0.0f, toPlayer.z};
   float distH = Vector3Length(toPlayerH);
   float dist = Vector3Length(toPlayer);
 
-  // Desired yaw — point at player
+  // EVADE state — fighter peels AWAY from the player when its hull
+  // drops below AI_EVADE_HEALTH (default 25%). Exit when it has put
+  // enough distance between itself and the player to recover.
+  bool wantEvade = (e.hullMax > 0.0f) &&
+                   ((e.hullHP / e.hullMax) < Config::AI_EVADE_HEALTH);
+  if (wantEvade && dist < Config::AI_PURSUE_RANGE * 1.5f) {
+    e.aiState = AIState::Evade;
+  } else if (e.aiState == AIState::Evade && !wantEvade) {
+    e.aiState = AIState::Pursue;
+  }
+
+  // Engine-damage penalty — only active in EVADE. Scales with HP
+  // remaining within the evade band: at the threshold (just entered
+  // EVADE) the fighter is at 60% of normal performance; at 0 HP it's
+  // limping at 25%. Affects thrust, top speed, AND turn rate so the
+  // damaged ship reads as sluggish on every axis.
+  float evadeScale = 1.0f;
+  if (e.aiState == AIState::Evade && e.hullMax > 0.0f) {
+    float hpFrac = e.hullHP / e.hullMax; // 0 .. AI_EVADE_HEALTH
+    float bandT = 1.0f - (hpFrac / Config::AI_EVADE_HEALTH);
+    if (bandT < 0.0f) bandT = 0.0f;
+    if (bandT > 1.0f) bandT = 1.0f;
+    evadeScale = 0.60f - 0.35f * bandT; // 0.60 → 0.25
+  }
+
+  // Desired yaw — point at player normally, AWAY from player in EVADE.
   if (distH > 0.001f) {
     float desiredYaw = atan2f(toPlayerH.x, toPlayerH.z);
+    if (e.aiState == AIState::Evade) {
+      desiredYaw += 3.14159f; // 180° — face away
+    }
     float yawErr = desiredYaw - e.yaw;
     while (yawErr > 3.14159f) yawErr -= 6.28318f;
     while (yawErr < -3.14159f) yawErr += 6.28318f;
-    float maxStep = Config::FIGHTER_TURN_RATE * dt;
+    // Damaged steering — turn rate scaled by evadeScale in EVADE.
+    float maxStep = Config::FIGHTER_TURN_RATE * evadeScale * dt;
     if (yawErr > maxStep) yawErr = maxStep;
     else if (yawErr < -maxStep) yawErr = -maxStep;
     e.yaw += yawErr;
@@ -182,17 +221,39 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
 
   // State transition: ATTACK when in range and nose roughly aligned
   Vector3 fwd = {sinf(e.yaw), 0.0f, cosf(e.yaw)};
-  if (dist < Config::AI_ATTACK_RANGE) {
-    e.aiState = AIState::Attack;
-  } else if (dist < Config::AI_PURSUE_RANGE) {
-    e.aiState = AIState::Pursue;
+  if (e.aiState != AIState::Evade) {
+    if (dist < Config::AI_ATTACK_RANGE) {
+      e.aiState = AIState::Attack;
+    } else if (dist < Config::AI_PURSUE_RANGE) {
+      e.aiState = AIState::Pursue;
+    }
   }
 
-  // Forward thrust — applied in either state, slowing slightly inside
-  // attack range so the fighter doesn't immediately fly past the player.
+  // Thrust — composed: eased on ATTACK; further reduced by evadeScale.
   float thrustScale = (e.aiState == AIState::Attack) ? 0.4f : 1.0f;
+  thrustScale *= evadeScale;
   e.vel.x += fwd.x * Config::FIGHTER_THRUST * thrustScale * dt;
   e.vel.z += fwd.z * Config::FIGHTER_THRUST * thrustScale * dt;
+
+  // Damaged engine smoke — small dark sputtering trail when in EVADE.
+  // Stochastic emission so we don't overwhelm the particle pool with
+  // multiple damaged fighters running at once.
+  if (e.aiState == AIState::Evade) {
+    e.fireTimer -= dt; // re-using fireTimer as the smoke-emit cooldown
+    if (e.fireTimer <= 0.0f) {
+      // ~40% drift back along ship velocity + small lateral jitter.
+      Vector3 trailVel = Vector3Scale(e.vel, -0.3f);
+      trailVel.y += 1.5f; // gentle upward drift like real smoke
+      // Mostly grey/dark with a hint of orange — engine sputter look.
+      Color smoke = {110, 90, 80, 220};
+      // Smaller, gravity-affected; bounce off so it lingers near the
+      // crash trajectory.
+      particles.emit(e.pos, trailVel, smoke, 0.45f, 0.55f,
+                     ParticleSystem::Shape::Cube,
+                     ParticleSystem::FLAG_GRAVITY);
+      e.fireTimer = 0.06f; // ~16 puffs/sec while damaged
+    }
+  }
 
   // Altitude hold — try to stay at FIGHTER_PREFERRED_ALT above terrain
   float ground = planet.heightAt(e.pos.x, e.pos.z);
@@ -201,10 +262,12 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
   e.vel.y += altErr * 0.5f * dt; // gentle restoring force
   e.vel.y *= 1.0f - 1.0f * dt;   // damping so it doesn't oscillate
 
-  // Speed cap
+  // Speed cap — also scaled by evadeScale so damaged fighters
+  // can't sprint away at full speed once their engines are wrecked.
   float spd = Vector3Length(e.vel);
-  if (spd > Config::FIGHTER_MAX_SPEED) {
-    e.vel = Vector3Scale(e.vel, Config::FIGHTER_MAX_SPEED / spd);
+  float maxSpeed = Config::FIGHTER_MAX_SPEED * evadeScale;
+  if (spd > maxSpeed) {
+    e.vel = Vector3Scale(e.vel, maxSpeed / spd);
   }
 
   // Drag (similar to player — coasts but slows)
@@ -250,6 +313,128 @@ void EntityManager::fireFighterShot(Entity &e, const Player &player) {
   spawnProjectile(spawn, vel, Config::FIGHTER_FIRE_DAMAGE,
                   Config::FIGHTER_PROJ_RANGE,
                   Config::FIGHTER_PROJ_SPEED, ProjectileOwner::Enemy);
+}
+
+// ====================================================================
+// Drone — boids flocking + pursuit + kamikaze contact damage.
+//
+// Three boids rules accumulated against neighbouring drones:
+//   Separation : push away from neighbours within DRONE_SEP_RADIUS
+//   Alignment  : match average velocity of neighbours within ALIGN_RADIUS
+//   Cohesion   : drift toward centroid of neighbours within COHESION_RADIUS
+// Plus a constant pursuit force toward the player. Weights tuned so
+// the swarm stays loosely clustered while converging on the player.
+//
+// O(N²) over the entity pool — fine while N stays small (16 drones
+// = 256 ops). Spatial grid replacement comes when 5d.4 (Carrier) and
+// later increase concurrent enemy counts.
+// ====================================================================
+void EntityManager::updateDrone(Entity &e, float dt, const Planet &planet,
+                                Player &player, ParticleSystem &particles) {
+  Vector3 sepForce = {0, 0, 0};
+  Vector3 alignAvgVel = {0, 0, 0};
+  Vector3 cohesionAvgPos = {0, 0, 0};
+  int alignCount = 0;
+  int cohesionCount = 0;
+
+  for (const Entity &other : m_entities) {
+    if (!other.alive) continue;
+    if (other.type != EntityType::Drone) continue;
+    if (&other == &e) continue;
+    Vector3 d = Vector3Subtract(e.pos, other.pos);
+    float dist = Vector3Length(d);
+    if (dist < 0.01f) continue;
+
+    if (dist < Config::DRONE_SEP_RADIUS) {
+      // Closer = stronger push; inverse-distance weight.
+      Vector3 push = Vector3Scale(d, 1.0f / (dist * dist));
+      sepForce = Vector3Add(sepForce, push);
+    }
+    if (dist < Config::DRONE_ALIGN_RADIUS) {
+      alignAvgVel = Vector3Add(alignAvgVel, other.vel);
+      ++alignCount;
+    }
+    if (dist < Config::DRONE_COHESION_RADIUS) {
+      cohesionAvgPos = Vector3Add(cohesionAvgPos, other.pos);
+      ++cohesionCount;
+    }
+  }
+
+  // Alignment force = (avg neighbour vel) − (own vel), nudges toward
+  // group heading without snapping to it.
+  Vector3 alignForce = {0, 0, 0};
+  if (alignCount > 0) {
+    alignAvgVel = Vector3Scale(alignAvgVel, 1.0f / alignCount);
+    alignForce = Vector3Subtract(alignAvgVel, e.vel);
+  }
+
+  // Cohesion force = direction from drone toward neighbour centroid.
+  Vector3 cohesionForce = {0, 0, 0};
+  if (cohesionCount > 0) {
+    cohesionAvgPos = Vector3Scale(cohesionAvgPos, 1.0f / cohesionCount);
+    cohesionForce = Vector3Subtract(cohesionAvgPos, e.pos);
+    float clen = Vector3Length(cohesionForce);
+    if (clen > 0.01f)
+      cohesionForce = Vector3Scale(cohesionForce, 1.0f / clen);
+  }
+
+  // Pursuit — head toward player (3D, not just horizontal).
+  Vector3 toPlayer = Vector3Subtract(player.position(), e.pos);
+  float pdist = Vector3Length(toPlayer);
+  Vector3 pursueForce = {0, 0, 0};
+  if (pdist > 0.01f)
+    pursueForce = Vector3Scale(toPlayer, 1.0f / pdist);
+
+  // Sum weighted forces — drives velocity rather than position
+  // directly so the drone has momentum (matches the rest of the
+  // physics-based world).
+  Vector3 total = {0, 0, 0};
+  total = Vector3Add(total, Vector3Scale(sepForce, Config::DRONE_SEP_WEIGHT));
+  total =
+      Vector3Add(total, Vector3Scale(alignForce, Config::DRONE_ALIGN_WEIGHT));
+  total = Vector3Add(
+      total, Vector3Scale(cohesionForce, Config::DRONE_COHESION_WEIGHT));
+  total =
+      Vector3Add(total, Vector3Scale(pursueForce, Config::DRONE_PURSUE_WEIGHT));
+
+  e.vel = Vector3Add(e.vel, Vector3Scale(total, Config::DRONE_THRUST * dt));
+
+  // Speed cap
+  float spd = Vector3Length(e.vel);
+  if (spd > Config::DRONE_MAX_SPEED)
+    e.vel = Vector3Scale(e.vel, Config::DRONE_MAX_SPEED / spd);
+
+  // Light drag so drones don't oscillate forever after a force pulse.
+  float drag = 0.4f * dt;
+  if (drag > 1.0f) drag = 1.0f;
+  e.vel = Vector3Scale(e.vel, 1.0f - drag);
+
+  // Update yaw to match horizontal velocity (purely visual — used for
+  // the radar triangle direction even though drones render as cubes).
+  if (fabsf(e.vel.x) + fabsf(e.vel.z) > 0.1f)
+    e.yaw = atan2f(e.vel.x, e.vel.z);
+
+  // Integrate
+  e.pos = Vector3Add(e.pos, Vector3Scale(e.vel, dt));
+
+  // Keep above terrain by a small margin
+  float floor = planet.heightAt(e.pos.x, e.pos.z) + 3.0f;
+  if (e.pos.y < floor) {
+    e.pos.y = floor;
+    if (e.vel.y < 0.0f) e.vel.y = 0.0f;
+  }
+
+  // Kamikaze contact — if the drone is touching the player, deal
+  // contact damage and self-destruct (with a kill burst at the
+  // impact point so the player sees it die).
+  Vector3 toPlayer3 = Vector3Subtract(player.position(), e.pos);
+  if (Vector3Length(toPlayer3) <
+      (e.radius + Config::HIT_RADIUS_PLAYER)) {
+    player.applyDamage(Config::DRONE_CONTACT_DAMAGE);
+    e.alive = false;
+    --m_liveEnemies;
+    emitKillExplosion(e.pos, particles);
+  }
 }
 
 // ====================================================================
@@ -429,6 +614,18 @@ void EntityManager::renderEnemy(const Entity &e) const {
       Vector3 b = {e.pos.x - 2.0f + 4.0f * t, e.pos.y + 2.9f, e.pos.z};
       DrawLine3D(a, b, {120, 180, 255, 220});
     }
+    break;
+  }
+  case EntityType::Drone: {
+    // Magenta diamond — distinct from red fighters at a glance.
+    Color body = {200, 80, 220, 255};
+    if (e.damageFlashTimer > 0.0f) body = {255, 255, 255, 255};
+    // Stretched cube oriented along velocity gives a "buzzing
+    // forward" read against the swarm. Procedural mesh later.
+    DrawCubeV(e.pos, {1.6f, 1.0f, 1.6f}, body);
+    // Tiny bright pip on top for visibility against terrain.
+    DrawCubeV({e.pos.x, e.pos.y + 0.7f, e.pos.z}, {0.4f, 0.4f, 0.4f},
+              {255, 200, 255, 255});
     break;
   }
   default:

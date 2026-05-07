@@ -266,6 +266,23 @@ constexpr float FIGHTER_MAX_SPEED = 35.0f;     // slower than player
 constexpr float FIGHTER_TURN_RATE = 1.2f;      // rad/s yaw rate
 constexpr float FIGHTER_PREFERRED_ALT = 60.0f; // AGL hover target
 
+// Drone — kamikaze swarm enemy. No weapons; damages by contact.
+// Boids-style flocking (separation + alignment + cohesion) plus a
+// pursuit force toward the player. 1-shot kill from Cannon (TTK 0.08s).
+constexpr float DRONE_CONTACT_DAMAGE = 10.0f;  // damage to player on impact
+constexpr float DRONE_THRUST = 26.0f;          // m/s² (faster than fighter)
+constexpr float DRONE_MAX_SPEED = 30.0f;
+constexpr float DRONE_PREFERRED_ALT = 30.0f;   // AGL hover target
+constexpr float DRONE_HIT_RADIUS = 1.5f;
+// Boids weights / radii
+constexpr float DRONE_SEP_RADIUS = 5.0f;
+constexpr float DRONE_ALIGN_RADIUS = 12.0f;
+constexpr float DRONE_COHESION_RADIUS = 15.0f;
+constexpr float DRONE_SEP_WEIGHT = 2.5f;
+constexpr float DRONE_ALIGN_WEIGHT = 0.6f;
+constexpr float DRONE_COHESION_WEIGHT = 0.4f;
+constexpr float DRONE_PURSUE_WEIGHT = 1.4f;
+
 // Pool sizes — pre-allocated, no heap in hot path
 constexpr int ENTITY_POOL_SIZE = 256;     // enemies + friendlies
 constexpr int PROJECTILE_POOL_SIZE = 512; // player + enemy projectiles
@@ -282,6 +299,7 @@ constexpr float WAVE_SPAWN_ALT_OFFSET = 25.0f;// spawn altitude above player
 // Collision
 constexpr float HIT_RADIUS_PROJECTILE = 0.4f; // projectile sphere radius
 constexpr float HIT_RADIUS_FIGHTER = 2.5f;
+constexpr float HIT_RADIUS_DRONE = 1.5f;
 constexpr float HIT_RADIUS_PLAYER = 2.0f;
 
 // ----------------------------------------------------------------
