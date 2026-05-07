@@ -422,6 +422,17 @@ void GameState::handleDevKeys() {
       startRecording();
   }
 
+  // F7 — skip wave (dev). Silently kills every alive enemy and flushes
+  // any pending spawns so the wave-clear check fires next tick and the
+  // intermission timer kicks straight in. Lets us walk through the
+  // wave table while tuning new enemy types without grinding kills.
+  if (keyPressedEdge(KEY_F7)) {
+    m_em.killAllEnemies();
+    m_waves.skipRemainingSpawns();
+    TraceLog(LOG_INFO, "[dev] Skip wave — wave %d cleared",
+             m_waves.currentWave());
+  }
+
   // F6 — dump current heightmap to disk for offline inspection.
   // Writes a greyscale PNG and a text dump (stats + ASCII preview) to
   // tests/logs/heightmap-<unixtime>.{png,txt}. The ASCII preview is
@@ -807,7 +818,7 @@ void GameState::update(float dt) {
                      static_cast<float>(GetTime()));
       // WaveManager spawns enemies on a stagger and drives the
       // wave-clear / intermission pacing.
-      m_waves.update(dt, m_em, m_player);
+      m_waves.update(dt, m_em, m_player, m_planet);
 
       // Death flow — when the player loses all hull they keep falling
       // (input + assist gated off in Player) until the wreck comes to

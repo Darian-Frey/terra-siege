@@ -6,6 +6,7 @@
 
 class EntityManager;
 class Player;
+class Planet;
 
 // ====================================================================
 // WaveManager — drives staggered enemy spawning and wave escalation.
@@ -37,9 +38,19 @@ public:
   // Reset to the start of wave 1 with the first-delay timer.
   void reset();
 
+  // Dev-only — flush any pending spawns for the current wave so the
+  // next wave-clear check transitions straight into Intermission.
+  // Pairs with EntityManager::killAllEnemies() for the F7 skip-wave
+  // hotkey; without this, the WaveActive check would still see
+  // remainingToSpawn > 0 and never tick into Intermission.
+  void skipRemainingSpawns();
+
   // Per-tick: advance state machine, spawn pending enemies, detect
-  // wave-clear when all spawned enemies are dead.
-  void update(float dt, EntityManager &entities, const Player &player);
+  // wave-clear when all spawned enemies are dead. Planet is required
+  // because terrain-anchored enemies (Ground Turret) need heightAt at
+  // spawn time to place themselves on the ground rather than mid-air.
+  void update(float dt, EntityManager &entities, const Player &player,
+              const Planet &planet);
 
   // HUD readouts
   int currentWave() const { return m_waveIndex + 1; } // 1-based
@@ -59,6 +70,9 @@ private:
 
   // Pick a random point in the ring around the player.
   Vector3 pickSpawnLocation(const Player &player);
+  // Pick a ground-anchored point for stationary enemies (Ground
+  // Turret) — uses Planet::heightAt so the chassis sits on terrain.
+  Vector3 pickGroundSpawnLocation(const Player &player, const Planet &planet);
 
   State m_state = State::FirstDelay;
   int m_waveIndex = 0; // 0-based index into the wave table

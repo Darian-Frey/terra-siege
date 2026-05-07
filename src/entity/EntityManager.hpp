@@ -31,6 +31,12 @@ public:
 
   void clear();
 
+  // Dev-only — kill every alive enemy without triggering kill bursts
+  // or scoring. Used by the F7 skip-wave hotkey to advance through the
+  // wave table quickly during development. Projectiles are left alone
+  // so any in-flight cannon shots still complete their travel.
+  void killAllEnemies();
+
   // Spawn helpers — return pointer to the slot, or nullptr if pool is
   // full and no slot can be recycled (rare with current sizes).
   Entity *spawnEnemy(EntityType type, Vector3 pos);
@@ -72,6 +78,15 @@ private:
   // Drone — boids flocking + pursuit + kamikaze contact damage.
   void updateDrone(Entity &e, float dt, const Planet &planet,
                    Player &player, ParticleSystem &particles);
+
+  // Seeder — slow drift + periodic drone deployment.
+  void updateSeeder(Entity &e, float dt, const Planet &planet,
+                    const Player &player);
+
+  // Ground Turret — stationary, rotates toward player, fires in cone.
+  void updateGroundTurret(Entity &e, float dt, const Planet &planet,
+                          const Player &player);
+  void fireTurretShot(Entity &e, const Player &player);
 
   // Projectile update + collision
   void updateProjectile(Entity &p, float dt, const Planet &planet,

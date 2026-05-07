@@ -4,6 +4,7 @@
 #include "entity/EntityManager.hpp"
 #include "entity/Player.hpp"
 #include "raymath.h"
+#include "world/Planet.hpp"
 #include <cmath>
 
 // ====================================================================
@@ -15,19 +16,24 @@
 namespace {
 
 // Wave 1: drone swarm — fast spawn, harmless individually but
-// dangerous in numbers. Wave 2: fighters with shields — different
-// engagement pattern (track + shoot vs swarm-stomp). Subsequent
-// waves alternate, escalating both counts and pace. When the full
-// roster lands (5d.2-5d.4) waves will mix multiple types, but the
-// alternation here at least lets the player feel two distinct
-// threat profiles right away.
+// dangerous in numbers. Wave 2: fighters — track + shoot pressure.
+// Wave 3: first ground turret pair — introduces low-altitude risk in
+// isolation so the player learns to suppress them. Wave 4: drones +
+// turrets — combined air/ground pressure. Wave 5: first seeder —
+// player has to prioritise the carrier or the swarm never ends.
+// Later waves stack types and tighten cadence. When the full roster
+// (Bomber/Carrier) lands these tables grow into mixed-type waves.
 constexpr WaveDef WAVE_TABLE[] = {
     {EntityType::Drone, 8, 0.5f},
     {EntityType::Fighter, 3, 1.5f},
+    {EntityType::GroundTurret, 2, 1.5f},
     {EntityType::Drone, 12, 0.4f},
     {EntityType::Fighter, 5, 1.2f},
+    {EntityType::Seeder, 1, 0.0f},
+    {EntityType::GroundTurret, 3, 1.5f},
     {EntityType::Drone, 16, 0.35f},
     {EntityType::Fighter, 8, 1.0f},
+    {EntityType::Seeder, 2, 3.0f},
     {EntityType::Drone, 24, 0.3f},
     {EntityType::Fighter, 12, 0.7f},
 };
@@ -53,6 +59,16 @@ void WaveManager::reset() {
   m_spawnTimer = 0.0f;
   m_intermissionTimer = 0.0f;
   m_firstDelayTimer = Config::WAVE_FIRST_DELAY;
+}
+
+void WaveManager::skipRemainingSpawns() {
+  m_remainingToSpawn = 0;
+  // If we were mid-spawn the WaveActive check fires next tick. If
+  // we were already WaveActive, killAllEnemies() drives the
+  // wave-clear transition. Either way, no special-casing needed.
+  if (m_state == State::Spawning) {
+    m_state = State::WaveActive;
+  }
 }
 
 WaveDef WaveManager::getWaveDef(int waveIdx) const {
@@ -86,6 +102,23 @@ Vector3 WaveManager::pickSpawnLocation(const Player &player) {
           ppos.z + r * cosf(a)};
 }
 
+// Ground-anchored spawn — used for stationary terrain enemies. We
+// place at TURRET_GROUND_SPAWN_DIST around the player so the turret
+// is in cannon range from the start (otherwise the player flies past
+// without ever engaging it). Y is set on terrain; updateGroundTurret
+// re-snaps every tick anyway, so a coarse heightAt here is fine.
+Vector3 WaveManager::pickGroundSpawnLocation(const Player &player,
+                                             const Planet &planet) {
+  float a = randF(0.0f, 6.28318f);
+  float r = Config::TURRET_GROUND_SPAWN_DIST +
+            randF(-20.0f, 20.0f); // small jitter so they don't ring up
+  Vector3 ppos = player.position();
+  float x = ppos.x + r * sinf(a);
+  float z = ppos.z + r * cosf(a);
+  float y = planet.heightAt(x, z) + Config::TURRET_MOUNT_HEIGHT;
+  return {x, y, z};
+}
+
 int WaveManager::aliveEnemyCount(const EntityManager &entities) const {
   // Count enemies in the manager's pool. Includes any not-yet-spawned
   // count externally — the caller compares against m_remainingToSpawn.
@@ -106,7 +139,7 @@ int WaveManager::aliveEnemyCount(const EntityManager &entities) const {
 // update — drive the state machine.
 // ====================================================================
 void WaveManager::update(float dt, EntityManager &entities,
-                         const Player &player) {
+                         const Player &player, const Planet &planet) {
   switch (m_state) {
   case State::FirstDelay: {
     m_firstDelayTimer -= dt;
@@ -120,7 +153,12 @@ void WaveManager::update(float dt, EntityManager &entities,
     m_spawnTimer -= dt;
     while (m_spawnTimer <= 0.0f && m_remainingToSpawn > 0) {
       WaveDef def = getWaveDef(m_waveIndex);
-      Vector3 spawnPos = pickSpawnLocation(player);
+      // Ground turrets spawn on terrain at a fixed close ring so the
+      // player engages them; everything else spawns in the airborne
+      // ring around the player at altitude.
+      Vector3 spawnPos = (def.enemyType == EntityType::GroundTurret)
+                             ? pickGroundSpawnLocation(player, planet)
+                             : pickSpawnLocation(player);
       entities.spawnEnemy(def.enemyType, spawnPos);
       --m_remainingToSpawn;
       m_spawnTimer += m_spawnInterval;

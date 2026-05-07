@@ -18,6 +18,17 @@ void EntityManager::clear() {
   m_liveProjectiles = 0;
 }
 
+// Dev hotkey support — silent enemy clear. No explosions, no scoring,
+// no particle bursts; just flips the alive flag so wave-clear detection
+// fires on the next tick. Projectiles are intentionally left alone.
+void EntityManager::killAllEnemies() {
+  for (auto &e : m_entities) {
+    if (!e.alive) continue;
+    e.alive = false;
+  }
+  m_liveEnemies = 0;
+}
+
 // ====================================================================
 // Round-robin allocators — wrap the cursor; if the slot is occupied,
 // recycle it (oldest-first replacement). With pool sizes 256/512 and
@@ -94,6 +105,29 @@ Entity *EntityManager::spawnEnemy(EntityType type, Vector3 pos) {
     e->shieldHP = 0.0f;
     e->radius = Config::HIT_RADIUS_DRONE;
     break;
+  case EntityType::Seeder:
+    // Slow flying drone-dispenser. Fragile, no shield. fireTimer is
+    // re-purposed as the deploy cooldown — first drop after the
+    // grace delay so the seeder doesn't dump a drone the instant it
+    // pops in next to the player.
+    e->hullMax = Config::HULL_SEEDER;
+    e->hullHP = e->hullMax;
+    e->shieldMax = 0.0f;
+    e->shieldHP = 0.0f;
+    e->radius = Config::HIT_RADIUS_SEEDER;
+    e->fireTimer = Config::SEEDER_FIRST_DROP_DELAY;
+    break;
+  case EntityType::GroundTurret:
+    // Stationary ground threat. yaw is the barrel direction (starts
+    // pointing forward by convention; updateGroundTurret rotates it
+    // toward the player). pos.y is anchored to terrain at spawn.
+    e->hullMax = Config::HULL_TURRET;
+    e->hullHP = e->hullMax;
+    e->shieldMax = 0.0f;
+    e->shieldHP = 0.0f;
+    e->radius = Config::HIT_RADIUS_TURRET;
+    e->aiState = AIState::Idle; // turret has no pursue/evade — just track+fire
+    break;
   default:
     e->hullMax = 100.0f;
     e->hullHP = 100.0f;
@@ -153,6 +187,12 @@ void EntityManager::update(float dt, const Planet &planet, Player &player,
       break;
     case EntityType::Drone:
       updateDrone(e, dt, planet, player, particles);
+      break;
+    case EntityType::Seeder:
+      updateSeeder(e, dt, planet, player);
+      break;
+    case EntityType::GroundTurret:
+      updateGroundTurret(e, dt, planet, player);
       break;
     default:
       break;
@@ -438,6 +478,160 @@ void EntityManager::updateDrone(Entity &e, float dt, const Planet &planet,
 }
 
 // ====================================================================
+// Seeder — high-altitude drone dispenser. Drifts in a loose orbit
+// around the player and drops a fresh drone every SEEDER_DEPLOY_INTERVAL
+// seconds (subject to a SEEDER_DEPLOY_RANGE gate so a faraway seeder
+// doesn't silently flood the map). Peels away if the player closes to
+// SEEDER_RETREAT_RANGE — fragile, doesn't want a knife-fight.
+//
+// fireTimer is re-purposed as the deploy cooldown for this entity
+// type. AI state stays Idle — seeders have no PURSUE/ATTACK/EVADE
+// transitions; their behaviour is driven by player range alone.
+// ====================================================================
+void EntityManager::updateSeeder(Entity &e, float dt, const Planet &planet,
+                                 const Player &player) {
+  Vector3 toPlayer = Vector3Subtract(player.position(), e.pos);
+  Vector3 toPlayerH = {toPlayer.x, 0.0f, toPlayer.z};
+  float distH = Vector3Length(toPlayerH);
+
+  // Desired horizontal heading: orbit at SEEDER_DRIFT_RADIUS. If too
+  // far, head in. If too close, peel away. Otherwise circle by
+  // adding a 90° tangent to the toward-player vector.
+  Vector3 desiredDir = {0, 0, 0};
+  if (distH > 0.001f) {
+    Vector3 toN = Vector3Scale(toPlayerH, 1.0f / distH);
+    if (distH < Config::SEEDER_RETREAT_RANGE) {
+      desiredDir = Vector3Scale(toN, -1.0f); // peel away
+    } else if (distH > Config::SEEDER_DRIFT_RADIUS * 1.2f) {
+      desiredDir = toN; // close in
+    } else {
+      // Tangent — rotate toN by 90° in the XZ plane for orbital drift.
+      desiredDir = {-toN.z, 0.0f, toN.x};
+    }
+  }
+
+  // Apply thrust along desired direction.
+  e.vel.x += desiredDir.x * Config::SEEDER_THRUST * dt;
+  e.vel.z += desiredDir.z * Config::SEEDER_THRUST * dt;
+
+  // Yaw follows velocity for visual alignment.
+  if (fabsf(e.vel.x) + fabsf(e.vel.z) > 0.05f) {
+    e.yaw = atan2f(e.vel.x, e.vel.z);
+  }
+
+  // Altitude hold — sit high.
+  float ground = planet.heightAt(e.pos.x, e.pos.z);
+  float targetY = ground + Config::SEEDER_PREFERRED_ALT;
+  float altErr = targetY - e.pos.y;
+  e.vel.y += altErr * 0.3f * dt;
+  e.vel.y *= 1.0f - 1.0f * dt;
+
+  // Speed cap (horizontal only — vertical is governed by altitude hold).
+  float spdH = sqrtf(e.vel.x * e.vel.x + e.vel.z * e.vel.z);
+  if (spdH > Config::SEEDER_MAX_SPEED) {
+    float k = Config::SEEDER_MAX_SPEED / spdH;
+    e.vel.x *= k;
+    e.vel.z *= k;
+  }
+
+  // Light drag (so peel-away doesn't accelerate forever).
+  float drag = 0.6f * dt;
+  if (drag > 1.0f) drag = 1.0f;
+  e.vel.x *= 1.0f - drag;
+  e.vel.z *= 1.0f - drag;
+
+  // Integrate.
+  e.pos = Vector3Add(e.pos, Vector3Scale(e.vel, dt));
+
+  // Don't sink (shouldn't happen at this altitude, but defensively).
+  float floor = planet.heightAt(e.pos.x, e.pos.z) +
+                Config::SEEDER_PREFERRED_ALT * 0.5f;
+  if (e.pos.y < floor) {
+    e.pos.y = floor;
+    if (e.vel.y < 0.0f) e.vel.y = 0.0f;
+  }
+
+  // Drone drop — fireTimer is the deploy cooldown for seeders.
+  // Already decremented at the top of update() so we just check it.
+  // Gate on player range so distant seeders don't flood the global pool.
+  float dist = Vector3Length(toPlayer);
+  if (e.fireTimer <= 0.0f && dist < Config::SEEDER_DEPLOY_RANGE) {
+    // Spawn the drone slightly below the seeder so it visibly "drops"
+    // from the underside before the boids forces take over.
+    Vector3 dropPos = {e.pos.x, e.pos.y - 4.0f, e.pos.z};
+    spawnEnemy(EntityType::Drone, dropPos);
+    e.fireTimer = Config::SEEDER_DEPLOY_INTERVAL;
+  }
+}
+
+// ====================================================================
+// Ground Turret — stationary, anchored to terrain. Rotates the barrel
+// toward the player at TURRET_AIM_RATE; fires when the player is in
+// range AND the barrel is within the firing cone. No movement, no
+// shield — it's a hard point that the player has to suppress.
+//
+// pos is fixed at spawn (set y to heightAt + mount height there). yaw
+// stores the barrel angle, NOT the chassis angle — the rendered base
+// stays world-aligned, the turret cap rotates.
+// ====================================================================
+void EntityManager::updateGroundTurret(Entity &e, float dt,
+                                       const Planet &planet,
+                                       const Player &player) {
+  // Resnap to terrain in case the heightmap shifts (e.g., procedural
+  // re-gen). Cheap and keeps barrel pivot honest.
+  float ground = planet.heightAt(e.pos.x, e.pos.z);
+  e.pos.y = ground + Config::TURRET_MOUNT_HEIGHT;
+
+  // Barrel pivot is above the chassis — aim from there so the lead
+  // looks correct visually.
+  Vector3 muzzle = {e.pos.x, e.pos.y + Config::TURRET_BARREL_HEIGHT, e.pos.z};
+  Vector3 toPlayer = Vector3Subtract(player.position(), muzzle);
+  Vector3 toPlayerH = {toPlayer.x, 0.0f, toPlayer.z};
+  float distH = Vector3Length(toPlayerH);
+  float dist = Vector3Length(toPlayer);
+
+  if (distH > 0.001f) {
+    float desiredYaw = atan2f(toPlayerH.x, toPlayerH.z);
+    float yawErr = desiredYaw - e.yaw;
+    while (yawErr > 3.14159f) yawErr -= 6.28318f;
+    while (yawErr < -3.14159f) yawErr += 6.28318f;
+    float maxStep = Config::TURRET_AIM_RATE * dt;
+    if (yawErr > maxStep) yawErr = maxStep;
+    else if (yawErr < -maxStep) yawErr = -maxStep;
+    e.yaw += yawErr;
+  }
+
+  // Fire: in range + nose-aligned within fire cone + cooldown ready.
+  if (dist < Config::TURRET_FIRE_RANGE && e.fireTimer <= 0.0f) {
+    Vector3 toPlayerN = Vector3Normalize(toPlayer);
+    Vector3 fwd = {sinf(e.yaw), 0.0f, cosf(e.yaw)};
+    float dot = Vector3DotProduct(fwd, toPlayerN);
+    // Use a more permissive cone than fighters because the turret is
+    // immobile horizontally — the player can always strafe out, so
+    // tight cones make turrets useless.
+    if (dot > (1.0f - Config::TURRET_FIRE_CONE_ENEMY)) {
+      fireTurretShot(e, player);
+      e.fireTimer = Config::TURRET_ENEMY_FIRE_RATE;
+    }
+  }
+}
+
+void EntityManager::fireTurretShot(Entity &e, const Player &player) {
+  Vector3 muzzle = {e.pos.x, e.pos.y + Config::TURRET_BARREL_HEIGHT, e.pos.z};
+  Vector3 toPlayer = Vector3Subtract(player.position(), muzzle);
+  float d = Vector3Length(toPlayer);
+  if (d < 0.001f) return;
+  Vector3 dir = Vector3Scale(toPlayer, 1.0f / d);
+  // Spawn just past the barrel tip along the firing direction so the
+  // tracer doesn't appear to come out of the chassis floor.
+  Vector3 spawn = Vector3Add(muzzle, Vector3Scale(dir, 1.8f));
+  Vector3 vel = Vector3Scale(dir, Config::TURRET_PROJ_SPEED);
+  spawnProjectile(spawn, vel, Config::TURRET_ENEMY_DAMAGE,
+                  Config::TURRET_PROJ_RANGE, Config::TURRET_PROJ_SPEED,
+                  ProjectileOwner::Enemy);
+}
+
+// ====================================================================
 // Projectile update + collision detection
 // O(P*E) for player projectiles; for v1 (P~50, E~16) this is ~800
 // distance checks per tick — trivial. Spatial grid wires in for 5d
@@ -626,6 +820,73 @@ void EntityManager::renderEnemy(const Entity &e) const {
     // Tiny bright pip on top for visibility against terrain.
     DrawCubeV({e.pos.x, e.pos.y + 0.7f, e.pos.z}, {0.4f, 0.4f, 0.4f},
               {255, 200, 255, 255});
+    break;
+  }
+  case EntityType::Seeder: {
+    // Squat dark-purple lozenge — reads as a slow carrier from any
+    // angle. Underside hatch hint (lighter band) cues "drone drops
+    // come out of here". Damage flash overrides everything.
+    Color body = {120, 60, 160, 255};
+    Color hatch = {200, 140, 240, 255};
+    Color top = {80, 40, 120, 255};
+    if (e.damageFlashTimer > 0.0f) {
+      body = hatch = top = {255, 255, 255, 255};
+    }
+    DrawCubeV(e.pos, {6.0f, 1.6f, 4.5f}, body);
+    DrawCubeV({e.pos.x, e.pos.y + 0.9f, e.pos.z}, {3.5f, 0.5f, 2.5f}, top);
+    // Underside hatch — thin bright band so the player can see drops.
+    DrawCubeV({e.pos.x, e.pos.y - 0.85f, e.pos.z}, {2.5f, 0.15f, 1.8f},
+              hatch);
+
+    // Hull bar — same convention as Fighter so the player can read
+    // damage at a glance.
+    if (e.hullMax > 0.0f) {
+      float t = e.hullHP / e.hullMax;
+      if (t < 0.0f) t = 0.0f;
+      Vector3 a = {e.pos.x - 3.0f, e.pos.y + 1.6f, e.pos.z};
+      Vector3 b = {e.pos.x - 3.0f + 6.0f * t, e.pos.y + 1.6f, e.pos.z};
+      DrawLine3D(a, b, {80, 220, 100, 220});
+    }
+    break;
+  }
+  case EntityType::GroundTurret: {
+    // Three-piece tower: cylindrical chassis + rotating turret cap +
+    // forward-pointing barrel. Barrel rotation uses e.yaw; chassis
+    // stays world-aligned so the rotation axis reads visually.
+    Color base = {110, 100, 90, 255};
+    Color cap = {160, 70, 60, 255};
+    Color barrel = {220, 220, 220, 255};
+    if (e.damageFlashTimer > 0.0f) {
+      base = cap = barrel = {255, 255, 255, 255};
+    }
+    // Chassis — boxy base flush with terrain.
+    DrawCubeV({e.pos.x, e.pos.y, e.pos.z}, {3.0f, Config::TURRET_MOUNT_HEIGHT * 2.0f,
+              3.0f}, base);
+    // Turret cap at barrel pivot height.
+    Vector3 capPos = {e.pos.x,
+                      e.pos.y + Config::TURRET_BARREL_HEIGHT,
+                      e.pos.z};
+    DrawCubeV(capPos, {2.4f, 1.2f, 2.4f}, cap);
+    // Barrel — extruded cube forward of cap along yaw.
+    float bx = sinf(e.yaw);
+    float bz = cosf(e.yaw);
+    Vector3 muzzle = {capPos.x + bx * 1.6f, capPos.y, capPos.z + bz * 1.6f};
+    DrawCubeV(muzzle, {0.6f, 0.4f, 0.6f}, barrel);
+    // Tip pip — bright dot at barrel tip so the firing direction is
+    // obvious from any camera angle.
+    Vector3 tip = {capPos.x + bx * 2.4f, capPos.y, capPos.z + bz * 2.4f};
+    DrawCubeV(tip, {0.35f, 0.35f, 0.35f}, {255, 230, 100, 255});
+
+    // Hull bar above the cap.
+    if (e.hullMax > 0.0f) {
+      float t = e.hullHP / e.hullMax;
+      if (t < 0.0f) t = 0.0f;
+      Vector3 a = {e.pos.x - 2.0f,
+                   e.pos.y + Config::TURRET_BARREL_HEIGHT + 1.5f, e.pos.z};
+      Vector3 b = {e.pos.x - 2.0f + 4.0f * t,
+                   e.pos.y + Config::TURRET_BARREL_HEIGHT + 1.5f, e.pos.z};
+      DrawLine3D(a, b, {80, 220, 100, 220});
+    }
     break;
   }
   default:

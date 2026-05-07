@@ -283,6 +283,38 @@ constexpr float DRONE_ALIGN_WEIGHT = 0.6f;
 constexpr float DRONE_COHESION_WEIGHT = 0.4f;
 constexpr float DRONE_PURSUE_WEIGHT = 1.4f;
 
+// Seeder — slow flying carrier-lite. Drops drones at intervals while
+// drifting at high altitude. Fragile on its own (TTK 0.5s), so the
+// player can stop the drone bleed by killing the seeder. Force
+// multiplier — one seeder left alive can spawn an entire swarm.
+constexpr float SEEDER_THRUST = 8.0f;            // m/s² (slow)
+constexpr float SEEDER_MAX_SPEED = 14.0f;        // top horizontal speed
+constexpr float SEEDER_PREFERRED_ALT = 95.0f;    // hovers high — above fighter
+constexpr float SEEDER_HIT_RADIUS = 3.0f;        // fat target — easy to hit
+constexpr float SEEDER_DEPLOY_INTERVAL = 4.0f;   // sec between drone drops
+constexpr float SEEDER_DEPLOY_RANGE = 240.0f;    // only deploys if player closer
+constexpr float SEEDER_FIRST_DROP_DELAY = 2.0f;  // grace period after spawn
+constexpr float SEEDER_DRIFT_RADIUS = 120.0f;    // orbit radius around player
+constexpr float SEEDER_RETREAT_RANGE = 90.0f;    // closer than this = peel away
+
+// Ground Turret — stationary, terrain-anchored. Tracks the player
+// with a rotating barrel and fires when in range and aligned. First
+// low-altitude threat, makes hugging the ground risky. No shield,
+// medium hull (TTK 4.0s), long engagement range so the player has to
+// actively suppress them rather than ignoring.
+constexpr float TURRET_AIM_RATE = 1.5f;          // rad/s rotation cap
+constexpr float TURRET_ENGAGE_RANGE = 180.0f;    // start tracking inside this
+constexpr float TURRET_FIRE_RANGE = 150.0f;      // open fire inside this
+constexpr float TURRET_FIRE_CONE_ENEMY = 0.10f;  // ~6° fire cone
+constexpr float TURRET_ENEMY_FIRE_RATE = 0.45f;  // sec between shots
+constexpr float TURRET_ENEMY_DAMAGE = 8.0f;      // ~18 DPS
+constexpr float TURRET_PROJ_SPEED = 100.0f;      // tracer
+constexpr float TURRET_PROJ_RANGE = 220.0f;
+constexpr float TURRET_HIT_RADIUS = 2.8f;
+constexpr float TURRET_MOUNT_HEIGHT = 1.6f;      // base above terrain
+constexpr float TURRET_BARREL_HEIGHT = 3.4f;     // barrel pivot above ground
+constexpr float TURRET_GROUND_SPAWN_DIST = 90.0f; // place this far from player
+
 // Pool sizes — pre-allocated, no heap in hot path
 constexpr int ENTITY_POOL_SIZE = 256;     // enemies + friendlies
 constexpr int PROJECTILE_POOL_SIZE = 512; // player + enemy projectiles
@@ -300,6 +332,8 @@ constexpr float WAVE_SPAWN_ALT_OFFSET = 25.0f;// spawn altitude above player
 constexpr float HIT_RADIUS_PROJECTILE = 0.4f; // projectile sphere radius
 constexpr float HIT_RADIUS_FIGHTER = 2.5f;
 constexpr float HIT_RADIUS_DRONE = 1.5f;
+constexpr float HIT_RADIUS_SEEDER = 3.0f;
+constexpr float HIT_RADIUS_TURRET = 2.8f;
 constexpr float HIT_RADIUS_PLAYER = 2.0f;
 
 // ----------------------------------------------------------------
