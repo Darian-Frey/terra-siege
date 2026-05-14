@@ -659,11 +659,13 @@ void EntityManager::updateDrone(Entity &e, float dt, const Planet &planet,
 
   // Kamikaze contact — if the drone is touching the player, deal
   // contact damage and self-destruct (with a kill burst at the
-  // impact point so the player sees it die).
+  // impact point so the player sees it die). Drone position is used
+  // as the hit point so the shield sector facing the swarm absorbs
+  // the impact.
   Vector3 toPlayer3 = Vector3Subtract(player.position(), e.pos);
   if (Vector3Length(toPlayer3) <
       (e.radius + Config::HIT_RADIUS_PLAYER)) {
-    player.applyDamage(Config::DRONE_CONTACT_DAMAGE);
+    player.applyDamage(Config::DRONE_CONTACT_DAMAGE, e.pos);
     e.alive = false;
     --m_liveEnemies;
     emitKillExplosion(e.pos, particles);
@@ -950,10 +952,11 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
     Vector3 ppos = player.position();
     float d = Vector3Distance(p.pos, ppos);
     if (d < (Config::HIT_RADIUS_PLAYER + p.radius)) {
-      // Player damage (v1: damage hull directly — directional shields
-      // come in 5g when the shield system is wired into Player).
+      // Player damage — directional. The projectile's world position
+      // at impact picks which shield sector absorbs the hit. Overflow
+      // bleeds to hull.
       emitHitBurst(p.pos, particles);
-      player.applyDamage(p.damage);
+      player.applyDamage(p.damage, p.pos);
       p.alive = false;
       --m_liveProjectiles;
       return;

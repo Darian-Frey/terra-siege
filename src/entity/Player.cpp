@@ -1,5 +1,6 @@
 #include "Player.hpp"
 #include "core/Config.hpp"
+#include "entity/Entity.hpp" // ShieldSector enum
 #include "rlgl.h"
 #include "world/Planet.hpp"
 #include <cmath>
@@ -17,12 +18,21 @@ void Player::init(Vector3 startPos, int flightAssistLevel) {
   m_roll = 0.0f;
   m_smoothMouse = {0.0f, 0.0f};
   m_thrustCharge = Config::NEWTON_THRUST_CHARGE_MAX;
-  m_health = 100.0f;
+  m_health = Config::PLAYER_HULL_HP;
   m_thrusting = false;
   m_landed = false;
   m_assistLevel = flightAssistLevel < 0   ? 0
                   : flightAssistLevel > 3 ? 3
                                           : flightAssistLevel;
+
+  // Directional shield — all four sectors full at spawn. Same
+  // per-sector HP defined in Config (PLAYER_SHIELD_HP_PER_SECTOR ×
+  // 4 = total shield budget across the four faces).
+  for (int i = 0; i < 4; ++i) {
+    m_sectorMax[i] = Config::PLAYER_SHIELD_HP_PER_SECTOR;
+    m_sectorHP[i] = m_sectorMax[i];
+    m_sectorTimer[i] = 0.0f;
+  }
 
   buildMesh();
 }
@@ -46,6 +56,71 @@ void Player::applyDamage(float amount) {
   m_health -= amount;
   if (m_health < 0.0f)
     m_health = 0.0f;
+}
+
+// Directional damage — drains the hit sector first, overflow rolls to
+// hull. Sector resolution mirrors EntityManager::damageSectorFromHit:
+// world-space hit vector rotated by -yaw to get target-local space,
+// then dominant axis + sign picks the quadrant. Per-sector timer is
+// reset so this sector's recharge starts over while opposite faces
+// keep regenerating undisturbed.
+void Player::applyDamage(float amount, Vector3 hitPos) {
+  if (m_godMode) return;
+
+  // Pick sector from hit direction in ship-local space. Only yaw is
+  // used — pitch/roll deliberately ignored so the player's mental
+  // model ("front = where my nose points") matches the HUD pie
+  // regardless of how banked the ship is.
+  float c = cosf(m_yaw), s = sinf(m_yaw);
+  Vector3 worldDir = {hitPos.x - m_pos.x, 0.0f, hitPos.z - m_pos.z};
+  float lx = worldDir.x * c - worldDir.z * s;
+  float lz = worldDir.x * s + worldDir.z * c;
+  int sector;
+  if (fabsf(lz) > fabsf(lx)) {
+    sector = (lz > 0.0f) ? static_cast<int>(ShieldSector::Front)
+                         : static_cast<int>(ShieldSector::Rear);
+  } else {
+    sector = (lx > 0.0f) ? static_cast<int>(ShieldSector::Right)
+                         : static_cast<int>(ShieldSector::Left);
+  }
+
+  m_sectorTimer[sector] = 0.0f;
+  if (m_sectorHP[sector] > 0.0f) {
+    // Shield engaged — fire the bubble flash. Reset to full duration
+    // each impact so a stream of incoming fire keeps the bubble lit.
+    m_shieldFlashTimer = Config::PLAYER_SHIELD_FLASH;
+    if (amount <= m_sectorHP[sector]) {
+      m_sectorHP[sector] -= amount;
+      return;
+    }
+    amount -= m_sectorHP[sector];
+    m_sectorHP[sector] = 0.0f;
+  }
+
+  // Sector depleted — bleed into hull. No flash; the absence of the
+  // bubble tells the player "this side is exposed".
+  m_health -= amount;
+  if (m_health < 0.0f)
+    m_health = 0.0f;
+}
+
+float Player::sectorHP(int sector) const {
+  if (sector < 0 || sector >= 4) return 0.0f;
+  return m_sectorHP[sector];
+}
+
+float Player::sectorMax(int sector) const {
+  if (sector < 0 || sector >= 4) return 0.0f;
+  return m_sectorMax[sector];
+}
+
+float Player::sectorHPFrac(int sector) const {
+  if (sector < 0 || sector >= 4) return 0.0f;
+  if (m_sectorMax[sector] <= 0.0f) return 0.0f;
+  float t = m_sectorHP[sector] / m_sectorMax[sector];
+  if (t < 0.0f) t = 0.0f;
+  if (t > 1.0f) t = 1.0f;
+  return t;
 }
 
 // ====================================================================
@@ -341,6 +416,26 @@ void Player::update(float dt, const Planet &planet) {
   applyFlightAssist(dt, planet);
   applyPhysics(dt, planet);
 
+  // Per-sector shield recharge — each face has its own time-since-hit
+  // counter so sustained pressure on one face doesn't suppress
+  // regen on the opposite side. Same delay + rate constants for all
+  // sectors (PLAYER_SHIELD_DELAY/RATE in Config).
+  for (int i = 0; i < 4; ++i) {
+    if (m_sectorMax[i] <= 0.0f) continue;
+    m_sectorTimer[i] += dt;
+    if (m_sectorTimer[i] >= Config::PLAYER_SHIELD_DELAY &&
+        m_sectorHP[i] < m_sectorMax[i]) {
+      m_sectorHP[i] += Config::PLAYER_SHIELD_RATE * dt;
+      if (m_sectorHP[i] > m_sectorMax[i])
+        m_sectorHP[i] = m_sectorMax[i];
+    }
+  }
+  // Bubble flash decay — visual is invisible once this hits zero.
+  if (m_shieldFlashTimer > 0.0f) {
+    m_shieldFlashTimer -= dt;
+    if (m_shieldFlashTimer < 0.0f) m_shieldFlashTimer = 0.0f;
+  }
+
   // Cannon cooldown — counts down each tick. When zero AND fire input
   // is held, arm a pending shot for GameState to consume + spawn.
   if (m_cannonTimer > 0.0f) m_cannonTimer -= dt;
@@ -610,4 +705,34 @@ void Player::renderGroundShadow(const Planet &planet) const {
     prev = v;
   }
   rlEnableBackfaceCulling();
+}
+
+// ====================================================================
+// Shield bubble — translucent low-poly sphere around the ship that
+// fades in on any shield-absorbing hit and fades back to invisible
+// over PLAYER_SHIELD_FLASH seconds. Dim blue with a quick alpha
+// punch so the player gets an unmistakable "absorbed" cue without
+// the bubble being a permanent visual.
+//
+// Low-poly slice/ring counts give the flat-shaded faceted look the
+// rest of the game uses — solid lit sphere would clash with the
+// 1988 aesthetic.
+// ====================================================================
+void Player::renderShieldBubble() const {
+  if (m_shieldFlashTimer <= 0.0f) return;
+
+  // Normalised flash progress: 1.0 just after impact, 0.0 at fadeout.
+  float t = m_shieldFlashTimer / Config::PLAYER_SHIELD_FLASH;
+  if (t < 0.0f) t = 0.0f;
+  if (t > 1.0f) t = 1.0f;
+
+  // Eased curve — quick punch then smooth tail. Squaring makes the
+  // first 0.1s the visible peak; the rest is gentle decay.
+  float alphaF = t * t;
+  unsigned char alpha = static_cast<unsigned char>(alphaF * 110.0f);
+  Color shield = {60, 140, 220, alpha};
+
+  // 8 rings × 12 slices = 96 quads — coarse enough to read as
+  // faceted, dense enough to look round at close range.
+  DrawSphereEx(m_pos, Config::PLAYER_SHIELD_RADIUS, 8, 12, shield);
 }

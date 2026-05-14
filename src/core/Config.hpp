@@ -255,6 +255,8 @@ constexpr float PLAYER_HULL_HP = 100.0f;
 constexpr float PLAYER_SHIELD_HP_PER_SECTOR = 100.0f; // ×4 sectors = 400
 constexpr float PLAYER_SHIELD_DELAY = 3.0f;
 constexpr float PLAYER_SHIELD_RATE = 8.0f;
+constexpr float PLAYER_SHIELD_FLASH = 0.7f;  // sec — bubble visible after hit
+constexpr float PLAYER_SHIELD_RADIUS = 4.5f; // world units, sphere radius
 
 // Fighter return-fire stats — ~25 DPS per spec player-survivability table
 constexpr float FIGHTER_FIRE_RATE = 0.20f;     // sec between shots

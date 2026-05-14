@@ -906,6 +906,9 @@ void GameState::render(float alpha) {
     m_player.render();
     m_em.render();
     m_particles.render(m_camera);
+    // Shield bubble drawn AFTER everything else in 3D so its alpha
+    // blends over the ship + enemies + particles correctly.
+    m_player.renderShieldBubble();
     EndMode3D();
 
     drawHUD();
@@ -934,6 +937,9 @@ void GameState::render(float alpha) {
     m_player.render();
     m_em.render();
     m_particles.render(m_camera);
+    // Shield bubble drawn AFTER everything else in 3D so its alpha
+    // blends over the ship + enemies + particles correctly.
+    m_player.renderShieldBubble();
     EndMode3D();
 
     if (m_state == AppState::MainMenu)
@@ -1120,6 +1126,62 @@ void GameState::drawHUD() const {
     drawHudText("LANDED", bx + bw + 12, sh - 80, 14, {120, 220, 140, 255});
   }
 
+  // ---- Directional shield pie ----
+  // Persistent state readout for the 4 shield sectors (the in-world
+  // bubble flash is impact feedback only — the pie tells you what's
+  // left to absorb the next hit). Front=top, Rear=bottom, Right of
+  // pie = Right sector — same heading-up convention as the radar.
+  // Wedge colour shifts cyan → red as HP drops; alpha fades so a
+  // depleted sector visibly drops out.
+  {
+    const int piX = bx + bw + 60;
+    const int piY = sh - 60; // centre between hull (sh-80) and thrust (sh-56)
+    const float radius = 28.0f;
+    Vector2 centre = {static_cast<float>(piX), static_cast<float>(piY)};
+
+    // Background ring + dark fill so empty sectors still have a
+    // visual "hole" instead of disappearing into the gameplay view.
+    DrawCircle(piX, piY, radius + 2.0f, {0, 0, 0, 170});
+    DrawCircle(piX, piY, radius, {30, 35, 45, 200});
+
+    // Raylib screen angles: 0° = east, increasing clockwise. We want
+    // Front at the top, which is 270° in screen coords. Each wedge
+    // spans 90° centred on its cardinal direction.
+    struct Wedge {
+      float startDeg, endDeg;
+      int sector;
+    };
+    const Wedge wedges[4] = {
+        {225.0f, 315.0f, 0}, // Front  (top)
+        {315.0f, 405.0f, 2}, // Right
+        {45.0f,  135.0f, 1}, // Rear   (bottom)
+        {135.0f, 225.0f, 3}, // Left
+    };
+    for (const Wedge &w : wedges) {
+      float frac = m_player.sectorHPFrac(w.sector);
+      if (frac <= 0.01f) continue;
+      unsigned char r = static_cast<unsigned char>(220.0f - 140.0f * frac);
+      unsigned char g = static_cast<unsigned char>(60.0f + 140.0f * frac);
+      unsigned char b = static_cast<unsigned char>(40.0f + 200.0f * frac);
+      unsigned char a = static_cast<unsigned char>(80.0f + 160.0f * frac);
+      Color c = {r, g, b, a};
+      DrawCircleSector(centre, radius * 0.95f, w.startDeg, w.endDeg, 20, c);
+    }
+
+    // Ring outline so the pie reads as a discrete instrument even
+    // when all sectors are depleted.
+    DrawRing(centre, radius - 1.0f, radius, 0.0f, 360.0f, 32,
+             {180, 200, 220, 200});
+
+    // Cardinal tick — small white dot at 12 o'clock reinforces the
+    // heading-up orientation (front sector = top of pie).
+    DrawCircle(piX, piY - static_cast<int>(radius) - 4, 1.5f,
+               {220, 230, 240, 220});
+
+    drawHudText("SHLD", piX - 14, piY + static_cast<int>(radius) + 4, 12,
+                col);
+  }
+
   // ---- AGL tape ----
   // Vertical bar showing the craft's height above the terrain directly
   // beneath it (NOT absolute Y). The ceiling tick marks where thrust
@@ -1136,10 +1198,14 @@ void GameState::drawHUD() const {
     float t = agl / maxAGL;
     if (t > 1.0f) t = 1.0f;
 
-    const int abx = bx + bw + 78; // right of HULL/THRUST + breathing room
+    // Sits to the right of the SPD tape (which is at x=14, width 18).
+    // Vertical placement matches the SPD tape (drawFlightHUD) so the
+    // two read as a paired left-edge instrument cluster: both centred
+    // on screen midline with 220px height.
+    const int abx = 50;
     const int abw = 16;
-    const int abh = 200;
-    const int aby = sh - 50 - abh;
+    const int abh = 220;
+    const int aby = sh / 2 - abh / 2;
 
     // Frame
     DrawRectangle(abx - 1, aby - 1, abw + 2, abh + 2, {0, 0, 0, 160});

@@ -27,6 +27,11 @@ public:
   // altitude. Called from GameState between planet and player render
   // so the shadow sits on the terrain below the ship.
   void renderGroundShadow(const Planet &planet) const;
+  // Directional-shield impact bubble. Drawn LAST in the 3D pass so
+  // its translucent alpha blends correctly over the ship + world.
+  // Invisible unless the shield was just engaged (within
+  // PLAYER_SHIELD_FLASH seconds of the last absorbing hit).
+  void renderShieldBubble() const;
   void unload();
 
   // ---- State accessors ----
@@ -47,6 +52,13 @@ public:
   bool isThrusting() const { return m_thrusting; }
   bool isLanded() const { return m_landed; }
 
+  // Directional shield accessors — sector index uses the ShieldSector
+  // enum (Front=0, Rear=1, Right=2, Left=3). HUD reads these to draw
+  // the 4-segment shield pie. sectorMax is the spawn-time per-sector HP.
+  float sectorHP(int sector) const;
+  float sectorMax(int sector) const;
+  float sectorHPFrac(int sector) const; // hp/max, clamped [0,1]
+
   void setFlightAssist(int level);
   int flightAssist() const { return m_assistLevel; }
 
@@ -64,7 +76,16 @@ public:
   void setInvertPitch(bool on) { m_invertPitch = on; }
   bool invertPitch() const { return m_invertPitch; }
 
+  // Scalar damage — goes straight to hull, bypasses all shielding.
+  // Used for self-inflicted damage where direction makes no sense
+  // (crashes, hard landings).
   void applyDamage(float amount);
+
+  // Directional damage — overflows from the impacted shield sector
+  // into hull. hitPos is world-space; the impact direction relative
+  // to the ship's yaw picks the sector (front/rear/left/right).
+  // All enemy projectile + drone contact hits go through this path.
+  void applyDamage(float amount, Vector3 hitPos);
 
   // Cannon firing — Player tracks the cooldown internally. Each tick
   // GameState calls consumePendingShot(); if it returns true, a
@@ -92,6 +113,20 @@ private:
 
   float m_thrustCharge = Config::NEWTON_THRUST_CHARGE_MAX;
   float m_health = 100.0f;
+
+  // 4-sector directional shield (Phase 4). Mirror of the Entity-side
+  // structure used by Carrier so the damage routing code path is
+  // shared in spirit. Per-sector timers so opposite faces recharge
+  // independently when one is being pressured. Indexed by the
+  // ShieldSector enum (Front=0, Rear=1, Right=2, Left=3).
+  float m_sectorHP[4] = {0, 0, 0, 0};
+  float m_sectorMax[4] = {0, 0, 0, 0};
+  float m_sectorTimer[4] = {0, 0, 0, 0};
+  // Bubble-flash timer — single global value rather than per-sector
+  // because the visual is just "shield engaged" feedback (directional
+  // detail lives on the HUD pie if we ever bring it back). Set in
+  // applyDamage when the shield absorbs anything; decays in update.
+  float m_shieldFlashTimer = 0.0f;
   bool m_thrusting = false;
   bool m_landed = false;
   bool m_godMode = false;
