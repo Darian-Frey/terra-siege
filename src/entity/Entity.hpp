@@ -48,6 +48,18 @@ enum class AIState : uint8_t {
   StrafeFriendly, // Bomber-only
 };
 
+// Shield sector — for entities with directional (4-quadrant) shields
+// (Carrier today; player in Phase 4). Order matters: damage routing
+// computes the sector from the hit direction expressed in local
+// space, so the enum values match the dominant-axis sign convention
+// used in damageSectorFromHit().
+enum class ShieldSector : uint8_t {
+  Front = 0, // +Z local
+  Rear = 1,  // -Z local
+  Right = 2, // +X local
+  Left = 3,  // -X local
+};
+
 struct Entity {
   // Identity
   EntityType type = EntityType::None;
@@ -62,11 +74,21 @@ struct Entity {
   // Combat
   float hullHP = 0.0f;
   float hullMax = 0.0f;
-  float shieldHP = 0.0f;
+  float shieldHP = 0.0f;       // single-sector path (Fighter, Bomber)
   float shieldMax = 0.0f;
-  float shieldDelay = 0.0f; // seconds before recharge starts
-  float shieldRate = 0.0f;  // HP per second while recharging
+  float shieldDelay = 0.0f;    // seconds before recharge starts
+  float shieldRate = 0.0f;     // HP per second while recharging
   float timeSinceHit = 0.0f;
+
+  // 4-sector directional shield path (Carrier today; player in
+  // Phase 4). When sectorMax[i] > 0 for any i, the applyDamage path
+  // routes by hit-direction quadrant instead of using the scalar
+  // shieldHP/shieldMax above. Each sector has its own recharge
+  // timer so sustained pressure on one face doesn't suppress the
+  // opposite side's regen. Indexed by ShieldSector enum.
+  float sectorHP[4] = {0, 0, 0, 0};
+  float sectorMax[4] = {0, 0, 0, 0};
+  float sectorTimer[4] = {0, 0, 0, 0}; // per-sector time-since-hit
 
   // Visual / collision
   float radius = 1.0f;

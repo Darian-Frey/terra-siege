@@ -128,6 +128,26 @@ Entity *EntityManager::spawnEnemy(EntityType type, Vector3 pos) {
     e->radius = Config::HIT_RADIUS_SEEDER;
     e->fireTimer = Config::SEEDER_FIRST_DROP_DELAY;
     break;
+  case EntityType::Carrier:
+    // Boss-tier — 4-sector directional shield, huge hull, no weapons.
+    // The scalar shieldHP stays 0 (the directional-shield path is
+    // triggered by sectorMax[i] > 0). shieldDelay + shieldRate are
+    // shared by all sectors via the per-tick recharge loop.
+    e->hullMax = Config::HULL_CARRIER;
+    e->hullHP = e->hullMax;
+    e->shieldMax = 0.0f;
+    e->shieldHP = 0.0f;
+    e->shieldDelay = Config::SHIELD_DELAY_CARRIER;
+    e->shieldRate = Config::SHIELD_RATE_CARRIER;
+    for (int i = 0; i < 4; ++i) {
+      e->sectorMax[i] = Config::SHIELD_CARRIER_PER_SECTOR;
+      e->sectorHP[i] = e->sectorMax[i];
+      e->sectorTimer[i] = 0.0f;
+    }
+    e->radius = Config::HIT_RADIUS_CARRIER;
+    // fireTimer doubles as drone-deploy cooldown (same as Seeder).
+    e->fireTimer = Config::CARRIER_FIRST_DROP_DELAY;
+    break;
   case EntityType::GroundTurret:
     // Stationary ground threat. yaw is the barrel direction (starts
     // pointing forward by convention; updateGroundTurret rotates it
@@ -186,6 +206,18 @@ void EntityManager::update(float dt, const Planet &planet, Player &player,
       e.shieldHP += e.shieldRate * dt;
       if (e.shieldHP > e.shieldMax) e.shieldHP = e.shieldMax;
     }
+    // Per-sector recharge — runs independently per face, so the player
+    // pressuring the front sector doesn't suppress the rear's regen.
+    for (int i = 0; i < 4; ++i) {
+      if (e.sectorMax[i] <= 0.0f) continue;
+      e.sectorTimer[i] += dt;
+      if (e.sectorTimer[i] >= e.shieldDelay &&
+          e.sectorHP[i] < e.sectorMax[i]) {
+        e.sectorHP[i] += e.shieldRate * dt;
+        if (e.sectorHP[i] > e.sectorMax[i])
+          e.sectorHP[i] = e.sectorMax[i];
+      }
+    }
 
     // Damage flash decay — render path tints the body white while > 0.
     if (e.damageFlashTimer > 0.0f) e.damageFlashTimer -= dt;
@@ -204,6 +236,9 @@ void EntityManager::update(float dt, const Planet &planet, Player &player,
       break;
     case EntityType::Seeder:
       updateSeeder(e, dt, planet, player);
+      break;
+    case EntityType::Carrier:
+      updateCarrier(e, dt, planet, player);
       break;
     case EntityType::GroundTurret:
       updateGroundTurret(e, dt, planet, player);
@@ -723,6 +758,86 @@ void EntityManager::updateSeeder(Entity &e, float dt, const Planet &planet,
 }
 
 // ====================================================================
+// Carrier — boss. Drifts in a slow high-altitude orbit around the
+// player and steadily deploys drones. Movement pattern mirrors
+// Seeder so the player has a familiar visual cue (large slow
+// hover-and-drift = drone factory) but Carrier moves much slower
+// and hovers higher. Threat is the steady drip + the 4-sector
+// shield forcing the player to flank rather than dump cannon into
+// one face. No direct weapons — the menace is opportunity cost.
+//
+// fireTimer is re-purposed as the deploy cooldown (same as Seeder).
+// ====================================================================
+void EntityManager::updateCarrier(Entity &e, float dt, const Planet &planet,
+                                  const Player &player) {
+  Vector3 toPlayer = Vector3Subtract(player.position(), e.pos);
+  Vector3 toPlayerH = {toPlayer.x, 0.0f, toPlayer.z};
+  float distH = Vector3Length(toPlayerH);
+
+  // Orbit / approach / retreat — same three-zone heading logic as
+  // Seeder but at Carrier-scale distances.
+  Vector3 desiredDir = {0, 0, 0};
+  if (distH > 0.001f) {
+    Vector3 toN = Vector3Scale(toPlayerH, 1.0f / distH);
+    if (distH < Config::CARRIER_RETREAT_RANGE) {
+      desiredDir = Vector3Scale(toN, -1.0f);
+    } else if (distH > Config::CARRIER_DRIFT_RADIUS * 1.2f) {
+      desiredDir = toN;
+    } else {
+      desiredDir = {-toN.z, 0.0f, toN.x};
+    }
+  }
+
+  e.vel.x += desiredDir.x * Config::CARRIER_THRUST * dt;
+  e.vel.z += desiredDir.z * Config::CARRIER_THRUST * dt;
+
+  // Face the direction of travel so sector orientation (front =
+  // direction of motion) reads naturally to the player.
+  if (fabsf(e.vel.x) + fabsf(e.vel.z) > 0.05f) {
+    e.yaw = atan2f(e.vel.x, e.vel.z);
+  }
+
+  // Altitude hold — sits very high.
+  float ground = planet.heightAt(e.pos.x, e.pos.z);
+  float targetY = ground + Config::CARRIER_PREFERRED_ALT;
+  float altErr = targetY - e.pos.y;
+  e.vel.y += altErr * 0.25f * dt;
+  e.vel.y *= 1.0f - 1.0f * dt;
+
+  // Speed cap (horizontal).
+  float spdH = sqrtf(e.vel.x * e.vel.x + e.vel.z * e.vel.z);
+  if (spdH > Config::CARRIER_MAX_SPEED) {
+    float k = Config::CARRIER_MAX_SPEED / spdH;
+    e.vel.x *= k;
+    e.vel.z *= k;
+  }
+
+  // Heavy drag — keeps the carrier feeling ponderous.
+  float drag = 0.7f * dt;
+  if (drag > 1.0f) drag = 1.0f;
+  e.vel.x *= 1.0f - drag;
+  e.vel.z *= 1.0f - drag;
+
+  e.pos = Vector3Add(e.pos, Vector3Scale(e.vel, dt));
+
+  float floor = planet.heightAt(e.pos.x, e.pos.z) +
+                Config::CARRIER_PREFERRED_ALT * 0.5f;
+  if (e.pos.y < floor) {
+    e.pos.y = floor;
+    if (e.vel.y < 0.0f) e.vel.y = 0.0f;
+  }
+
+  // Drone drop — fireTimer already decremented at the top of update().
+  // Drop from the underside of the carrier hull.
+  float dist = Vector3Length(toPlayer);
+  if (e.fireTimer <= 0.0f && dist < Config::CARRIER_DEPLOY_RANGE) {
+    Vector3 dropPos = {e.pos.x, e.pos.y - 6.0f, e.pos.z};
+    spawnEnemy(EntityType::Drone, dropPos);
+    e.fireTimer = Config::CARRIER_DEPLOY_INTERVAL;
+  }
+}
+
+// ====================================================================
 // Ground Turret — stationary, anchored to terrain. Rotates the barrel
 // toward the player at TURRET_AIM_RATE; fires when the player is in
 // range AND the barrel is within the firing cone. No movement, no
@@ -825,7 +940,7 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
       float d = Vector3Distance(p.pos, e.pos);
       if (d < (e.radius + p.radius)) {
         emitHitBurst(p.pos, particles);
-        applyDamage(e, p.damage, particles);
+        applyDamage(e, p.damage, p.pos, particles);
         p.alive = false;
         --m_liveProjectiles;
         return;
@@ -851,12 +966,65 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
 // the shield delay counter starts over (combat_tuning.md: continuous
 // pressure suppresses recharge). Damage flash gives the player visual
 // confirmation; kill triggers an explosion burst.
+//
+// Two paths:
+//  * Scalar (single-sector) shield — Fighter, Bomber. Uses
+//    target.shieldHP / shieldMax; hitPos ignored.
+//  * Directional (4-sector) shield — Carrier (player in Phase 4).
+//    Resolves the hit sector by hit direction in target-local space,
+//    drains that sector first, overflow rolls to hull. Each sector
+//    has its own recharge timer so opposite faces regen
+//    independently while one is being pressured.
 // ====================================================================
+
+// Detect whether the target uses directional sectors. Any non-zero
+// sectorMax means we route by quadrant; this is cheaper than carrying
+// a flag on every entity and lets the per-type spawn path declare
+// "this entity has sectors" purely by filling the array.
+static bool hasDirectionalShield(const Entity &e) {
+  return e.sectorMax[0] > 0.0f || e.sectorMax[1] > 0.0f ||
+         e.sectorMax[2] > 0.0f || e.sectorMax[3] > 0.0f;
+}
+
+int EntityManager::damageSectorFromHit(const Entity &target,
+                                       Vector3 hitPos) const {
+  // World hit direction → target-local space. Yaw rotation only —
+  // pitch/roll deliberately ignored so that a banking Carrier's
+  // sectors still align with cardinal facings the player can read.
+  float c = cosf(target.yaw), s = sinf(target.yaw);
+  Vector3 worldDir = Vector3Subtract(hitPos, target.pos);
+  float lx = worldDir.x * c - worldDir.z * s;
+  float lz = worldDir.x * s + worldDir.z * c;
+  // Dominant axis decides front-back vs left-right; sign on that
+  // axis picks the specific sector.
+  if (fabsf(lz) > fabsf(lx)) {
+    return (lz > 0.0f) ? static_cast<int>(ShieldSector::Front)
+                       : static_cast<int>(ShieldSector::Rear);
+  }
+  return (lx > 0.0f) ? static_cast<int>(ShieldSector::Right)
+                     : static_cast<int>(ShieldSector::Left);
+}
+
 void EntityManager::applyDamage(Entity &target, float damage,
+                                Vector3 hitPos,
                                 ParticleSystem &particles) {
   target.timeSinceHit = 0.0f;
   target.damageFlashTimer = 0.12f;
-  if (target.shieldHP > 0.0f) {
+
+  if (hasDirectionalShield(target)) {
+    // Sectored path — drain the hit quadrant; overflow goes to hull.
+    int s = damageSectorFromHit(target, hitPos);
+    target.sectorTimer[s] = 0.0f;
+    if (target.sectorHP[s] > 0.0f) {
+      if (damage <= target.sectorHP[s]) {
+        target.sectorHP[s] -= damage;
+        return;
+      }
+      damage -= target.sectorHP[s];
+      target.sectorHP[s] = 0.0f;
+    }
+  } else if (target.shieldHP > 0.0f) {
+    // Scalar (single-sector) path — drain shieldHP first.
     if (damage <= target.shieldHP) {
       target.shieldHP -= damage;
       return;
@@ -864,6 +1032,7 @@ void EntityManager::applyDamage(Entity &target, float damage,
     damage -= target.shieldHP;
     target.shieldHP = 0.0f;
   }
+
   target.hullHP -= damage;
   if (target.hullHP <= 0.0f) {
     target.hullHP = 0.0f;
@@ -1043,6 +1212,76 @@ void EntityManager::renderEnemy(const Entity &e) const {
       if (t < 0.0f) t = 0.0f;
       Vector3 a = {e.pos.x - 3.0f, e.pos.y + 1.6f, e.pos.z};
       Vector3 b = {e.pos.x - 3.0f + 6.0f * t, e.pos.y + 1.6f, e.pos.z};
+      DrawLine3D(a, b, {80, 220, 100, 220});
+    }
+    break;
+  }
+  case EntityType::Carrier: {
+    // Wide blocky hull + 4 directional shield panels. Whole model is
+    // drawn in carrier-local space inside an rlPushMatrix / rlRotatef
+    // so the hull AND the shield slabs rotate together — DrawCubeV
+    // always renders axis-aligned cubes, so without this the panels
+    // would slide across the world axes as the carrier yawed.
+    // (Procedural mesh replacement later — see ship-extraction note.)
+    Color hull = {70, 80, 110, 255};
+    Color belly = {40, 50, 80, 255};
+    Color spire = {180, 200, 240, 255};
+    if (e.damageFlashTimer > 0.0f) {
+      hull = belly = spire = {255, 255, 255, 255};
+    }
+
+    rlPushMatrix();
+    rlTranslatef(e.pos.x, e.pos.y, e.pos.z);
+    // Yaw is around world-up; raylib's rlRotatef takes degrees.
+    rlRotatef(e.yaw * RAD2DEG, 0.0f, 1.0f, 0.0f);
+
+    // Hull + belly + spire — all at local origin, axis-aligned in
+    // local space which IS the carrier's frame post-rotation.
+    DrawCubeV({0.0f, 0.0f, 0.0f}, {10.0f, 3.0f, 12.0f}, hull);
+    DrawCubeV({0.0f, -1.8f, 0.0f}, {6.0f, 0.6f, 4.0f}, belly);
+    DrawCubeV({0.0f, 1.9f, 0.0f}, {3.0f, 0.9f, 3.0f}, spire);
+
+    // Sector shield panels — one per face, in carrier-local space.
+    // Front = +Z, Rear = -Z, Right = +X, Left = -X. Slab thin along
+    // the face normal, wide across the face. Alpha tied to HP fraction
+    // so a depleted sector visually vanishes.
+    struct PanelDef {
+      Vector3 pos;
+      Vector3 size;
+      int sector;
+    };
+    const PanelDef panels[4] = {
+        {{0.0f, 0.0f, 6.5f}, {11.0f, 3.5f, 0.3f},
+         static_cast<int>(ShieldSector::Front)},
+        {{0.0f, 0.0f, -6.5f}, {11.0f, 3.5f, 0.3f},
+         static_cast<int>(ShieldSector::Rear)},
+        {{5.5f, 0.0f, 0.0f}, {0.3f, 3.5f, 13.0f},
+         static_cast<int>(ShieldSector::Right)},
+        {{-5.5f, 0.0f, 0.0f}, {0.3f, 3.5f, 13.0f},
+         static_cast<int>(ShieldSector::Left)},
+    };
+    for (const PanelDef &pd : panels) {
+      if (e.sectorMax[pd.sector] <= 0.0f) continue;
+      float frac = e.sectorHP[pd.sector] / e.sectorMax[pd.sector];
+      if (frac <= 0.01f) continue;
+      unsigned char alpha =
+          static_cast<unsigned char>(40.0f + 120.0f * frac); // 40..160
+      Color shield = {static_cast<unsigned char>(60 + 60 * (1.0f - frac)),
+                      static_cast<unsigned char>(180 + 40 * frac),
+                      static_cast<unsigned char>(220), alpha};
+      DrawCubeV(pd.pos, pd.size, shield);
+    }
+
+    rlPopMatrix();
+
+    // Hull bar — drawn in world space (above the carrier centre)
+    // because the bar is a UI cue, not a physical fixture; should
+    // read identically from any angle.
+    if (e.hullMax > 0.0f) {
+      float t = e.hullHP / e.hullMax;
+      if (t < 0.0f) t = 0.0f;
+      Vector3 a = {e.pos.x - 4.0f, e.pos.y + 3.5f, e.pos.z};
+      Vector3 b = {e.pos.x - 4.0f + 8.0f * t, e.pos.y + 3.5f, e.pos.z};
       DrawLine3D(a, b, {80, 220, 100, 220});
     }
     break;

@@ -297,6 +297,28 @@ constexpr float SEEDER_FIRST_DROP_DELAY = 2.0f;  // grace period after spawn
 constexpr float SEEDER_DRIFT_RADIUS = 120.0f;    // orbit radius around player
 constexpr float SEEDER_RETREAT_RANGE = 90.0f;    // closer than this = peel away
 
+// Carrier — boss-tier enemy. Hovers high overhead and continuously
+// spawns drones. Four-sector directional shield is the headline
+// mechanic: the player can't just dump cannon into the front, they
+// have to flank or stay mobile to wear down a different sector
+// while the front recharges. TTK 25s assumes the player kills it by
+// methodically chewing through one sector at a time; if they
+// circle-strafe they can break sectors faster.
+//
+// Doesn't fire weapons directly — the threat is the steady drone
+// drip + opportunity cost (every second the Carrier is alive is
+// another drone in your face). Same hover-and-drift pattern as
+// Seeder but lower drift speed, higher altitude.
+constexpr float CARRIER_THRUST = 6.0f;            // m/s² (very slow)
+constexpr float CARRIER_MAX_SPEED = 10.0f;        // top horizontal speed
+constexpr float CARRIER_PREFERRED_ALT = 130.0f;   // above everything else
+constexpr float CARRIER_HIT_RADIUS = 6.0f;        // huge target
+constexpr float CARRIER_DRIFT_RADIUS = 160.0f;    // orbit radius around player
+constexpr float CARRIER_RETREAT_RANGE = 120.0f;   // peel away if closer
+constexpr float CARRIER_DEPLOY_INTERVAL = 1.8f;   // sec between drone drops
+constexpr float CARRIER_DEPLOY_RANGE = 320.0f;    // wide engagement
+constexpr float CARRIER_FIRST_DROP_DELAY = 3.0f;  // grace after spawn
+
 // Bomber — heavy bruiser. Slower than Fighter on every axis (turn,
 // thrust, top speed) but heavier hull + shield (TTK 5s) and a slow
 // punishing fire pattern: ~31 DPS in chunky 25-damage shots that the
@@ -352,6 +374,7 @@ constexpr float HIT_RADIUS_DRONE = 1.5f;
 constexpr float HIT_RADIUS_SEEDER = 3.0f;
 constexpr float HIT_RADIUS_TURRET = 2.8f;
 constexpr float HIT_RADIUS_BOMBER = 4.0f;
+constexpr float HIT_RADIUS_CARRIER = 6.0f;
 constexpr float HIT_RADIUS_PLAYER = 2.0f;
 
 // ----------------------------------------------------------------

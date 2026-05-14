@@ -89,6 +89,12 @@ private:
   void updateSeeder(Entity &e, float dt, const Planet &planet,
                     const Player &player);
 
+  // Carrier — boss-tier. 4-sector shield, hovers high, continuously
+  // deploys drones. Same hover-and-drift movement pattern as Seeder
+  // but slower drift speed and much higher altitude.
+  void updateCarrier(Entity &e, float dt, const Planet &planet,
+                     const Player &player);
+
   // Ground Turret — stationary, rotates toward player, fires in cone.
   void updateGroundTurret(Entity &e, float dt, const Planet &planet,
                           const Player &player);
@@ -99,8 +105,18 @@ private:
                         Player &player, ParticleSystem &particles);
 
   // Damage application — handles shield → hull routing and timeSinceHit.
-  // Emits a kill burst when the target dies.
-  void applyDamage(Entity &target, float damage, ParticleSystem &particles);
+  // Emits a kill burst when the target dies. hitPos is the world-space
+  // impact point; used to determine which directional sector takes
+  // damage on multi-sector enemies (Carrier). For single-shield
+  // entities the hitPos is ignored and the scalar shield drains as before.
+  void applyDamage(Entity &target, float damage, Vector3 hitPos,
+                   ParticleSystem &particles);
+
+  // Resolve which directional shield sector takes a hit, given the
+  // world-space hit position and the target's pose. Returns a
+  // ShieldSector enum cast to int (0..3). Exposed for unit tests /
+  // future weapon types that bypass sectors (EMP, depth charge, etc).
+  int damageSectorFromHit(const Entity &target, Vector3 hitPos) const;
 
   // Helpers
   Entity *allocEnemy();
