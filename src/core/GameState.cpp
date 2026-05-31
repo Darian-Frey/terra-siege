@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <string>
+#include <vector>
 
 #ifdef DEV_MODE
 #include <filesystem>
@@ -270,10 +271,93 @@ void GameState::loadWorld(uint32_t seed) {
   Vector3 startPos = {mid, ground + 12.0f, mid};
   m_player.init(startPos, Config::FLIGHT_ASSIST_DEFAULT);
 
+  // Spawn friendlies on the terrain around the player's start. Uses a
+  // deterministic-per-seed RNG so the same world keeps placing the
+  // same friendly layout — repeatable for debugging. Spacing is
+  // enforced by rejection sampling against placed positions.
+  spawnFriendliesForRound(startPos);
+
+  // Snapshot the total for the "alive vs total" HUD readout and
+  // game-over detection (need a known baseline since friendlies
+  // can't respawn during the round).
+  m_friendlyTotalAtStart = m_em.liveFriendlyCount();
+
   // WaveManager drives all enemy spawning from here on — first wave
   // begins after WAVE_FIRST_DELAY seconds so the player has time to
   // orient before the first contact.
   m_waves.reset();
+}
+
+// ====================================================================
+// spawnFriendliesForRound — places the round's friendly roster on
+// terrain inside FRIENDLY_SPAWN_RING of the player. Rejection-samples
+// candidate positions until each one meets the minimum-separation
+// constraint or we exhaust the retry budget. xorshift32 keyed off the
+// world seed so placement is reproducible per seed.
+// ====================================================================
+void GameState::spawnFriendliesForRound(Vector3 playerStart) {
+  uint32_t rng = m_seed ? m_seed : 0xACE1u;
+  auto randF = [&rng](float lo, float hi) {
+    rng ^= rng << 13;
+    rng ^= rng >> 17;
+    rng ^= rng << 5;
+    float t = static_cast<float>(rng) / static_cast<float>(0xFFFFFFFFu);
+    return lo + t * (hi - lo);
+  };
+
+  std::vector<Vector3> placed;
+  placed.reserve(Config::FRIENDLY_COLLECTOR_COUNT +
+                 Config::FRIENDLY_REPAIR_COUNT +
+                 Config::FRIENDLY_BOOSTER_COUNT);
+
+  auto pickSpot = [&]() {
+    for (int attempt = 0; attempt < 32; ++attempt) {
+      float a = randF(0.0f, 6.28318f);
+      float r = randF(Config::FRIENDLY_SPAWN_RING * 0.25f,
+                      Config::FRIENDLY_SPAWN_RING);
+      float x = playerStart.x + r * sinf(a);
+      float z = playerStart.z + r * cosf(a);
+      // Reject if too close to a previously placed friendly.
+      bool ok = true;
+      for (const Vector3 &p : placed) {
+        float dx = p.x - x, dz = p.z - z;
+        if (dx * dx + dz * dz <
+            Config::FRIENDLY_SPAWN_MIN_DIST *
+                Config::FRIENDLY_SPAWN_MIN_DIST) {
+          ok = false;
+          break;
+        }
+      }
+      if (!ok) continue;
+      float y = m_planet.heightAt(x, z) + 1.0f;
+      return Vector3{x, y, z};
+    }
+    // Retry budget exhausted — return last-attempted spot anyway so
+    // we never silently drop a friendly. Could happen on degenerate
+    // FRIENDLY_SPAWN_RING / MIN_DIST combinations.
+    float a = randF(0.0f, 6.28318f);
+    float r = Config::FRIENDLY_SPAWN_RING * 0.5f;
+    float x = playerStart.x + r * sinf(a);
+    float z = playerStart.z + r * cosf(a);
+    float y = m_planet.heightAt(x, z) + 1.0f;
+    return Vector3{x, y, z};
+  };
+
+  for (int i = 0; i < Config::FRIENDLY_COLLECTOR_COUNT; ++i) {
+    Vector3 pos = pickSpot();
+    m_em.spawnEnemy(EntityType::Collector, pos);
+    placed.push_back(pos);
+  }
+  for (int i = 0; i < Config::FRIENDLY_REPAIR_COUNT; ++i) {
+    Vector3 pos = pickSpot();
+    m_em.spawnEnemy(EntityType::RepairStation, pos);
+    placed.push_back(pos);
+  }
+  for (int i = 0; i < Config::FRIENDLY_BOOSTER_COUNT; ++i) {
+    Vector3 pos = pickSpot();
+    m_em.spawnEnemy(EntityType::RadarBooster, pos);
+    placed.push_back(pos);
+  }
 }
 
 // ================================================================
@@ -990,6 +1074,18 @@ void GameState::update(float dt) {
           break;
         }
       }
+
+      // 5g: second loss condition — the player has lost every
+      // friendly unit they were defending. Transition straight to
+      // GameOver without the wreck-rest gate (the player is still
+      // alive; they've just failed the objective).
+      if (!m_friendliesLostHandled && m_friendlyTotalAtStart > 0 &&
+          m_em.liveFriendlyCount() == 0 && m_player.isAlive()) {
+        m_friendliesLostHandled = true;
+        m_state = AppState::GameOver;
+        setCursorForGameplay(false);
+        break;
+      }
     } else {
       // Free-roam: player suspended; keys 1–5 are ignored.
       updateFreeCamera(dt);
@@ -1611,6 +1707,26 @@ void GameState::drawHUD() const {
     DrawRectangle(bx, by, tw + 24, 22, barCol);
     DrawRectangleLines(bx, by, tw + 24, 22, {120, 150, 180, 180});
     drawHudText(buf, bx + 12, by + 4, 16, textCol);
+
+    // Friendlies counter — sits right below the wave bar. Shows
+    // alive/total at a glance; colour darkens to red as the player
+    // loses ground. Hidden when no friendlies were spawned.
+    if (m_friendlyTotalAtStart > 0) {
+      int alive = m_em.liveFriendlyCount();
+      char fbuf[48];
+      snprintf(fbuf, sizeof(fbuf), "FRIENDLIES %d / %d", alive,
+               m_friendlyTotalAtStart);
+      Color fCol = alive == 0
+                       ? Color{220, 80, 80, 240}
+                   : (alive * 2 <= m_friendlyTotalAtStart)
+                       ? Color{220, 180, 80, 240}
+                       : Color{180, 230, 200, 240};
+      int ftw = measureHudText(fbuf, 14);
+      int fbx = sw / 2 - (ftw + 20) / 2;
+      int fby = by + 26;
+      DrawRectangle(fbx, fby, ftw + 20, 18, {0, 0, 0, 140});
+      drawHudText(fbuf, fbx + 10, fby + 3, 14, fCol);
+    }
   }
 
   // Camera-view overlays — fade label on switch, plus per-view UI.
@@ -2079,12 +2195,20 @@ void GameState::resetCombat() {
   // Reset the wave manager — wave 1 begins after WAVE_FIRST_DELAY.
   m_waves.reset();
 
+  // Respawn the friendly roster. resetCombat() runs on every
+  // Start Game / Restart, so without this the wave-after-game-over
+  // path would leave the friendly pool empty and the
+  // all-friendlies-dead game over would fire on tick 1.
+  spawnFriendliesForRound(startPos);
+  m_friendlyTotalAtStart = m_em.liveFriendlyCount();
+
   applyLiveSettings();
   m_cameraView = static_cast<CameraView>(m_settings.defaultView);
   resetCameraZoom();
 
   // Fresh life — re-arm the death pipeline.
   m_playerDeathHandled = false;
+  m_friendliesLostHandled = false;
 }
 
 void GameState::enterMainMenu() {

@@ -67,7 +67,9 @@ void Radar::update(float dt, const EntityManager &entities, Vector3 playerPos,
   m_playerPos = playerPos;
   m_playerYaw = playerYaw;
   m_gameTime = gameTime;
-  // Tier 1 has no Radar Booster wiring; activeRange stays at base.
+  // 5g: a live RadarBooster friendly bumps the disc range to
+  // RADAR_BOOST_RANGE. Border tint also flips green via boosted().
+  m_boosted = entities.anyRadarBoosterAlive();
   m_activeRange = m_boosted ? Config::RADAR_BOOST_RANGE
                             : Config::RADAR_BASE_RANGE;
 
@@ -103,14 +105,21 @@ Vector2 Radar::worldToRadar(Vector3 worldPos, Vector2 discCentre,
                             float discRadius) const {
   float dx = worldPos.x - m_playerPos.x;
   float dz = worldPos.z - m_playerPos.z;
-  // Rotate by -playerYaw — using sin/cos of negated yaw.
-  float c = cosf(-m_playerYaw);
-  float s = sinf(-m_playerYaw);
+  // World → ship-local. Player yaw=0 faces +Z; yaw increases
+  // clockwise (right turn). The inverse-rotation by +yaw gives a
+  // local frame where +Z is the ship's nose, +X is its starboard.
+  //   local.x = world.x * cos(yaw) - world.z * sin(yaw)
+  //   local.z = world.x * sin(yaw) + world.z * cos(yaw)
+  // Using -yaw here is wrong: it applies the forward rotation
+  // instead of the inverse, so a target directly in front of an
+  // east-facing player would end up at the bottom of the disc.
+  float c = cosf(m_playerYaw);
+  float s = sinf(m_playerYaw);
   float rx = dx * c - dz * s;
   float rz = dx * s + dz * c;
   float scale = discRadius / m_activeRange;
   return {discCentre.x + rx * scale,
-          // +Z = north, which should map to "up" = -screenY.
+          // +Z (forward in local frame) maps to "up" = -screenY.
           discCentre.y - rz * scale};
 }
 
@@ -197,9 +206,10 @@ void Radar::drawBlip(Vector2 radarPos, float distance, BlipType type,
   case BlipType::Seeder:   DrawCircleV(radarPos, 3.0f, col); break;
   case BlipType::Fighter: {
     // Triangle pointing in horizontal travel direction (rotated to
-    // radar space the same way contact position is).
-    float cy = cosf(-playerYaw);
-    float sy = sinf(-playerYaw);
+    // radar space the same way contact position is — see
+    // worldToRadar; using +yaw inverts world→local).
+    float cy = cosf(playerYaw);
+    float sy = sinf(playerYaw);
     float vx = velocity.x * cy - velocity.z * sy;
     float vz = velocity.x * sy + velocity.z * cy;
     float spd = sqrtf(vx * vx + vz * vz);

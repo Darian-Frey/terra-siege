@@ -88,6 +88,11 @@ public:
   // All enemy projectile + drone contact hits go through this path.
   void applyDamage(float amount, Vector3 hitPos);
 
+  // Hull regeneration — called by RepairStation when the player is
+  // within its heal radius. Caps at PLAYER_HULL_HP. Does NOT refill
+  // shields (that's ShieldBooster's job).
+  void heal(float amount);
+
   // Weapon slot enums — three slots (Primary / Secondary / Special)
   // plus an independent Auto Turret toggle. Cycled with Tab / Z / X.
   enum class PrimaryWeapon : uint8_t { Cannon = 0, Plasma = 1, Beam = 2 };

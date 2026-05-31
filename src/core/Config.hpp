@@ -374,6 +374,37 @@ constexpr float TURRET_MOUNT_HEIGHT = 1.6f;       // base above terrain
 constexpr float TURRET_BARREL_HEIGHT = 3.4f;      // barrel pivot above ground
 constexpr float TURRET_GROUND_SPAWN_DIST = 90.0f; // place this far from player
 
+// Friendly units — ground-anchored installations the player has to
+// defend. Losing all of them = game over (alongside player death).
+// Bombers prefer friendlies as targets when one is within their
+// engagement range — that's the entity's main pressure axis.
+constexpr float COLLECTOR_HULL = 60.0f;
+constexpr float COLLECTOR_SPEED = 6.0f;          // ground vehicle
+constexpr float COLLECTOR_WAYPOINT_RADIUS = 4.0f;
+constexpr float COLLECTOR_HIT_RADIUS = 2.4f;
+
+constexpr float REPAIR_STATION_HULL = 90.0f;
+constexpr float REPAIR_STATION_HEAL_RADIUS = 30.0f; // player needs to be close
+constexpr float REPAIR_STATION_HEAL_RATE = 5.0f;    // hull HP / sec
+constexpr float REPAIR_STATION_HIT_RADIUS = 3.0f;
+
+constexpr float RADAR_BOOSTER_HULL = 80.0f;
+constexpr float RADAR_BOOSTER_HIT_RADIUS = 2.8f;
+
+// World spawn — total friendlies placed at round start, scattered
+// inside the SPAWN_RING radius from the player's start position.
+constexpr int FRIENDLY_COLLECTOR_COUNT = 2;
+constexpr int FRIENDLY_REPAIR_COUNT = 1;
+constexpr int FRIENDLY_BOOSTER_COUNT = 1;
+constexpr float FRIENDLY_SPAWN_RING = 220.0f; // metres from player start
+constexpr float FRIENDLY_SPAWN_MIN_DIST = 40.0f; // keep them separated
+
+// Bomber engagement of friendlies — preference threshold. If the
+// nearest friendly is closer than (dist to player × FRIENDLY_PRIORITY),
+// the Bomber switches to STRAFE_FRIENDLY for that target. Set > 1
+// so bombers chase friendlies even when the player is somewhat closer.
+constexpr float BOMBER_FRIENDLY_PRIORITY = 2.0f;
+
 // Pool sizes — pre-allocated, no heap in hot path
 constexpr int ENTITY_POOL_SIZE = 256;     // enemies + friendlies
 constexpr int PROJECTILE_POOL_SIZE = 512; // player + enemy projectiles
@@ -395,6 +426,9 @@ constexpr float HIT_RADIUS_SEEDER = 3.0f;
 constexpr float HIT_RADIUS_TURRET = 2.8f;
 constexpr float HIT_RADIUS_BOMBER = 4.0f;
 constexpr float HIT_RADIUS_CARRIER = 6.0f;
+constexpr float HIT_RADIUS_COLLECTOR = 2.4f;
+constexpr float HIT_RADIUS_REPAIR = 3.0f;
+constexpr float HIT_RADIUS_BOOSTER = 2.8f;
 constexpr float HIT_RADIUS_PLAYER = 2.0f;
 
 // ----------------------------------------------------------------

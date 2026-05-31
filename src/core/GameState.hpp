@@ -171,6 +171,16 @@ private:
   // only flags whether the subsystem is enabled.
   float m_autoTurretTimer = 0.0f;
 
+  // Friendly-unit snapshot — count placed at round start. Compared
+  // each tick to the live count to drive the "all friendlies dead"
+  // game-over condition. Reset by spawnFriendliesForRound().
+  int m_friendlyTotalAtStart = 0;
+  bool m_friendliesLostHandled = false;
+
+  // Spawn the round's friendly roster on terrain. Called from
+  // loadWorld(); deterministic per-seed.
+  void spawnFriendliesForRound(Vector3 playerStart);
+
   // HUD font handle. Loaded in init() via initHudFont(); falls back
   // to the raylib default when no system TTF is found.
   Font m_hudFont = {};

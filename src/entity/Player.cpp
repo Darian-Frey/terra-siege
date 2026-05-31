@@ -71,6 +71,15 @@ void Player::applyDamage(float amount) {
     m_health = 0.0f;
 }
 
+void Player::heal(float amount) {
+  // Repair Stations call this each tick while the player is inside
+  // their heal radius. Caps at the spawn hull HP — no overheal.
+  if (m_health <= 0.0f) return; // wreck can't be healed
+  m_health += amount;
+  if (m_health > Config::PLAYER_HULL_HP)
+    m_health = Config::PLAYER_HULL_HP;
+}
+
 // Directional damage — drains the hit sector first, overflow rolls to
 // hull. Sector resolution mirrors EntityManager::damageSectorFromHit:
 // world-space hit vector rotated by -yaw to get target-local space,

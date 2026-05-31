@@ -4,6 +4,18 @@
 #include "raylib.h"
 
 int main() {
+  // Quiet raylib's per-VAO mesh-upload / unload / shader-link chatter
+  // at LOG_INFO. Our own diagnostic messages use LOG_WARNING + LOG_INFO
+  // explicitly; LOG_INFO from our code is dev-mode only, so suppress
+  // it in release builds and keep it in DEV_MODE for hotkey traces.
+  // Must run BEFORE InitWindow so the early raylib startup chatter
+  // ("Display size...", "OpenGL initialised", etc.) also stays quiet.
+#ifdef DEV_MODE
+  SetTraceLogLevel(LOG_INFO);
+#else
+  SetTraceLogLevel(LOG_WARNING);
+#endif
+
   SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
   InitWindow(Config::SCREEN_WIDTH, Config::SCREEN_HEIGHT, "terra-siege");
   SetTargetFPS(Config::TARGET_FPS);

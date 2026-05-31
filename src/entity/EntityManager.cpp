@@ -159,6 +159,30 @@ Entity *EntityManager::spawnEnemy(EntityType type, Vector3 pos) {
     e->radius = Config::HIT_RADIUS_TURRET;
     e->aiState = AIState::Idle; // turret has no pursue/evade — just track+fire
     break;
+  case EntityType::Collector:
+    // Ground vehicle that wanders between waypoints. fireTimer is
+    // re-purposed as the waypoint-pick cooldown. stateTimer holds
+    // the current yaw target (faked: encoded in vel direction).
+    e->hullMax = Config::COLLECTOR_HULL;
+    e->hullHP = e->hullMax;
+    e->radius = Config::HIT_RADIUS_COLLECTOR;
+    // Initial heading: random-ish from spawn seed; updateCollector
+    // pivots toward fresh waypoints as it walks.
+    e->yaw = static_cast<float>((e->id * 1103515245u) % 6283) / 1000.0f;
+    e->fireTimer = 0.0f;
+    break;
+  case EntityType::RepairStation:
+    e->hullMax = Config::REPAIR_STATION_HULL;
+    e->hullHP = e->hullMax;
+    e->radius = Config::HIT_RADIUS_REPAIR;
+    break;
+  case EntityType::RadarBooster:
+    e->hullMax = Config::RADAR_BOOSTER_HULL;
+    e->hullHP = e->hullMax;
+    e->radius = Config::HIT_RADIUS_BOOSTER;
+    // yaw is animated by updateRadarBooster (rotating dish visual).
+    e->yaw = 0.0f;
+    break;
   default:
     e->hullMax = 100.0f;
     e->hullHP = 100.0f;
@@ -369,6 +393,15 @@ void EntityManager::update(float dt, const Planet &planet, Player &player,
     case EntityType::GroundTurret:
       updateGroundTurret(e, dt, planet, player);
       break;
+    case EntityType::Collector:
+      updateCollector(e, dt, planet);
+      break;
+    case EntityType::RepairStation:
+      updateRepairStation(e, dt, player);
+      break;
+    case EntityType::RadarBooster:
+      updateRadarBooster(e, dt);
+      break;
     default:
       break;
     }
@@ -547,20 +580,44 @@ void EntityManager::fireFighterShot(Entity &e, const Player &player) {
 void EntityManager::updateBomber(Entity &e, float dt, const Planet &planet,
                                  const Player &player,
                                  ParticleSystem &particles) {
-  Vector3 toPlayer = Vector3Subtract(player.position(), e.pos);
+  // Bombers prefer friendlies as targets — the "strafe run" pattern
+  // from the design doc. If the nearest friendly is closer than
+  // BOMBER_FRIENDLY_PRIORITY × dist-to-player, the bomber targets
+  // it instead. Falls back to the player when no friendlies are alive.
+  Vector3 friendlyPos;
+  uint32_t friendlyId = nearestFriendly(e.pos, friendlyPos);
+  Vector3 playerPos = player.position();
+  float distPlayer = Vector3Distance(playerPos, e.pos);
+
+  Vector3 targetPos = playerPos;
+  bool targetingFriendly = false;
+  if (friendlyId != 0) {
+    float distFriendly = Vector3Distance(friendlyPos, e.pos);
+    if (distFriendly <
+        distPlayer * Config::BOMBER_FRIENDLY_PRIORITY) {
+      targetPos = friendlyPos;
+      targetingFriendly = true;
+      e.aiState = AIState::StrafeFriendly;
+    }
+  }
+
+  Vector3 toPlayer = Vector3Subtract(targetPos, e.pos);
   Vector3 toPlayerH = {toPlayer.x, 0.0f, toPlayer.z};
   float distH = Vector3Length(toPlayerH);
   float dist = Vector3Length(toPlayer);
 
   // EVADE entry/exit — same fraction threshold as Fighter so all
-  // shielded fliers behave consistently when wounded.
+  // shielded fliers behave consistently when wounded. EVADE
+  // overrides StrafeFriendly so a damaged bomber peels off.
   bool wantEvade = (e.hullMax > 0.0f) &&
                    ((e.hullHP / e.hullMax) < Config::AI_EVADE_HEALTH);
   if (wantEvade && dist < Config::AI_PURSUE_RANGE * 1.5f) {
     e.aiState = AIState::Evade;
+    targetingFriendly = false; // peel away, doesn't matter from whom
   } else if (e.aiState == AIState::Evade && !wantEvade) {
     e.aiState = AIState::Pursue;
   }
+  (void)targetingFriendly; // reserved for future strafe-specific tuning
 
   float evadeScale = 1.0f;
   if (e.aiState == AIState::Evade && e.hullMax > 0.0f) {
@@ -649,24 +706,26 @@ void EntityManager::updateBomber(Entity &e, float dt, const Planet &planet,
 
   // Fire — only outside EVADE, only when in attack range and aligned.
   // Wider cone than Fighter (~25°) because bombers turn so slowly that
-  // a tight cone makes them effectively non-threatening.
+  // a tight cone makes them effectively non-threatening. Aim direction
+  // uses the same targetPos that drove movement, so a bomber on a
+  // strafe run fires at the friendly, not the player.
   if (e.aiState == AIState::Attack && e.fireTimer <= 0.0f) {
-    Vector3 toPlayerN =
-        Vector3Normalize(Vector3Subtract(player.position(), e.pos));
+    Vector3 toTargetN =
+        Vector3Normalize(Vector3Subtract(targetPos, e.pos));
     Vector3 fwd3 = {sinf(e.yaw), 0.0f, cosf(e.yaw)};
-    float dot = Vector3DotProduct(fwd3, toPlayerN);
+    float dot = Vector3DotProduct(fwd3, toTargetN);
     if (dot > 0.90f) { // ~25° cone
-      fireBomberShot(e, player);
+      fireBomberShot(e, targetPos);
       e.fireTimer = Config::BOMBER_FIRE_RATE;
     }
   }
 }
 
-void EntityManager::fireBomberShot(Entity &e, const Player &player) {
-  Vector3 toPlayer = Vector3Subtract(player.position(), e.pos);
-  float d = Vector3Length(toPlayer);
+void EntityManager::fireBomberShot(Entity &e, Vector3 targetPos) {
+  Vector3 toTarget = Vector3Subtract(targetPos, e.pos);
+  float d = Vector3Length(toTarget);
   if (d < 0.001f) return;
-  Vector3 dir = Vector3Scale(toPlayer, 1.0f / d);
+  Vector3 dir = Vector3Scale(toTarget, 1.0f / d);
   Vector3 vel = Vector3Scale(dir, Config::BOMBER_PROJ_SPEED);
   Vector3 spawn = Vector3Add(e.pos, Vector3Scale(dir, 2.5f));
   spawnProjectile(spawn, vel, Config::BOMBER_FIRE_DAMAGE,
@@ -1015,6 +1074,104 @@ void EntityManager::updateGroundTurret(Entity &e, float dt,
       e.fireTimer = Config::TURRET_ENEMY_FIRE_RATE;
     }
   }
+}
+
+// ====================================================================
+// Collector — ground vehicle that wanders between waypoints. We don't
+// track an explicit waypoint list (yet); instead the collector picks
+// a fresh random heading every few seconds and walks that way at
+// ground level. Resnaps Y to terrain each tick. fireTimer doubles
+// as the next-heading-pick countdown.
+//
+// Score / cargo-delivery loop is deferred to the broader friendly
+// economy pass. For 5g the Collector just exists as a soft target
+// the Bomber prefers.
+// ====================================================================
+void EntityManager::updateCollector(Entity &e, float dt, const Planet &planet) {
+  e.fireTimer -= dt;
+  if (e.fireTimer <= 0.0f) {
+    // Pseudo-random heading delta — uses entity id + nextId as a
+    // cheap deterministic-per-tick seed so different collectors
+    // don't pivot together. Picks a new heading every 3-5s.
+    uint32_t s = (e.id * 2654435761u) ^ m_nextId;
+    e.yaw += ((s % 1000) / 1000.0f - 0.5f) * 3.14159f * 0.8f;
+    e.fireTimer = 3.0f + ((s >> 10) % 200) / 100.0f;
+  }
+
+  float spd = Config::COLLECTOR_SPEED;
+  e.vel.x = sinf(e.yaw) * spd;
+  e.vel.z = cosf(e.yaw) * spd;
+
+  e.pos.x += e.vel.x * dt;
+  e.pos.z += e.vel.z * dt;
+  // Resnap to terrain — collector hugs the ground.
+  e.pos.y = planet.heightAt(e.pos.x, e.pos.z) + 0.8f;
+}
+
+// ====================================================================
+// Repair Station — stationary installation. When the player is within
+// REPAIR_STATION_HEAL_RADIUS, ticks hull HP back up at HEAL_RATE.
+// Player handles its own cap inside Player::heal(). Y stays anchored
+// to terrain in case heightmap shifts (defensive).
+// ====================================================================
+void EntityManager::updateRepairStation(Entity &e, float dt, Player &player) {
+  // (Planet ref not available here — y was set at spawn time.)
+  Vector3 toPlayer = Vector3Subtract(player.position(), e.pos);
+  float d = Vector3Length(toPlayer);
+  if (d <= Config::REPAIR_STATION_HEAL_RADIUS) {
+    player.heal(Config::REPAIR_STATION_HEAL_RATE * dt);
+  }
+}
+
+// ====================================================================
+// Radar Booster — purely passive. While alive, Radar reads
+// anyRadarBoosterAlive() and switches its display range from
+// RADAR_BASE_RANGE to RADAR_BOOST_RANGE. The only per-tick work here
+// is animating the rotating dish visual (yaw).
+// ====================================================================
+void EntityManager::updateRadarBooster(Entity &e, float dt) {
+  e.yaw += 1.5f * dt;
+  if (e.yaw > 6.28318f) e.yaw -= 6.28318f;
+}
+
+bool EntityManager::anyRadarBoosterAlive() const {
+  for (const Entity &e : m_entities) {
+    if (e.alive && e.type == EntityType::RadarBooster) return true;
+  }
+  return false;
+}
+
+int EntityManager::liveFriendlyCount() const {
+  int n = 0;
+  for (const Entity &e : m_entities) {
+    if (!e.alive) continue;
+    if (e.type == EntityType::Collector ||
+        e.type == EntityType::RepairStation ||
+        e.type == EntityType::RadarBooster) {
+      ++n;
+    }
+  }
+  return n;
+}
+
+uint32_t EntityManager::nearestFriendly(Vector3 origin,
+                                        Vector3 &outPos) const {
+  uint32_t bestId = 0;
+  float bestDist = 1e9f;
+  for (const Entity &e : m_entities) {
+    if (!e.alive) continue;
+    if (e.type != EntityType::Collector &&
+        e.type != EntityType::RepairStation &&
+        e.type != EntityType::RadarBooster)
+      continue;
+    float d = Vector3Distance(e.pos, origin);
+    if (d < bestDist) {
+      bestDist = d;
+      bestId = e.id;
+      outPos = e.pos;
+    }
+  }
+  return bestId;
 }
 
 void EntityManager::fireTurretShot(Entity &e, const Player &player) {
@@ -1681,6 +1838,93 @@ void EntityManager::renderEnemy(const Entity &e) const {
                    e.pos.y + Config::TURRET_BARREL_HEIGHT + 1.5f, e.pos.z};
       Vector3 b = {e.pos.x - 2.0f + 4.0f * t,
                    e.pos.y + Config::TURRET_BARREL_HEIGHT + 1.5f, e.pos.z};
+      DrawLine3D(a, b, {80, 220, 100, 220});
+    }
+    break;
+  }
+  case EntityType::Collector: {
+    // Low boxy hull with side treads + a small cabin pip. Olive +
+    // green palette to read distinct from enemy types at a glance.
+    Color hull = {80, 110, 70, 255};
+    Color tread = {40, 50, 35, 255};
+    Color cab = {220, 200, 80, 255};
+    if (e.damageFlashTimer > 0.0f) hull = tread = cab = {255, 255, 255, 255};
+    DrawCubeV(e.pos, {3.0f, 1.4f, 4.5f}, hull);
+    // Treads to either side of the hull (axis-aligned for now; turret
+    // body is small enough that the slide is barely visible).
+    DrawCubeV({e.pos.x - 1.8f, e.pos.y - 0.4f, e.pos.z},
+              {0.6f, 0.6f, 4.5f}, tread);
+    DrawCubeV({e.pos.x + 1.8f, e.pos.y - 0.4f, e.pos.z},
+              {0.6f, 0.6f, 4.5f}, tread);
+    DrawCubeV({e.pos.x, e.pos.y + 0.9f, e.pos.z}, {1.4f, 0.6f, 1.4f},
+              cab);
+
+    if (e.hullMax > 0.0f) {
+      float t = e.hullHP / e.hullMax;
+      if (t < 0.0f) t = 0.0f;
+      Vector3 a = {e.pos.x - 1.8f, e.pos.y + 1.6f, e.pos.z};
+      Vector3 b = {e.pos.x - 1.8f + 3.6f * t, e.pos.y + 1.6f, e.pos.z};
+      DrawLine3D(a, b, {80, 220, 100, 220});
+    }
+    break;
+  }
+  case EntityType::RepairStation: {
+    // Square pad with a glowing pulse on top — pulses bright when
+    // the player is within heal radius so the "I'm healing you" cue
+    // reads instantly. Pulse magnitude derived from a sinusoid of
+    // the entity's lifespan; cheap and doesn't need extra state.
+    Color base = {60, 80, 70, 255};
+    Color pad = {120, 200, 140, 255};
+    if (e.damageFlashTimer > 0.0f) base = pad = {255, 255, 255, 255};
+    // Base pad — squat and wide.
+    DrawCubeV(e.pos, {5.0f, 0.8f, 5.0f}, base);
+    DrawCubeV({e.pos.x, e.pos.y + 0.5f, e.pos.z}, {3.5f, 0.2f, 3.5f},
+              pad);
+    // Yellow cross on top — universal "heal" cue.
+    Color cross = {240, 220, 80, 255};
+    if (e.damageFlashTimer > 0.0f) cross = {255, 255, 255, 255};
+    DrawCubeV({e.pos.x, e.pos.y + 0.65f, e.pos.z}, {1.8f, 0.1f, 0.4f},
+              cross);
+    DrawCubeV({e.pos.x, e.pos.y + 0.65f, e.pos.z}, {0.4f, 0.1f, 1.8f},
+              cross);
+
+    if (e.hullMax > 0.0f) {
+      float t = e.hullHP / e.hullMax;
+      if (t < 0.0f) t = 0.0f;
+      Vector3 a = {e.pos.x - 2.0f, e.pos.y + 1.4f, e.pos.z};
+      Vector3 b = {e.pos.x - 2.0f + 4.0f * t, e.pos.y + 1.4f, e.pos.z};
+      DrawLine3D(a, b, {80, 220, 100, 220});
+    }
+    break;
+  }
+  case EntityType::RadarBooster: {
+    // Tall cylinder-ish tower with a rotating dish on top. yaw is
+    // animated in updateRadarBooster — gives the booster a clear
+    // "alive" indicator at distance.
+    Color tower = {90, 100, 130, 255};
+    Color dish = {200, 220, 255, 255};
+    if (e.damageFlashTimer > 0.0f) tower = dish = {255, 255, 255, 255};
+    // Tower body.
+    DrawCubeV({e.pos.x, e.pos.y + 1.8f, e.pos.z}, {1.6f, 3.6f, 1.6f},
+              tower);
+    // Foundation.
+    DrawCubeV({e.pos.x, e.pos.y + 0.1f, e.pos.z}, {2.6f, 0.6f, 2.6f},
+              tower);
+    // Rotating dish — extruded along yaw.
+    float dx = sinf(e.yaw), dz = cosf(e.yaw);
+    Vector3 dishPos = {e.pos.x + dx * 0.6f, e.pos.y + 3.6f,
+                       e.pos.z + dz * 0.6f};
+    DrawCubeV(dishPos, {1.8f, 0.5f, 1.8f}, dish);
+    // Bright tip pip so the dish direction is readable.
+    Vector3 tip = {e.pos.x + dx * 1.6f, e.pos.y + 3.6f,
+                   e.pos.z + dz * 1.6f};
+    DrawCubeV(tip, {0.5f, 0.4f, 0.5f}, {255, 220, 100, 255});
+
+    if (e.hullMax > 0.0f) {
+      float t = e.hullHP / e.hullMax;
+      if (t < 0.0f) t = 0.0f;
+      Vector3 a = {e.pos.x - 2.0f, e.pos.y + 4.4f, e.pos.z};
+      Vector3 b = {e.pos.x - 2.0f + 4.0f * t, e.pos.y + 4.4f, e.pos.z};
       DrawLine3D(a, b, {80, 220, 100, 220});
     }
     break;

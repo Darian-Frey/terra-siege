@@ -77,6 +77,15 @@ public:
   int liveEnemyCount() const { return m_liveEnemies; }
   int liveProjectileCount() const { return m_liveProjectiles; }
 
+  // Friendly-side queries. Used by Radar (booster range boost), Bomber
+  // AI (nearest friendly target preference), and GameState (game-over
+  // when alive == 0 but total > 0).
+  bool anyRadarBoosterAlive() const;
+  int liveFriendlyCount() const;
+  // Nearest live friendly entity. Returns 0 if no friendlies alive.
+  // outPos is filled with the target's world position on success.
+  uint32_t nearestFriendly(Vector3 origin, Vector3 &outPos) const;
+
   // Visual feedback emitters — public so GameState can fire the
   // player's final death explosion at the crash site.
   void emitHitBurst(Vector3 pos, ParticleSystem &particles);
@@ -109,7 +118,7 @@ private:
   // different fire rhythm + handling.
   void updateBomber(Entity &e, float dt, const Planet &planet,
                     const Player &player, ParticleSystem &particles);
-  void fireBomberShot(Entity &e, const Player &player);
+  void fireBomberShot(Entity &e, Vector3 targetPos);
 
   // Seeder — slow drift + periodic drone deployment.
   void updateSeeder(Entity &e, float dt, const Planet &planet,
@@ -120,6 +129,14 @@ private:
   // but slower drift speed and much higher altitude.
   void updateCarrier(Entity &e, float dt, const Planet &planet,
                      const Player &player);
+
+  // Friendly units — ground installations the player defends.
+  // Collector roams between waypoints; RepairStation heals the player
+  // on proximity; RadarBooster is passive but extends radar range
+  // while alive (state read from EntityManager by Radar).
+  void updateCollector(Entity &e, float dt, const Planet &planet);
+  void updateRepairStation(Entity &e, float dt, Player &player);
+  void updateRadarBooster(Entity &e, float dt);
 
   // Ground Turret — stationary, rotates toward player, fires in cone.
   void updateGroundTurret(Entity &e, float dt, const Planet &planet,
