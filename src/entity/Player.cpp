@@ -24,6 +24,9 @@ void Player::init(Vector3 startPos, int flightAssistLevel) {
   m_assistLevel = flightAssistLevel < 0   ? 0
                   : flightAssistLevel > 3 ? 3
                                           : flightAssistLevel;
+  m_primaryWeapon = PrimaryWeapon::Cannon;
+  m_missileAmmo = Config::MISSILE_AMMO_MAX;
+  m_empCooldown = 0.0f;
 
   // Directional shield — all four sectors full at spawn. Same
   // per-sector HP defined in Config (PLAYER_SHIELD_HP_PER_SECTOR ×
@@ -184,6 +187,8 @@ void Player::handleInput(float dt) {
   if (m_health <= 0.0f) {
     m_thrusting = false;
     m_fireRequested = false;
+    m_missileFireRequested = false;
+    m_empFireRequested = false;
     return;
   }
 
@@ -196,6 +201,8 @@ void Player::handleInput(float dt) {
   if (!IsWindowFocused()) {
     m_thrusting = false;
     m_fireRequested = false;
+    m_missileFireRequested = false;
+    m_empFireRequested = false;
     m_smoothMouse = {0.0f, 0.0f};
     return;
   }
@@ -249,9 +256,31 @@ void Player::handleInput(float dt) {
   // player can fire while thrusting without input conflicts.
   m_thrusting = IsKeyDown(KEY_W) && m_thrustCharge > 0.0f;
 
-  // ---- Primary fire request — LMB or SPACE ----
+  // ---- Primary fire request — LMB or SPACE (cannon OR plasma) ----
   m_fireRequested =
       IsMouseButtonDown(MOUSE_BUTTON_LEFT) || IsKeyDown(KEY_SPACE);
+
+  // ---- Primary weapon toggle — Tab ----
+  // Edge-triggered so a held Tab doesn't oscillate every frame at
+  // 120Hz physics over 60Hz render. Tracks last-down state locally
+  // since Player owns no global edge tracker.
+  bool tabDown = IsKeyDown(KEY_TAB);
+  if (tabDown && !m_tabWasDown) {
+    m_primaryWeapon = (m_primaryWeapon == PrimaryWeapon::Cannon)
+                          ? PrimaryWeapon::Plasma
+                          : PrimaryWeapon::Cannon;
+  }
+  m_tabWasDown = tabDown;
+
+  // ---- Secondary fire — Missile on RMB (held = continuous attempts) ----
+  // Missile fire rate (0.6s) gates how often a new missile actually
+  // launches; the held button just keeps the request active.
+  m_missileFireRequested = IsMouseButtonDown(MOUSE_BUTTON_RIGHT);
+
+  // ---- Special — EMP on F (edge-triggered, long cooldown anyway) ----
+  bool fDown = IsKeyDown(KEY_F);
+  m_empFireRequested = (fDown && !m_fWasDown);
+  m_fWasDown = fDown;
 }
 
 // ====================================================================
@@ -436,8 +465,8 @@ void Player::update(float dt, const Planet &planet) {
     if (m_shieldFlashTimer < 0.0f) m_shieldFlashTimer = 0.0f;
   }
 
-  // Cannon cooldown — counts down each tick. When zero AND fire input
-  // is held, arm a pending shot for GameState to consume + spawn.
+  // Primary cooldown — counts down each tick. Fire-rate depends on
+  // which primary is selected (Cannon vs Plasma).
   if (m_cannonTimer > 0.0f) m_cannonTimer -= dt;
   if (m_cannonTimer < 0.0f) m_cannonTimer = 0.0f;
 
@@ -449,10 +478,51 @@ void Player::update(float dt, const Planet &planet) {
     // Inherit ship velocity — tilt-and-burn flight makes nose ≠
     // velocity common, and projectiles that ignore ship momentum
     // feel wrong (cannons drop relative to a strafing ship).
-    m_shotVel =
-        Vector3Add(Vector3Scale(fwd, Config::CANNON_SPEED), m_vel);
+    float spd = (m_primaryWeapon == PrimaryWeapon::Plasma)
+                    ? Config::PLASMA_SPEED
+                    : Config::CANNON_SPEED;
+    m_shotVel = Vector3Add(Vector3Scale(fwd, spd), m_vel);
     m_pendingShot = true;
-    m_cannonTimer = Config::CANNON_FIRE_RATE;
+    m_cannonTimer = (m_primaryWeapon == PrimaryWeapon::Plasma)
+                        ? Config::PLASMA_FIRE_RATE
+                        : Config::CANNON_FIRE_RATE;
+  }
+
+  // Missile cooldown + arm. Fire intent is held while RMB is down;
+  // a new missile launches every MISSILE_FIRE_RATE if ammo remains.
+  if (m_missileTimer > 0.0f) m_missileTimer -= dt;
+  if (m_missileTimer < 0.0f) m_missileTimer = 0.0f;
+  if (m_missileFireRequested && m_missileTimer <= 0.0f &&
+      m_missileAmmo > 0 && m_health > 0.0f) {
+    Vector3 fwd = forward();
+    m_missilePos = Vector3Add(m_pos, Vector3Scale(fwd, 3.0f));
+    // Missiles launch at their own speed but inherit ship velocity
+    // so they don't appear to "stop" relative to the ship.
+    m_missileVel =
+        Vector3Add(Vector3Scale(fwd, Config::MISSILE_SPEED), m_vel);
+    m_pendingMissile = true;
+    m_missileTimer = Config::MISSILE_FIRE_RATE;
+    --m_missileAmmo;
+  }
+
+  // EMP cooldown + arm. F key edge-triggers a single launch when the
+  // cooldown is ready; the long cooldown is the balance lever, not
+  // ammo. Stun radius is applied by GameState (it has EntityManager).
+  if (m_empCooldown > 0.0f) m_empCooldown -= dt;
+  if (m_empCooldown < 0.0f) m_empCooldown = 0.0f;
+  if (m_empFireRequested && m_empCooldown <= 0.0f && m_health > 0.0f) {
+    m_empPos = m_pos;
+    m_pendingEMP = true;
+    m_empCooldown = Config::EMP_COOLDOWN;
+  }
+
+  // God mode (DEV F3) — refill ammo + zero EMP cooldown each tick.
+  // Mirrors the thrust-charge pin above. Same intent: all weapons
+  // unlimited for testing without breaking the underlying ammo /
+  // cooldown machinery.
+  if (m_godMode) {
+    m_missileAmmo = Config::MISSILE_AMMO_MAX;
+    m_empCooldown = 0.0f;
   }
 }
 
@@ -465,6 +535,23 @@ bool Player::consumePendingShot(Vector3 &outPos, Vector3 &outVel) {
   m_pendingShot = false;
   return true;
 }
+
+bool Player::consumePendingMissile(Vector3 &outPos, Vector3 &outVel) {
+  if (!m_pendingMissile) return false;
+  outPos = m_missilePos;
+  outVel = m_missileVel;
+  m_pendingMissile = false;
+  return true;
+}
+
+bool Player::consumePendingEMP(Vector3 &outPos) {
+  if (!m_pendingEMP) return false;
+  outPos = m_empPos;
+  m_pendingEMP = false;
+  return true;
+}
+
+float Player::empMaxCooldown() const { return Config::EMP_COOLDOWN; }
 
 // ====================================================================
 // Mesh — single hovercraft, derived from the previous Saucer geometry

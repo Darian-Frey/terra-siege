@@ -39,6 +39,18 @@ enum class ProjectileOwner : uint8_t {
   Enemy = 1,
 };
 
+// Projectile sub-type — switches behaviour inside updateProjectile.
+// Cannon = straight-line tracer (default).
+// Plasma = straight-line + splash radius damage on impact.
+// Missile = seeking projectile using proportional-navigation guidance;
+//          turns toward seekTargetId at turnRate rad/s. Lock is set
+//          at fire time and held even if the target moves.
+enum class ProjectileKind : uint8_t {
+  Cannon = 0,
+  Plasma,
+  Missile,
+};
+
 // AI state machine — Drones and projectiles ignore this.
 enum class AIState : uint8_t {
   Idle = 0,
@@ -106,4 +118,12 @@ struct Entity {
   float lifeRemaining = 0.0f; // seconds before projectile expires
   float damage = 0.0f;        // damage dealt on contact
   ProjectileOwner owner = ProjectileOwner::Player;
+  ProjectileKind kind = ProjectileKind::Cannon;
+  float splashRadius = 0.0f;  // 0 = no splash (Plasma sets this on fire)
+  float turnRate = 0.0f;      // rad/s; 0 = straight-line projectile
+  uint32_t seekTargetId = 0;  // for Missile: tracked target entity id
+
+  // EMP stun — non-zero means this entity is frozen by an EMP blast.
+  // AI update skips while this is positive; render path tints blue.
+  float stunTimer = 0.0f;
 };

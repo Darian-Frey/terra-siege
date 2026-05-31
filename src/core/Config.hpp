@@ -137,6 +137,8 @@ constexpr float MISSILE_SPEED = 70.0f;
 constexpr float MISSILE_DAMAGE = 60.0f;
 constexpr float MISSILE_NAV_N = 4.0f;     // proportional nav constant
 constexpr float MISSILE_TURN_RATE = 4.5f; // rad/s
+constexpr float MISSILE_RANGE = 600.0f;   // hard distance cutoff
+constexpr float MISSILE_LOCK_CONE = 0.6f; // ~34° half-angle, fire-time lock
 constexpr int MISSILE_AMMO_MAX = 20;
 
 constexpr int CLUSTER_SUBMUNITIONS = 4;

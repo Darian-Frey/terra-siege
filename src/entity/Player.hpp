@@ -3,6 +3,7 @@
 #include "core/Config.hpp"
 #include "raylib.h"
 #include "raymath.h"
+#include <cstdint>
 
 class Planet;
 
@@ -87,10 +88,21 @@ public:
   // All enemy projectile + drone contact hits go through this path.
   void applyDamage(float amount, Vector3 hitPos);
 
-  // Cannon firing — Player tracks the cooldown internally. Each tick
-  // GameState calls consumePendingShot(); if it returns true, a
-  // projectile should be spawned at outPos with outVel.
-  bool consumePendingShot(Vector3 &outPos, Vector3 &outVel);
+  // Primary fire slot — Cannon (default) or Plasma. Toggled with Q.
+  // Plasma trades fire rate for splash damage; same fire button (LMB).
+  enum class PrimaryWeapon : uint8_t { Cannon = 0, Plasma = 1 };
+  PrimaryWeapon primaryWeapon() const { return m_primaryWeapon; }
+  int missileAmmo() const { return m_missileAmmo; }
+  float empCooldown() const { return m_empCooldown; }
+  float empMaxCooldown() const; // for HUD ring readout
+
+  // Pending-shot accessors — GameState calls each tick. Returns true
+  // when a shot should be spawned, fills the out parameters, and
+  // clears the request flag. Each weapon has its own queue slot so
+  // multiple weapons can fire on the same tick (rare, but harmless).
+  bool consumePendingShot(Vector3 &outPos, Vector3 &outVel); // primary
+  bool consumePendingMissile(Vector3 &outPos, Vector3 &outVel);
+  bool consumePendingEMP(Vector3 &outPos); // pos only — instant area effect
 
 private:
   // Pipeline
@@ -134,15 +146,40 @@ private:
   bool m_invertPitch = false;
   int m_assistLevel = Config::FLIGHT_ASSIST_DEFAULT;
 
-  // Cannon firing state — handleInput sets m_fireRequested while LMB/
-  // SPACE is held; update ticks m_cannonTimer down and arms a pending
-  // shot when the timer hits zero. GameState consumes the shot,
-  // spawns the projectile via EntityManager, and the timer is reset.
+  // Primary fire (Cannon or Plasma — toggled with Q). handleInput
+  // sets m_fireRequested while LMB/SPACE is held; update ticks
+  // m_cannonTimer down and arms a pending shot when the timer hits
+  // zero. The fire-rate constant is chosen per primary weapon.
   bool m_fireRequested = false;
   bool m_pendingShot = false;
   float m_cannonTimer = 0.0f;
   Vector3 m_shotPos = {};
   Vector3 m_shotVel = {};
+  PrimaryWeapon m_primaryWeapon = PrimaryWeapon::Cannon;
+
+  // Secondary — Missile (homing, proportional nav). RMB fires when
+  // ammo > 0 and cooldown ready. Lock-on target id is set at fire
+  // time inside GameState (it has access to EntityManager); Player
+  // only signals the fire intent and tracks the cooldown + ammo.
+  bool m_missileFireRequested = false;
+  bool m_pendingMissile = false;
+  float m_missileTimer = 0.0f;
+  int m_missileAmmo = Config::MISSILE_AMMO_MAX;
+  Vector3 m_missilePos = {};
+  Vector3 m_missileVel = {};
+
+  // Special — EMP (area stun). F key fires; long cooldown. Pending
+  // flag tells GameState to scan + stun all enemies in radius.
+  bool m_empFireRequested = false;
+  bool m_pendingEMP = false;
+  float m_empCooldown = 0.0f; // counts DOWN; 0 = ready
+  Vector3 m_empPos = {};
+
+  // Edge-trigger state for Tab (primary toggle) and F (EMP). Held at
+  // 120Hz physics over 60Hz render means IsKeyPressed is unreliable
+  // — track the last frame's state explicitly.
+  bool m_tabWasDown = false;
+  bool m_fWasDown = false;
 
   // Mesh / model
   Mesh m_mesh = {};

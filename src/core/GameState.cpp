@@ -805,12 +805,58 @@ void GameState::update(float dt) {
       }
       m_particles.update(dt, m_planet);
 
-      // Spawn cannon projectiles armed by Player::update (LMB / Space).
+      // ---- Player weapon spawns ----
+      // Primary (Cannon or Plasma) — Player picks the projectile speed
+      // already; we pick kind/damage/range/splash here so the spawn
+      // is fully described in one place.
       Vector3 spos, svel;
       if (m_player.consumePendingShot(spos, svel)) {
-        m_em.spawnProjectile(spos, svel, Config::CANNON_DAMAGE,
-                             Config::CANNON_RANGE, Config::CANNON_SPEED,
-                             ProjectileOwner::Player);
+        if (m_player.primaryWeapon() == Player::PrimaryWeapon::Plasma) {
+          m_em.spawnProjectile(spos, svel, Config::PLASMA_DAMAGE,
+                               Config::CANNON_RANGE, // share cannon range
+                               Config::PLASMA_SPEED, ProjectileOwner::Player,
+                               ProjectileKind::Plasma, Config::PLASMA_SPLASH);
+        } else {
+          m_em.spawnProjectile(spos, svel, Config::CANNON_DAMAGE,
+                               Config::CANNON_RANGE, Config::CANNON_SPEED,
+                               ProjectileOwner::Player);
+        }
+      }
+
+      // Secondary — Missile. Acquire the nearest in-cone target at fire
+      // time, then spawn a seeking projectile with that id locked in.
+      // If nothing is in cone, missile flies straight as a dumb shot
+      // (still useful as a heavy splash bomb in front of you).
+      Vector3 mpos, mvel;
+      if (m_player.consumePendingMissile(mpos, mvel)) {
+        Vector3 fwd = m_player.forward();
+        uint32_t lockId =
+            m_em.acquireTarget(mpos, fwd, Config::MISSILE_LOCK_CONE,
+                               Config::MISSILE_RANGE);
+        m_em.spawnProjectile(mpos, mvel, Config::MISSILE_DAMAGE,
+                             Config::MISSILE_RANGE, Config::MISSILE_SPEED,
+                             ProjectileOwner::Player, ProjectileKind::Missile,
+                             Config::PLASMA_SPLASH, // missile detonates with splash
+                             lockId, Config::MISSILE_TURN_RATE);
+      }
+
+      // Special — EMP. Apply the area stun directly + emit a visible
+      // ring burst so the player gets feedback on what just happened.
+      Vector3 epos;
+      if (m_player.consumePendingEMP(epos)) {
+        m_em.applyEMPStun(epos, Config::EMP_RADIUS,
+                          Config::EMP_STUN_DURATION);
+        // Visual: ring of bright pale-blue particles thrown outward,
+        // gravity-off so they hang briefly. Re-uses the existing
+        // particle pool — no new effect system needed.
+        const int N = 48;
+        for (int i = 0; i < N; ++i) {
+          float a = 6.28318f * static_cast<float>(i) / static_cast<float>(N);
+          Vector3 v = {sinf(a) * 30.0f, 1.5f, cosf(a) * 30.0f};
+          Color c = {120, 200, 255, 230};
+          m_particles.emit(epos, v, c, 0.55f, 0.6f,
+                           ParticleSystem::Shape::Cube, 0);
+        }
       }
 
       m_em.update(dt, m_planet, m_player, m_particles);
@@ -1180,6 +1226,70 @@ void GameState::drawHUD() const {
 
     drawHudText("SHLD", piX - 14, piY + static_cast<int>(radius) + 4, 12,
                 col);
+  }
+
+  // ---- Weapon HUD ----
+  // Compact stack to the right of the SHLD pie. Shows the active
+  // primary weapon name, secondary missile ammo, and special EMP
+  // cooldown. EMP cooldown is rendered as a depleting bar — fills
+  // back up as the cooldown counts down so the player gets a
+  // visual "ready in X seconds" instead of having to read a number.
+  {
+    const int wx = bx + bw + 100; // right of the shield pie
+    const int wy = sh - 84;       // top of the cluster
+    const int wWidth = 120;
+    const int rowH = 18;
+
+    // Backing strip so the text reads against any terrain colour.
+    DrawRectangle(wx - 4, wy - 4, wWidth + 8, rowH * 3 + 6,
+                  {0, 0, 0, 130});
+
+    // Primary slot
+    const char *primaryName =
+        (m_player.primaryWeapon() == Player::PrimaryWeapon::Plasma)
+            ? "PLASMA"
+            : "CANNON";
+    Color primaryCol =
+        (m_player.primaryWeapon() == Player::PrimaryWeapon::Plasma)
+            ? Color{220, 140, 240, 255}
+            : Color{255, 230, 80, 255};
+    drawHudText("PRI", wx, wy, 11, col);
+    drawHudText(primaryName, wx + 30, wy, 13, primaryCol);
+
+    // Missile ammo
+    char mbuf[32];
+    int ammo = m_player.missileAmmo();
+    snprintf(mbuf, sizeof(mbuf), "%d / %d", ammo, Config::MISSILE_AMMO_MAX);
+    Color ammoCol = ammo == 0     ? Color{200, 80, 80, 240}
+                    : ammo <= 3   ? Color{220, 180, 80, 240}
+                                  : Color{220, 230, 240, 240};
+    drawHudText("MSL", wx, wy + rowH, 11, col);
+    drawHudText(mbuf, wx + 30, wy + rowH, 13, ammoCol);
+
+    // EMP — show READY when 0, otherwise a depleting bar fragment + sec.
+    drawHudText("EMP", wx, wy + rowH * 2, 11, col);
+    float cd = m_player.empCooldown();
+    float cdMax = m_player.empMaxCooldown();
+    if (cd <= 0.001f) {
+      drawHudText("READY", wx + 30, wy + rowH * 2, 13,
+                  {120, 220, 140, 240});
+    } else {
+      // Bar fills as cd → 0 (ready = full bar).
+      float frac = (cdMax > 0.0f) ? (1.0f - cd / cdMax) : 0.0f;
+      if (frac < 0.0f) frac = 0.0f;
+      if (frac > 1.0f) frac = 1.0f;
+      int barW = 70;
+      int barH = 8;
+      int barX = wx + 30;
+      int barY = wy + rowH * 2 + 4;
+      DrawRectangle(barX, barY, barW, barH, {40, 40, 50, 220});
+      DrawRectangle(barX, barY, static_cast<int>(barW * frac), barH,
+                    {120, 200, 255, 240});
+      char cbuf[16];
+      snprintf(cbuf, sizeof(cbuf), "%.0fs", cd);
+      drawHudText(cbuf, barX + barW + 4, wy + rowH * 2, 12,
+                  {200, 215, 235, 220});
+    }
   }
 
   // ---- AGL tape ----

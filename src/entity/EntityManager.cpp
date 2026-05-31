@@ -172,7 +172,11 @@ Entity *EntityManager::spawnEnemy(EntityType type, Vector3 pos) {
 
 Entity *EntityManager::spawnProjectile(Vector3 pos, Vector3 vel, float damage,
                                        float range, float speed,
-                                       ProjectileOwner owner) {
+                                       ProjectileOwner owner,
+                                       ProjectileKind kind,
+                                       float splashRadius,
+                                       uint32_t seekTargetId,
+                                       float turnRate) {
   Entity *p = allocProjectile();
   if (!p) return nullptr;
 
@@ -186,9 +190,64 @@ Entity *EntityManager::spawnProjectile(Vector3 pos, Vector3 vel, float damage,
   p->lifeRemaining = (speed > 0.01f) ? (range / speed) : 1.5f;
   p->radius = Config::HIT_RADIUS_PROJECTILE;
   p->owner = owner;
+  p->kind = kind;
+  p->splashRadius = splashRadius;
+  p->seekTargetId = seekTargetId;
+  p->turnRate = turnRate;
 
   ++m_liveProjectiles;
   return p;
+}
+
+// Forward-cone target acquisition for missile lock. O(N) over the pool
+// — fine at current sizes. Picks the entity that's both inside the
+// cone AND closest by straight-line distance. Friendly units are
+// excluded (we'd shoot them by mistake). Returns 0 (no entity id) on
+// no-target.
+uint32_t EntityManager::acquireTarget(Vector3 origin, Vector3 forward,
+                                      float cosHalfAngle,
+                                      float maxRange) const {
+  uint32_t best = 0;
+  float bestDist = maxRange;
+  for (const Entity &e : m_entities) {
+    if (!e.alive) continue;
+    if (e.type == EntityType::Projectile) continue;
+    if (e.type == EntityType::Collector ||
+        e.type == EntityType::RepairStation ||
+        e.type == EntityType::RadarBooster)
+      continue; // never target friendlies
+    Vector3 d = Vector3Subtract(e.pos, origin);
+    float dist = Vector3Length(d);
+    if (dist < 0.01f || dist > maxRange) continue;
+    Vector3 dn = Vector3Scale(d, 1.0f / dist);
+    float cosAngle = Vector3DotProduct(forward, dn);
+    if (cosAngle < cosHalfAngle) continue;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = e.id;
+    }
+  }
+  return best;
+}
+
+// EMP area stun — set stunTimer on every enemy within radius. Skips
+// friendlies and projectiles. The stunned enemies' update bodies will
+// see stunTimer > 0 and short-circuit out of AI logic.
+void EntityManager::applyEMPStun(Vector3 pos, float radius, float duration) {
+  float r2 = radius * radius;
+  for (Entity &e : m_entities) {
+    if (!e.alive) continue;
+    if (e.type == EntityType::Projectile) continue;
+    if (e.type == EntityType::Collector ||
+        e.type == EntityType::RepairStation ||
+        e.type == EntityType::RadarBooster)
+      continue;
+    Vector3 d = Vector3Subtract(e.pos, pos);
+    float d2 = d.x * d.x + d.y * d.y + d.z * d.z;
+    if (d2 <= r2) {
+      e.stunTimer = duration;
+    }
+  }
 }
 
 // ====================================================================
@@ -223,6 +282,16 @@ void EntityManager::update(float dt, const Planet &planet, Player &player,
     if (e.damageFlashTimer > 0.0f) e.damageFlashTimer -= dt;
 
     if (e.fireTimer > 0.0f) e.fireTimer -= dt;
+
+    // EMP stun — if the enemy is stunned, decrement the timer and
+    // skip its AI update entirely. Velocity is heavily damped so a
+    // mid-burn fighter doesn't coast halfway across the map during
+    // the stun window. Projectiles already in flight are unaffected.
+    if (e.stunTimer > 0.0f) {
+      e.stunTimer -= dt;
+      e.vel = Vector3Scale(e.vel, 1.0f - 3.0f * dt); // ~95% damped per sec
+      continue;
+    }
 
     switch (e.type) {
     case EntityType::Fighter:
@@ -921,6 +990,63 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
     --m_liveProjectiles;
     return;
   }
+
+  // Missile guidance — proportional navigation. Each tick, rotate the
+  // velocity vector toward the lock target up to turnRate × dt. If
+  // the lock is gone (target killed / id stale), the missile flies
+  // straight (turnRate has no effect when no target found).
+  if (p.kind == ProjectileKind::Missile && p.turnRate > 0.0f &&
+      p.seekTargetId != 0) {
+    const Entity *target = nullptr;
+    for (const Entity &e : m_entities) {
+      if (e.alive && e.id == p.seekTargetId) {
+        target = &e;
+        break;
+      }
+    }
+    if (target) {
+      Vector3 toTarget = Vector3Subtract(target->pos, p.pos);
+      float dist = Vector3Length(toTarget);
+      if (dist > 0.001f) {
+        Vector3 desiredDir = Vector3Scale(toTarget, 1.0f / dist);
+        float speed = Vector3Length(p.vel);
+        if (speed > 0.001f) {
+          Vector3 currentDir = Vector3Scale(p.vel, 1.0f / speed);
+          // Slerp-style: rotate currentDir toward desiredDir by up to
+          // turnRate*dt radians. cheap approximation: blend then
+          // renormalize.
+          float cosA = Vector3DotProduct(currentDir, desiredDir);
+          if (cosA < 1.0f) {
+            float maxBlend = p.turnRate * dt;
+            // Convert angular step to blend weight via small-angle
+            // approximation — good enough for the missile's curve.
+            float blend = maxBlend;
+            if (blend > 1.0f) blend = 1.0f;
+            Vector3 newDir = {
+                currentDir.x + (desiredDir.x - currentDir.x) * blend,
+                currentDir.y + (desiredDir.y - currentDir.y) * blend,
+                currentDir.z + (desiredDir.z - currentDir.z) * blend};
+            float nl = Vector3Length(newDir);
+            if (nl > 0.001f) {
+              p.vel = Vector3Scale(newDir, speed / nl);
+            }
+          }
+        }
+      }
+    } else {
+      // Target gone — clear the lock so we don't keep scanning for it.
+      p.seekTargetId = 0;
+    }
+    // Smoke trail — emit a small grey puff each tick so missiles read
+    // as distinct from cannon tracers at chase distance.
+    Vector3 trailVel = Vector3Scale(p.vel, -0.2f);
+    trailVel.y += 0.5f;
+    Color smoke = {180, 180, 190, 200};
+    particles.emit(p.pos, trailVel, smoke, 0.3f, 0.35f,
+                   ParticleSystem::Shape::Cube,
+                   ParticleSystem::FLAG_GRAVITY);
+  }
+
   p.pos = Vector3Add(p.pos, Vector3Scale(p.vel, dt));
 
   // Terrain hit — emit a small spark burst at impact, then kill it.
@@ -930,6 +1056,11 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
   if (p.pos.y < ground) {
     Vector3 impact = {p.pos.x, ground + 0.2f, p.pos.z};
     emitHitBurst(impact, particles);
+    // Plasma + missile both splash on terrain too.
+    if (p.splashRadius > 0.0f && p.owner == ProjectileOwner::Player) {
+      applySplashDamage(impact, p.splashRadius, p.damage, particles);
+      emitKillExplosion(impact, particles);
+    }
     p.alive = false;
     --m_liveProjectiles;
     return;
@@ -942,7 +1073,15 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
       float d = Vector3Distance(p.pos, e.pos);
       if (d < (e.radius + p.radius)) {
         emitHitBurst(p.pos, particles);
+        // Direct-impact target takes the full damage.
         applyDamage(e, p.damage, p.pos, particles);
+        // Splash weapons (Plasma, Missile) blast everyone else in
+        // radius for the same damage figure — simple model, can
+        // graduate to falloff later if it feels too generous.
+        if (p.splashRadius > 0.0f) {
+          applySplashDamage(p.pos, p.splashRadius, p.damage, particles);
+          emitKillExplosion(p.pos, particles);
+        }
         p.alive = false;
         --m_liveProjectiles;
         return;
@@ -960,6 +1099,28 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
       p.alive = false;
       --m_liveProjectiles;
       return;
+    }
+  }
+}
+
+// Splash damage helper — applies `damage` to every alive enemy within
+// `radius` of `pos`, except friendlies. Used by Plasma + Missile on
+// detonation. Each affected target gets its own applyDamage call so
+// the existing shield routing + kill-burst logic fires per-target.
+void EntityManager::applySplashDamage(Vector3 pos, float radius, float damage,
+                                      ParticleSystem &particles) {
+  float r2 = radius * radius;
+  for (Entity &e : m_entities) {
+    if (!e.alive) continue;
+    if (e.type == EntityType::Projectile) continue;
+    if (e.type == EntityType::Collector ||
+        e.type == EntityType::RepairStation ||
+        e.type == EntityType::RadarBooster)
+      continue;
+    Vector3 d = Vector3Subtract(e.pos, pos);
+    float d2 = d.x * d.x + d.y * d.y + d.z * d.z;
+    if (d2 <= r2) {
+      applyDamage(e, damage, pos, particles);
     }
   }
 }
@@ -1336,9 +1497,37 @@ void EntityManager::renderEnemy(const Entity &e) const {
 }
 
 void EntityManager::renderProjectile(const Entity &p) const {
-  Color c = (p.owner == ProjectileOwner::Player)
-                ? Color{255, 230, 80, 255}
-                : Color{255, 80, 80, 255};
-  // Small bright cube — reads as a tracer at chase-cam distances.
-  DrawCubeV(p.pos, {0.6f, 0.6f, 0.6f}, c);
+  switch (p.kind) {
+  case ProjectileKind::Plasma: {
+    // Glowing magenta orb — bigger than a cannon tracer and visibly
+    // distinct so the player can see which weapon is firing.
+    DrawCubeV(p.pos, {0.9f, 0.9f, 0.9f}, {220, 80, 240, 255});
+    DrawCubeV(p.pos, {1.4f, 1.4f, 1.4f}, {220, 80, 240, 80}); // soft halo
+    break;
+  }
+  case ProjectileKind::Missile: {
+    // Elongated silver cube — reads as a missile body even at chase
+    // distance. Smoke trail comes from updateProjectile's particle
+    // emission, not the render path.
+    DrawCubeV(p.pos, {0.7f, 0.7f, 1.6f}, {220, 230, 240, 255});
+    // Red tip indicator so direction is clear.
+    Vector3 tip = p.pos;
+    Vector3 dir = p.vel;
+    float speed = sqrtf(dir.x * dir.x + dir.z * dir.z);
+    if (speed > 0.01f) {
+      tip.x += dir.x * 0.8f / speed;
+      tip.z += dir.z * 0.8f / speed;
+    }
+    DrawCubeV(tip, {0.4f, 0.4f, 0.4f}, {240, 80, 60, 255});
+    break;
+  }
+  case ProjectileKind::Cannon:
+  default: {
+    Color c = (p.owner == ProjectileOwner::Player)
+                  ? Color{255, 230, 80, 255}
+                  : Color{255, 80, 80, 255};
+    DrawCubeV(p.pos, {0.6f, 0.6f, 0.6f}, c);
+    break;
+  }
+  }
 }

@@ -41,7 +41,23 @@ public:
   // full and no slot can be recycled (rare with current sizes).
   Entity *spawnEnemy(EntityType type, Vector3 pos);
   Entity *spawnProjectile(Vector3 pos, Vector3 vel, float damage,
-                          float range, float speed, ProjectileOwner owner);
+                          float range, float speed, ProjectileOwner owner,
+                          ProjectileKind kind = ProjectileKind::Cannon,
+                          float splashRadius = 0.0f,
+                          uint32_t seekTargetId = 0,
+                          float turnRate = 0.0f);
+
+  // Find the nearest live enemy entity within a forward cone from origin
+  // (cosine threshold, dot(forward, toEnemyNormalised) >= cosHalfAngle).
+  // Returns the entity id, or 0 if no target is in cone or within range.
+  // Used by GameState to acquire a missile lock at fire time.
+  uint32_t acquireTarget(Vector3 origin, Vector3 forward,
+                         float cosHalfAngle, float maxRange) const;
+
+  // EMP area effect — set stunTimer = duration on every live enemy
+  // within radius of pos. Called by GameState when the player's EMP
+  // pending flag fires; no projectile involved (instant area effect).
+  void applyEMPStun(Vector3 pos, float radius, float duration);
 
   void update(float dt, const Planet &planet, Player &player,
               ParticleSystem &particles);
@@ -103,6 +119,13 @@ private:
   // Projectile update + collision
   void updateProjectile(Entity &p, float dt, const Planet &planet,
                         Player &player, ParticleSystem &particles);
+
+  // Splash damage application — apply damage to all live enemies in
+  // radius. Used by Plasma + Missile on detonation; calls applyDamage
+  // per affected target so shield routing and kill bursts fire
+  // normally for each.
+  void applySplashDamage(Vector3 pos, float radius, float damage,
+                         ParticleSystem &particles);
 
   // Damage application — handles shield → hull routing and timeSinceHit.
   // Emits a kill burst when the target dies. hitPos is the world-space
