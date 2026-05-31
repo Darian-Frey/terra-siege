@@ -25,8 +25,18 @@ void Player::init(Vector3 startPos, int flightAssistLevel) {
                   : flightAssistLevel > 3 ? 3
                                           : flightAssistLevel;
   m_primaryWeapon = PrimaryWeapon::Cannon;
+  m_secondaryWeapon = SecondaryWeapon::Missile;
+  m_specialWeapon = SpecialWeapon::EMP;
   m_missileAmmo = Config::MISSILE_AMMO_MAX;
+  m_clusterAmmo = Config::CLUSTER_AMMO_MAX;
+  m_depthChargeAmmo = Config::DEPTH_CHARGE_MAX;
+  m_beamEnergy = Config::BEAM_ENERGY_MAX;
+  m_beamFiring = false;
   m_empCooldown = 0.0f;
+  m_shieldBoosterCooldown = 0.0f;
+  m_autoTurretEnabled = false;
+  m_turretYaw = 0.0f;
+  m_turretTimer = 0.0f;
 
   // Directional shield — all four sectors full at spawn. Same
   // per-sector HP defined in Config (PLAYER_SHIELD_HP_PER_SECTOR ×
@@ -187,8 +197,8 @@ void Player::handleInput(float dt) {
   if (m_health <= 0.0f) {
     m_thrusting = false;
     m_fireRequested = false;
-    m_missileFireRequested = false;
-    m_empFireRequested = false;
+    m_secondaryFireRequested = false;
+    m_specialFireRequested = false;
     return;
   }
 
@@ -201,8 +211,8 @@ void Player::handleInput(float dt) {
   if (!IsWindowFocused()) {
     m_thrusting = false;
     m_fireRequested = false;
-    m_missileFireRequested = false;
-    m_empFireRequested = false;
+    m_secondaryFireRequested = false;
+    m_specialFireRequested = false;
     m_smoothMouse = {0.0f, 0.0f};
     return;
   }
@@ -256,31 +266,55 @@ void Player::handleInput(float dt) {
   // player can fire while thrusting without input conflicts.
   m_thrusting = IsKeyDown(KEY_W) && m_thrustCharge > 0.0f;
 
-  // ---- Primary fire request — LMB or SPACE (cannon OR plasma) ----
+  // ---- Primary fire request — LMB or SPACE ----
+  // For Cannon / Plasma this is "held = fire pulses". For Beam, it's
+  // "held = beam on, energy draining". update() decides which model
+  // to use based on m_primaryWeapon.
   m_fireRequested =
       IsMouseButtonDown(MOUSE_BUTTON_LEFT) || IsKeyDown(KEY_SPACE);
 
-  // ---- Primary weapon toggle — Tab ----
-  // Edge-triggered so a held Tab doesn't oscillate every frame at
-  // 120Hz physics over 60Hz render. Tracks last-down state locally
-  // since Player owns no global edge tracker.
+  // ---- Primary cycle — Tab (Cannon → Plasma → Beam → Cannon) ----
   bool tabDown = IsKeyDown(KEY_TAB);
   if (tabDown && !m_tabWasDown) {
-    m_primaryWeapon = (m_primaryWeapon == PrimaryWeapon::Cannon)
-                          ? PrimaryWeapon::Plasma
-                          : PrimaryWeapon::Cannon;
+    int next = (static_cast<int>(m_primaryWeapon) + 1) % 3;
+    m_primaryWeapon = static_cast<PrimaryWeapon>(next);
+    // Switching off the Beam mid-fire kills the visual + damage
+    // immediately on the next tick; flag flips false in update.
+    m_beamFiring = false;
   }
   m_tabWasDown = tabDown;
 
-  // ---- Secondary fire — Missile on RMB (held = continuous attempts) ----
-  // Missile fire rate (0.6s) gates how often a new missile actually
-  // launches; the held button just keeps the request active.
-  m_missileFireRequested = IsMouseButtonDown(MOUSE_BUTTON_RIGHT);
+  // ---- Secondary fire — RMB (held = continuous attempts for missile,
+  // single-pulse on first frame for the others — fire rate gates rate).
+  m_secondaryFireRequested = IsMouseButtonDown(MOUSE_BUTTON_RIGHT);
 
-  // ---- Special — EMP on F (edge-triggered, long cooldown anyway) ----
+  // ---- Secondary cycle — Z (Missile → Cluster → DepthCharge → ...).
+  bool zDown = IsKeyDown(KEY_Z);
+  if (zDown && !m_zWasDown) {
+    int next = (static_cast<int>(m_secondaryWeapon) + 1) % 3;
+    m_secondaryWeapon = static_cast<SecondaryWeapon>(next);
+  }
+  m_zWasDown = zDown;
+
+  // ---- Special cycle — X (EMP → ShieldBooster → ...).
+  bool xDown = IsKeyDown(KEY_X);
+  if (xDown && !m_xWasDown) {
+    int next = (static_cast<int>(m_specialWeapon) + 1) % 2;
+    m_specialWeapon = static_cast<SpecialWeapon>(next);
+  }
+  m_xWasDown = xDown;
+
+  // ---- Special fire — F (edge-triggered; cooldown gates rate) ----
   bool fDown = IsKeyDown(KEY_F);
-  m_empFireRequested = (fDown && !m_fWasDown);
+  m_specialFireRequested = (fDown && !m_fWasDown);
   m_fWasDown = fDown;
+
+  // ---- Auto Turret toggle — T (edge-triggered) ----
+  bool tDown = IsKeyDown(KEY_T);
+  if (tDown && !m_tWasDown) {
+    m_autoTurretEnabled = !m_autoTurretEnabled;
+  }
+  m_tWasDown = tDown;
 }
 
 // ====================================================================
@@ -465,19 +499,39 @@ void Player::update(float dt, const Planet &planet) {
     if (m_shieldFlashTimer < 0.0f) m_shieldFlashTimer = 0.0f;
   }
 
-  // Primary cooldown — counts down each tick. Fire-rate depends on
-  // which primary is selected (Cannon vs Plasma).
+  // Primary — branch by weapon. Cannon + Plasma share the
+  // m_cannonTimer (single discrete-fire cooldown); Beam uses its
+  // own energy meter and is continuous-fire while held.
   if (m_cannonTimer > 0.0f) m_cannonTimer -= dt;
   if (m_cannonTimer < 0.0f) m_cannonTimer = 0.0f;
 
-  if (m_fireRequested && m_cannonTimer <= 0.0f && m_health > 0.0f) {
+  // Beam energy regen runs whenever the beam isn't firing this tick.
+  // Drain happens inside the firing branch below so beamFiring
+  // accurately tracks "we drew power this tick".
+  bool wantBeam = (m_primaryWeapon == PrimaryWeapon::Beam &&
+                   m_fireRequested && m_health > 0.0f &&
+                   m_beamEnergy > 0.0f);
+  if (wantBeam) {
     Vector3 fwd = forward();
-    // Spawn just past the nose so the projectile doesn't overlap the
-    // ship mesh (ship half-length ≈ 2.4).
+    m_beamOrigin = Vector3Add(m_pos, Vector3Scale(fwd, 2.4f));
+    m_beamDir = fwd;
+    m_beamFiring = true;
+    m_beamEnergy -= Config::BEAM_DRAIN_PS * dt;
+    if (m_beamEnergy < 0.0f) m_beamEnergy = 0.0f;
+  } else {
+    m_beamFiring = false;
+    m_beamEnergy += Config::BEAM_RECHARGE_PS * dt;
+    if (m_beamEnergy > Config::BEAM_ENERGY_MAX)
+      m_beamEnergy = Config::BEAM_ENERGY_MAX;
+  }
+
+  // Cannon / Plasma — discrete projectile firing on the shared timer.
+  bool wantPrimary = m_fireRequested && m_cannonTimer <= 0.0f &&
+                     m_health > 0.0f &&
+                     m_primaryWeapon != PrimaryWeapon::Beam;
+  if (wantPrimary) {
+    Vector3 fwd = forward();
     m_shotPos = Vector3Add(m_pos, Vector3Scale(fwd, 3.0f));
-    // Inherit ship velocity — tilt-and-burn flight makes nose ≠
-    // velocity common, and projectiles that ignore ship momentum
-    // feel wrong (cannons drop relative to a strafing ship).
     float spd = (m_primaryWeapon == PrimaryWeapon::Plasma)
                     ? Config::PLASMA_SPEED
                     : Config::CANNON_SPEED;
@@ -488,41 +542,104 @@ void Player::update(float dt, const Planet &planet) {
                         : Config::CANNON_FIRE_RATE;
   }
 
-  // Missile cooldown + arm. Fire intent is held while RMB is down;
-  // a new missile launches every MISSILE_FIRE_RATE if ammo remains.
-  if (m_missileTimer > 0.0f) m_missileTimer -= dt;
-  if (m_missileTimer < 0.0f) m_missileTimer = 0.0f;
-  if (m_missileFireRequested && m_missileTimer <= 0.0f &&
-      m_missileAmmo > 0 && m_health > 0.0f) {
+  // Secondary — branch by selected weapon. All three share the
+  // m_secondaryTimer so cycling Z mid-cooldown doesn't bypass it.
+  if (m_secondaryTimer > 0.0f) m_secondaryTimer -= dt;
+  if (m_secondaryTimer < 0.0f) m_secondaryTimer = 0.0f;
+  if (m_secondaryFireRequested && m_secondaryTimer <= 0.0f &&
+      m_health > 0.0f) {
     Vector3 fwd = forward();
-    m_missilePos = Vector3Add(m_pos, Vector3Scale(fwd, 3.0f));
-    // Missiles launch at their own speed but inherit ship velocity
-    // so they don't appear to "stop" relative to the ship.
-    m_missileVel =
-        Vector3Add(Vector3Scale(fwd, Config::MISSILE_SPEED), m_vel);
-    m_pendingMissile = true;
-    m_missileTimer = Config::MISSILE_FIRE_RATE;
-    --m_missileAmmo;
+    switch (m_secondaryWeapon) {
+    case SecondaryWeapon::Missile:
+      if (m_missileAmmo > 0) {
+        m_missilePos = Vector3Add(m_pos, Vector3Scale(fwd, 3.0f));
+        m_missileVel =
+            Vector3Add(Vector3Scale(fwd, Config::MISSILE_SPEED), m_vel);
+        m_pendingMissile = true;
+        m_secondaryTimer = Config::MISSILE_FIRE_RATE;
+        --m_missileAmmo;
+      }
+      break;
+    case SecondaryWeapon::Cluster:
+      if (m_clusterAmmo > 0) {
+        // Fire a SINGLE carrier missile forward. It splits into 4
+        // sub-missiles when it nears its lock target — that logic
+        // lives in updateProjectile (ClusterParent kind). Visually
+        // identical to a missile until split.
+        m_clusterPos = Vector3Add(m_pos, Vector3Scale(fwd, 3.0f));
+        m_clusterVel =
+            Vector3Add(Vector3Scale(fwd, Config::MISSILE_SPEED), m_vel);
+        m_pendingCluster = true;
+        m_secondaryTimer = Config::MISSILE_FIRE_RATE * 1.5f;
+        --m_clusterAmmo;
+      }
+      break;
+    case SecondaryWeapon::DepthCharge:
+      if (m_depthChargeAmmo > 0) {
+        // Drop from underside, inherit ship velocity, no propulsion.
+        // updateProjectile applies gravity to DepthCharge kind.
+        m_depthChargePos = {m_pos.x, m_pos.y - 1.5f, m_pos.z};
+        // Initial velocity = ship vel + a small forward kick so it
+        // doesn't fall right onto the launching ship.
+        m_depthChargeVel = Vector3Add(m_vel, Vector3Scale(fwd, 8.0f));
+        m_pendingDepthCharge = true;
+        m_secondaryTimer = 0.5f;
+        --m_depthChargeAmmo;
+      }
+      break;
+    }
   }
 
-  // EMP cooldown + arm. F key edge-triggers a single launch when the
-  // cooldown is ready; the long cooldown is the balance lever, not
-  // ammo. Stun radius is applied by GameState (it has EntityManager).
+  // Special — branch by selected weapon. Each special has its own
+  // cooldown so cycling X mid-fight doesn't bypass them.
   if (m_empCooldown > 0.0f) m_empCooldown -= dt;
   if (m_empCooldown < 0.0f) m_empCooldown = 0.0f;
-  if (m_empFireRequested && m_empCooldown <= 0.0f && m_health > 0.0f) {
-    m_empPos = m_pos;
-    m_pendingEMP = true;
-    m_empCooldown = Config::EMP_COOLDOWN;
+  if (m_shieldBoosterCooldown > 0.0f) m_shieldBoosterCooldown -= dt;
+  if (m_shieldBoosterCooldown < 0.0f) m_shieldBoosterCooldown = 0.0f;
+  if (m_specialFireRequested && m_health > 0.0f) {
+    switch (m_specialWeapon) {
+    case SpecialWeapon::EMP:
+      if (m_empCooldown <= 0.0f) {
+        m_empPos = m_pos;
+        m_pendingEMP = true;
+        m_empCooldown = Config::EMP_COOLDOWN;
+      }
+      break;
+    case SpecialWeapon::ShieldBooster:
+      if (m_shieldBoosterCooldown <= 0.0f) {
+        // Refill all 4 sectors to max — applied immediately here
+        // (Player owns the sector state). Signal flag lets
+        // GameState fire a visual cue but the gameplay effect is
+        // already done.
+        for (int i = 0; i < 4; ++i) {
+          m_sectorHP[i] = m_sectorMax[i];
+          m_sectorTimer[i] = 0.0f;
+        }
+        m_shieldFlashTimer = Config::PLAYER_SHIELD_FLASH;
+        m_pendingShieldBoost = true;
+        m_shieldBoosterCooldown = 20.0f;
+      }
+      break;
+    }
   }
 
-  // God mode (DEV F3) — refill ammo + zero EMP cooldown each tick.
-  // Mirrors the thrust-charge pin above. Same intent: all weapons
-  // unlimited for testing without breaking the underlying ammo /
-  // cooldown machinery.
+  // Auto Turret — independent passive subsystem. When enabled,
+  // scans for the nearest target each tick (lock + fire happens in
+  // GameState because it has EntityManager). Here we just tick the
+  // shot cooldown so the turret pulses on its own schedule.
+  if (m_turretTimer > 0.0f) m_turretTimer -= dt;
+  if (m_turretTimer < 0.0f) m_turretTimer = 0.0f;
+
+  // God mode (DEV F3) — refill all ammo + zero all cooldowns + max
+  // beam energy each tick. Mirrors the thrust-charge pin above. F3
+  // is now genuinely "all weapons unlimited" across the full slot set.
   if (m_godMode) {
     m_missileAmmo = Config::MISSILE_AMMO_MAX;
+    m_clusterAmmo = Config::CLUSTER_AMMO_MAX;
+    m_depthChargeAmmo = Config::DEPTH_CHARGE_MAX;
+    m_beamEnergy = Config::BEAM_ENERGY_MAX;
     m_empCooldown = 0.0f;
+    m_shieldBoosterCooldown = 0.0f;
   }
 }
 
@@ -544,6 +661,22 @@ bool Player::consumePendingMissile(Vector3 &outPos, Vector3 &outVel) {
   return true;
 }
 
+bool Player::consumePendingDepthCharge(Vector3 &outPos, Vector3 &outVel) {
+  if (!m_pendingDepthCharge) return false;
+  outPos = m_depthChargePos;
+  outVel = m_depthChargeVel;
+  m_pendingDepthCharge = false;
+  return true;
+}
+
+bool Player::consumePendingCluster(Vector3 &outPos, Vector3 &outVel) {
+  if (!m_pendingCluster) return false;
+  outPos = m_clusterPos;
+  outVel = m_clusterVel;
+  m_pendingCluster = false;
+  return true;
+}
+
 bool Player::consumePendingEMP(Vector3 &outPos) {
   if (!m_pendingEMP) return false;
   outPos = m_empPos;
@@ -551,7 +684,30 @@ bool Player::consumePendingEMP(Vector3 &outPos) {
   return true;
 }
 
+bool Player::consumePendingShieldBoost() {
+  if (!m_pendingShieldBoost) return false;
+  m_pendingShieldBoost = false;
+  return true;
+}
+
+bool Player::beamIsFiringThisTick(Vector3 &outOrigin, Vector3 &outDir) {
+  if (!m_beamFiring) return false;
+  outOrigin = m_beamOrigin;
+  outDir = m_beamDir;
+  return true;
+}
+
+bool Player::consumePendingTurretShot(Vector3 &outPos, Vector3 &outVel) {
+  if (!m_pendingTurretShot) return false;
+  outPos = m_turretShotPos;
+  outVel = m_turretShotVel;
+  m_pendingTurretShot = false;
+  return true;
+}
+
 float Player::empMaxCooldown() const { return Config::EMP_COOLDOWN; }
+float Player::beamEnergyMax() const { return Config::BEAM_ENERGY_MAX; }
+float Player::shieldBoosterMaxCooldown() const { return 20.0f; }
 
 // ====================================================================
 // Mesh — single hovercraft, derived from the previous Saucer geometry

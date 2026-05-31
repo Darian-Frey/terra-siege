@@ -840,6 +840,96 @@ void GameState::update(float dt) {
                              lockId, Config::MISSILE_TURN_RATE);
       }
 
+      // Cluster Missile — fires a single carrier that splits into 4
+      // sub-missiles when it nears its lock. Carrier itself deals
+      // no damage (splashRadius 0); the children inherit a fraction
+      // of the missile damage and a wider lock cone. Split logic
+      // lives in EntityManager::updateProjectile.
+      Vector3 cpos, cvel;
+      if (m_player.consumePendingCluster(cpos, cvel)) {
+        Vector3 fwd = m_player.forward();
+        uint32_t lockId =
+            m_em.acquireTarget(cpos, fwd, Config::MISSILE_LOCK_CONE,
+                               Config::MISSILE_RANGE);
+        m_em.spawnProjectile(cpos, cvel, 0.0f, // carrier deals no damage
+                             Config::MISSILE_RANGE, Config::MISSILE_SPEED,
+                             ProjectileOwner::Player,
+                             ProjectileKind::ClusterParent,
+                             0.0f, // no splash on the carrier itself
+                             lockId, Config::MISSILE_TURN_RATE);
+      }
+
+      // Depth Charge — heavy gravity bomb. spawnProjectile with the
+      // DepthCharge kind; updateProjectile applies gravity and splash
+      // on terrain impact. Large splash radius matches the spec.
+      Vector3 dpos, dvel;
+      if (m_player.consumePendingDepthCharge(dpos, dvel)) {
+        m_em.spawnProjectile(dpos, dvel, Config::DEPTH_CHARGE_DAMAGE,
+                             400.0f /* range as fallback lifetime */,
+                             20.0f /* speed for lifetime calc */,
+                             ProjectileOwner::Player,
+                             ProjectileKind::DepthCharge,
+                             Config::DEPTH_CHARGE_RADIUS);
+      }
+
+      // Beam Laser — continuous raycast while held. Player flagged
+      // it firing this tick if energy was available. damageThisTick
+      // = BEAM_DAMAGE_PS * dt so the meter integrates correctly.
+      Vector3 borigin, bdir;
+      if (m_player.beamIsFiringThisTick(borigin, bdir)) {
+        Vector3 hitPos;
+        uint32_t hitId =
+            m_em.beamRaycast(borigin, bdir, Config::BEAM_RANGE,
+                             Config::BEAM_DAMAGE_PS * dt, m_particles, hitPos);
+        // Stash for the render path — drawn after the 3D world.
+        m_beamActive = true;
+        m_beamLineFrom = borigin;
+        m_beamLineTo = hitPos;
+        m_beamHitId = hitId;
+      } else {
+        m_beamActive = false;
+      }
+
+      // Auto Turret — passive subsystem. When enabled, scan for the
+      // nearest in-range target and fire on the turret's own
+      // cooldown. The turret is "parented" to the ship at a slight
+      // offset above the cockpit; shots inherit ship velocity.
+      if (m_player.autoTurretEnabled()) {
+        Vector3 tpos = Vector3Add(m_player.position(), {0.0f, 1.2f, 0.0f});
+        // Aim direction = vector to nearest target; if none, idle
+        // pointing forward.
+        uint32_t tId =
+            m_em.acquireTarget(tpos, m_player.forward(),
+                               0.0f /* cosHalfAngle: any angle (turret rotates) */,
+                               Config::TURRET_RANGE);
+        if (tId != 0 && m_autoTurretTimer <= 0.0f) {
+          // Find the target's current position to aim at.
+          Vector3 tgt = tpos;
+          const auto &all = m_em.entities();
+          for (const Entity &e : all) {
+            if (e.alive && e.id == tId) {
+              tgt = e.pos;
+              break;
+            }
+          }
+          Vector3 dir = Vector3Subtract(tgt, tpos);
+          float dl = Vector3Length(dir);
+          if (dl > 0.001f) {
+            dir = Vector3Scale(dir, 1.0f / dl);
+            Vector3 vel = Vector3Add(
+                Vector3Scale(dir, Config::CANNON_SPEED * 0.9f),
+                m_player.velocity());
+            m_em.spawnProjectile(Vector3Add(tpos, Vector3Scale(dir, 1.5f)),
+                                 vel, Config::TURRET_DAMAGE,
+                                 Config::TURRET_RANGE, Config::CANNON_SPEED,
+                                 ProjectileOwner::Player);
+            m_autoTurretTimer = Config::TURRET_FIRE_RATE;
+          }
+        }
+        if (m_autoTurretTimer > 0.0f) m_autoTurretTimer -= dt;
+        if (m_autoTurretTimer < 0.0f) m_autoTurretTimer = 0.0f;
+      }
+
       // Special — EMP. Apply the area stun directly + emit a visible
       // ring burst so the player gets feedback on what just happened.
       Vector3 epos;
@@ -855,6 +945,21 @@ void GameState::update(float dt) {
           Vector3 v = {sinf(a) * 30.0f, 1.5f, cosf(a) * 30.0f};
           Color c = {120, 200, 255, 230};
           m_particles.emit(epos, v, c, 0.55f, 0.6f,
+                           ParticleSystem::Shape::Cube, 0);
+        }
+      }
+
+      // Special — Shield Booster. The actual sector refill is done
+      // inside Player::update (it owns the sector state); here we
+      // only fire the visual confirmation burst at the player.
+      if (m_player.consumePendingShieldBoost()) {
+        Vector3 sp = m_player.position();
+        const int N = 24;
+        for (int i = 0; i < N; ++i) {
+          float a = 6.28318f * static_cast<float>(i) / static_cast<float>(N);
+          Vector3 v = {sinf(a) * 8.0f, 4.0f + (i % 3) * 1.5f, cosf(a) * 8.0f};
+          Color c = {120, 220, 255, 240};
+          m_particles.emit(sp, v, c, 0.55f, 0.4f,
                            ParticleSystem::Shape::Cube, 0);
         }
       }
@@ -952,6 +1057,20 @@ void GameState::render(float alpha) {
     m_player.render();
     m_em.render();
     m_particles.render(m_camera);
+    // Beam Laser — drawn before the shield bubble so the bubble
+    // (translucent) blends over it correctly. Bright cyan core + a
+    // wider faint outer line so it reads against any sky / terrain.
+    if (m_beamActive) {
+      DrawLine3D(m_beamLineFrom, m_beamLineTo, {180, 240, 255, 230});
+      // Outer glow approximated as a slightly offset second line —
+      // crude but cheap and matches the flat-shaded aesthetic.
+      Vector3 off = {0.1f, 0.1f, 0.0f};
+      DrawLine3D(Vector3Add(m_beamLineFrom, off),
+                 Vector3Add(m_beamLineTo, off), {120, 200, 255, 120});
+      DrawLine3D(Vector3Subtract(m_beamLineFrom, off),
+                 Vector3Subtract(m_beamLineTo, off),
+                 {120, 200, 255, 120});
+    }
     // Shield bubble drawn AFTER everything else in 3D so its alpha
     // blends over the ship + enemies + particles correctly.
     m_player.renderShieldBubble();
@@ -1229,67 +1348,112 @@ void GameState::drawHUD() const {
   }
 
   // ---- Weapon HUD ----
-  // Compact stack to the right of the SHLD pie. Shows the active
-  // primary weapon name, secondary missile ammo, and special EMP
-  // cooldown. EMP cooldown is rendered as a depleting bar — fills
-  // back up as the cooldown counts down so the player gets a
-  // visual "ready in X seconds" instead of having to read a number.
+  // Three-row block to the right of the SHLD pie showing the
+  // currently-selected slot per type, plus a fourth row for the
+  // Auto Turret indicator. Each row's label + value pair is sized
+  // to fit the longest weapon name (DEPTHCHG). When Beam is the
+  // primary, the row shows an energy meter instead of a static
+  // name so the player sees the drain in real time.
   {
     const int wx = bx + bw + 100; // right of the shield pie
-    const int wy = sh - 84;       // top of the cluster
-    const int wWidth = 120;
+    const int wy = sh - 92;       // top of the cluster
+    const int wWidth = 160;
     const int rowH = 18;
 
-    // Backing strip so the text reads against any terrain colour.
-    DrawRectangle(wx - 4, wy - 4, wWidth + 8, rowH * 3 + 6,
+    DrawRectangle(wx - 4, wy - 4, wWidth + 8, rowH * 4 + 6,
                   {0, 0, 0, 130});
 
-    // Primary slot
-    const char *primaryName =
-        (m_player.primaryWeapon() == Player::PrimaryWeapon::Plasma)
-            ? "PLASMA"
-            : "CANNON";
-    Color primaryCol =
-        (m_player.primaryWeapon() == Player::PrimaryWeapon::Plasma)
-            ? Color{220, 140, 240, 255}
-            : Color{255, 230, 80, 255};
+    // ---- Primary row ----
+    const char *primaryName = "CANNON";
+    Color primaryCol = {255, 230, 80, 255};
+    switch (m_player.primaryWeapon()) {
+    case Player::PrimaryWeapon::Plasma:
+      primaryName = "PLASMA";
+      primaryCol = {220, 140, 240, 255};
+      break;
+    case Player::PrimaryWeapon::Beam:
+      primaryName = "BEAM";
+      primaryCol = {120, 220, 255, 255};
+      break;
+    default:
+      break;
+    }
     drawHudText("PRI", wx, wy, 11, col);
-    drawHudText(primaryName, wx + 30, wy, 13, primaryCol);
+    drawHudText(primaryName, wx + 32, wy, 13, primaryCol);
+    // Beam energy bar replaces the static name suffix when beam is
+    // selected — feedback on drain/recharge during fire.
+    if (m_player.primaryWeapon() == Player::PrimaryWeapon::Beam) {
+      float frac = m_player.beamEnergy() / m_player.beamEnergyMax();
+      if (frac < 0.0f) frac = 0.0f;
+      if (frac > 1.0f) frac = 1.0f;
+      int barW = 60, barH = 6;
+      int barX = wx + 90, barY = wy + 6;
+      DrawRectangle(barX, barY, barW, barH, {40, 40, 50, 220});
+      Color e = m_player.beamFiring() ? Color{255, 200, 80, 240}
+                                       : Color{120, 220, 255, 240};
+      DrawRectangle(barX, barY, static_cast<int>(barW * frac), barH, e);
+    }
 
-    // Missile ammo
-    char mbuf[32];
-    int ammo = m_player.missileAmmo();
-    snprintf(mbuf, sizeof(mbuf), "%d / %d", ammo, Config::MISSILE_AMMO_MAX);
-    Color ammoCol = ammo == 0     ? Color{200, 80, 80, 240}
-                    : ammo <= 3   ? Color{220, 180, 80, 240}
+    // ---- Secondary row ----
+    const char *secName = "MISSILE";
+    int secAmmo = m_player.missileAmmo();
+    int secMax = Config::MISSILE_AMMO_MAX;
+    switch (m_player.secondaryWeapon()) {
+    case Player::SecondaryWeapon::Cluster:
+      secName = "CLUSTER";
+      secAmmo = m_player.clusterAmmo();
+      secMax = Config::CLUSTER_AMMO_MAX;
+      break;
+    case Player::SecondaryWeapon::DepthCharge:
+      secName = "DEPTHCHG";
+      secAmmo = m_player.depthChargeAmmo();
+      secMax = Config::DEPTH_CHARGE_MAX;
+      break;
+    default:
+      break;
+    }
+    drawHudText("SEC", wx, wy + rowH, 11, col);
+    drawHudText(secName, wx + 32, wy + rowH, 13,
+                {220, 230, 240, 240});
+    char sbuf[24];
+    snprintf(sbuf, sizeof(sbuf), "%d/%d", secAmmo, secMax);
+    Color secCol = secAmmo == 0   ? Color{200, 80, 80, 240}
+                   : secAmmo <= 3 ? Color{220, 180, 80, 240}
                                   : Color{220, 230, 240, 240};
-    drawHudText("MSL", wx, wy + rowH, 11, col);
-    drawHudText(mbuf, wx + 30, wy + rowH, 13, ammoCol);
+    drawHudText(sbuf, wx + 110, wy + rowH, 13, secCol);
 
-    // EMP — show READY when 0, otherwise a depleting bar fragment + sec.
-    drawHudText("EMP", wx, wy + rowH * 2, 11, col);
+    // ---- Special row ----
+    const char *spcName = "EMP";
     float cd = m_player.empCooldown();
     float cdMax = m_player.empMaxCooldown();
+    if (m_player.specialWeapon() == Player::SpecialWeapon::ShieldBooster) {
+      spcName = "SBOOST";
+      cd = m_player.shieldBoosterCooldown();
+      cdMax = m_player.shieldBoosterMaxCooldown();
+    }
+    drawHudText("SPC", wx, wy + rowH * 2, 11, col);
+    drawHudText(spcName, wx + 32, wy + rowH * 2, 13,
+                {220, 230, 240, 240});
     if (cd <= 0.001f) {
-      drawHudText("READY", wx + 30, wy + rowH * 2, 13,
+      drawHudText("READY", wx + 100, wy + rowH * 2, 13,
                   {120, 220, 140, 240});
     } else {
-      // Bar fills as cd → 0 (ready = full bar).
       float frac = (cdMax > 0.0f) ? (1.0f - cd / cdMax) : 0.0f;
       if (frac < 0.0f) frac = 0.0f;
       if (frac > 1.0f) frac = 1.0f;
-      int barW = 70;
-      int barH = 8;
-      int barX = wx + 30;
-      int barY = wy + rowH * 2 + 4;
+      int barW = 50, barH = 6;
+      int barX = wx + 100, barY = wy + rowH * 2 + 6;
       DrawRectangle(barX, barY, barW, barH, {40, 40, 50, 220});
       DrawRectangle(barX, barY, static_cast<int>(barW * frac), barH,
                     {120, 200, 255, 240});
-      char cbuf[16];
-      snprintf(cbuf, sizeof(cbuf), "%.0fs", cd);
-      drawHudText(cbuf, barX + barW + 4, wy + rowH * 2, 12,
-                  {200, 215, 235, 220});
     }
+
+    // ---- Auto Turret row ----
+    drawHudText("TRT", wx, wy + rowH * 3, 11, col);
+    bool on = m_player.autoTurretEnabled();
+    drawHudText(on ? "ON" : "OFF", wx + 32, wy + rowH * 3, 13,
+                on ? Color{120, 220, 140, 240}
+                   : Color{180, 180, 180, 220});
   }
 
   // ---- AGL tape ----

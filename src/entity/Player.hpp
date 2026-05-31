@@ -88,13 +88,31 @@ public:
   // All enemy projectile + drone contact hits go through this path.
   void applyDamage(float amount, Vector3 hitPos);
 
-  // Primary fire slot — Cannon (default) or Plasma. Toggled with Q.
-  // Plasma trades fire rate for splash damage; same fire button (LMB).
-  enum class PrimaryWeapon : uint8_t { Cannon = 0, Plasma = 1 };
+  // Weapon slot enums — three slots (Primary / Secondary / Special)
+  // plus an independent Auto Turret toggle. Cycled with Tab / Z / X.
+  enum class PrimaryWeapon : uint8_t { Cannon = 0, Plasma = 1, Beam = 2 };
+  enum class SecondaryWeapon : uint8_t {
+    Missile = 0,
+    Cluster = 1,
+    DepthCharge = 2,
+  };
+  enum class SpecialWeapon : uint8_t { EMP = 0, ShieldBooster = 1 };
   PrimaryWeapon primaryWeapon() const { return m_primaryWeapon; }
+  SecondaryWeapon secondaryWeapon() const { return m_secondaryWeapon; }
+  SpecialWeapon specialWeapon() const { return m_specialWeapon; }
+  bool autoTurretEnabled() const { return m_autoTurretEnabled; }
+
+  // Ammo / energy / cooldown accessors for HUD.
   int missileAmmo() const { return m_missileAmmo; }
+  int clusterAmmo() const { return m_clusterAmmo; }
+  int depthChargeAmmo() const { return m_depthChargeAmmo; }
+  float beamEnergy() const { return m_beamEnergy; }
+  float beamEnergyMax() const; // Config::BEAM_ENERGY_MAX
+  bool beamFiring() const { return m_beamFiring; }
   float empCooldown() const { return m_empCooldown; }
   float empMaxCooldown() const; // for HUD ring readout
+  float shieldBoosterCooldown() const { return m_shieldBoosterCooldown; }
+  float shieldBoosterMaxCooldown() const;
 
   // Pending-shot accessors — GameState calls each tick. Returns true
   // when a shot should be spawned, fills the out parameters, and
@@ -102,7 +120,21 @@ public:
   // multiple weapons can fire on the same tick (rare, but harmless).
   bool consumePendingShot(Vector3 &outPos, Vector3 &outVel); // primary
   bool consumePendingMissile(Vector3 &outPos, Vector3 &outVel);
+  bool consumePendingDepthCharge(Vector3 &outPos, Vector3 &outVel);
+  // Cluster — single carrier missile spawn. The carrier splits into
+  // 4 sub-missiles when it nears its lock target; split logic lives
+  // in EntityManager::updateProjectile (ClusterParent kind).
+  bool consumePendingCluster(Vector3 &outPos, Vector3 &outVel);
   bool consumePendingEMP(Vector3 &outPos); // pos only — instant area effect
+  bool consumePendingShieldBoost();        // signal-only; effect applied internally
+  // Beam firing this tick? GameState reads each frame; if true it should
+  // raycast forward from outBeamOrigin along outBeamDir up to BEAM_RANGE
+  // and apply continuous damage to the first hit.
+  bool beamIsFiringThisTick(Vector3 &outOrigin, Vector3 &outDir);
+  // Auto Turret fire — runs each tick when the subsystem is on AND a
+  // target sat in the firing cone; the player has no input here, the
+  // turret picks its own moment.
+  bool consumePendingTurretShot(Vector3 &outPos, Vector3 &outVel);
 
 private:
   // Pipeline
@@ -157,29 +189,64 @@ private:
   Vector3 m_shotVel = {};
   PrimaryWeapon m_primaryWeapon = PrimaryWeapon::Cannon;
 
-  // Secondary — Missile (homing, proportional nav). RMB fires when
-  // ammo > 0 and cooldown ready. Lock-on target id is set at fire
-  // time inside GameState (it has access to EntityManager); Player
-  // only signals the fire intent and tracks the cooldown + ammo.
-  bool m_missileFireRequested = false;
-  bool m_pendingMissile = false;
-  float m_missileTimer = 0.0f;
+  // Secondary slot. RMB fires whichever secondary is active. Each
+  // variant tracks its own ammo. Cluster fires 4 pending shots in
+  // one trigger pull (handled in consumePendingCluster).
+  SecondaryWeapon m_secondaryWeapon = SecondaryWeapon::Missile;
+  bool m_secondaryFireRequested = false;
+  float m_secondaryTimer = 0.0f;
   int m_missileAmmo = Config::MISSILE_AMMO_MAX;
+  int m_clusterAmmo = Config::CLUSTER_AMMO_MAX;
+  int m_depthChargeAmmo = Config::DEPTH_CHARGE_MAX;
+  bool m_pendingMissile = false;
+  bool m_pendingDepthCharge = false;
+  bool m_pendingCluster = false;
   Vector3 m_missilePos = {};
   Vector3 m_missileVel = {};
+  Vector3 m_depthChargePos = {};
+  Vector3 m_depthChargeVel = {};
+  Vector3 m_clusterPos = {};
+  Vector3 m_clusterVel = {};
 
-  // Special — EMP (area stun). F key fires; long cooldown. Pending
-  // flag tells GameState to scan + stun all enemies in radius.
-  bool m_empFireRequested = false;
+  // Special slot. F activates whichever special is selected. EMP =
+  // area stun, ShieldBooster = instant full sector refill. Each has
+  // its own cooldown so cycling X mid-fight doesn't bypass them.
+  SpecialWeapon m_specialWeapon = SpecialWeapon::EMP;
+  bool m_specialFireRequested = false;
   bool m_pendingEMP = false;
-  float m_empCooldown = 0.0f; // counts DOWN; 0 = ready
+  bool m_pendingShieldBoost = false;
+  float m_empCooldown = 0.0f;
+  float m_shieldBoosterCooldown = 0.0f;
   Vector3 m_empPos = {};
 
-  // Edge-trigger state for Tab (primary toggle) and F (EMP). Held at
-  // 120Hz physics over 60Hz render means IsKeyPressed is unreliable
-  // — track the last frame's state explicitly.
+  // Beam Laser — continuous-fire primary. Energy meter drains while
+  // firing (m_beamFiring tracks this tick's state for HUD + render);
+  // recharges otherwise. Beam raycast + damage application lives in
+  // GameState because it needs EntityManager access; Player just
+  // tracks energy + reports whether we're currently firing.
+  bool m_beamFiring = false;
+  float m_beamEnergy = Config::BEAM_ENERGY_MAX;
+  Vector3 m_beamOrigin = {};
+  Vector3 m_beamDir = {};
+
+  // Auto Turret — independent passive subsystem. Toggled with T.
+  // Picks its own target each tick when on. Aim is interpolated
+  // toward the target so it doesn't snap-fire from any angle.
+  bool m_autoTurretEnabled = false;
+  float m_turretYaw = 0.0f; // world-space rotation of the parented turret
+  float m_turretTimer = 0.0f;
+  bool m_pendingTurretShot = false;
+  Vector3 m_turretShotPos = {};
+  Vector3 m_turretShotVel = {};
+
+  // Edge-trigger state for Tab (primary cycle), Z (secondary cycle),
+  // X (special cycle), F (fire special), T (Auto Turret toggle).
+  // 120Hz physics over 60Hz render makes IsKeyPressed unreliable.
   bool m_tabWasDown = false;
+  bool m_zWasDown = false;
+  bool m_xWasDown = false;
   bool m_fWasDown = false;
+  bool m_tWasDown = false;
 
   // Mesh / model
   Mesh m_mesh = {};

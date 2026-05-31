@@ -230,6 +230,63 @@ uint32_t EntityManager::acquireTarget(Vector3 origin, Vector3 forward,
   return best;
 }
 
+// Beam Laser raycast — sphere-cast against each live enemy, find the
+// nearest one whose hit-sphere is pierced by the ray within maxRange.
+// Closed-form ray vs sphere: project (centre - origin) onto dir, then
+// pythagoras gives perpendicular distance. Closest forward intersection
+// wins; damageThisTick applied to that target's centre as the impact
+// point (so directional shields still route correctly).
+//
+// Returns the entity id of the hit target (0 if none) and writes the
+// impact world position. GameState uses outHitPos for the visual line
+// endpoint — capping at maxRange when nothing was hit.
+uint32_t EntityManager::beamRaycast(Vector3 origin, Vector3 dir,
+                                    float maxRange, float damageThisTick,
+                                    ParticleSystem &particles,
+                                    Vector3 &outHitPos) {
+  uint32_t bestId = 0;
+  float bestT = maxRange;
+  Entity *bestE = nullptr;
+  // Normalise dir defensively.
+  float dl = sqrtf(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
+  if (dl < 0.001f) {
+    outHitPos = origin;
+    return 0;
+  }
+  Vector3 dn = {dir.x / dl, dir.y / dl, dir.z / dl};
+  for (Entity &e : m_entities) {
+    if (!e.alive) continue;
+    if (e.type == EntityType::Projectile) continue;
+    if (e.type == EntityType::Collector ||
+        e.type == EntityType::RepairStation ||
+        e.type == EntityType::RadarBooster)
+      continue;
+    Vector3 oc = Vector3Subtract(e.pos, origin);
+    float tCentre = Vector3DotProduct(oc, dn);
+    if (tCentre < 0.0f || tCentre > bestT) continue;
+    float perp2 = Vector3DotProduct(oc, oc) - tCentre * tCentre;
+    float r = e.radius;
+    if (perp2 > r * r) continue;
+    // Forward intersection — use the entry point t = tCentre - sqrt(r²-perp²).
+    float tHit = tCentre - sqrtf(r * r - perp2);
+    if (tHit < 0.0f) tHit = 0.0f;
+    if (tHit < bestT) {
+      bestT = tHit;
+      bestId = e.id;
+      bestE = &e;
+    }
+  }
+  if (bestE) {
+    Vector3 impact = Vector3Add(origin, Vector3Scale(dn, bestT));
+    outHitPos = impact;
+    // Continuous-fire damage: passed dps × dt already.
+    applyDamage(*bestE, damageThisTick, impact, particles);
+    return bestId;
+  }
+  outHitPos = Vector3Add(origin, Vector3Scale(dn, maxRange));
+  return 0;
+}
+
 // EMP area stun — set stunTimer on every enemy within radius. Skips
 // friendlies and projectiles. The stunned enemies' update bodies will
 // see stunTimer > 0 and short-circuit out of AI logic.
@@ -991,36 +1048,141 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
     return;
   }
 
-  // Missile guidance — proportional navigation. Each tick, rotate the
-  // velocity vector toward the lock target up to turnRate × dt. If
-  // the lock is gone (target killed / id stale), the missile flies
-  // straight (turnRate has no effect when no target found).
-  if (p.kind == ProjectileKind::Missile && p.turnRate > 0.0f &&
-      p.seekTargetId != 0) {
+  // Depth Charge — no propulsion, just gravity. Drops out of the
+  // ship and falls onto whatever is below. Detonates with heavy
+  // splash on terrain hit. Mid-air enemy collision also detonates.
+  if (p.kind == ProjectileKind::DepthCharge) {
+    // World gravity (NEWTON_GRAVITY for consistency with player physics).
+    p.vel.y -= Config::NEWTON_GRAVITY * dt;
+  }
+
+  // Missile guidance — proportional navigation. Applies to both
+  // Missile and ClusterParent (the parent carrier flies like a
+  // missile). When the lock target is gone (killed / stale id), the
+  // missile reacquires the nearest live enemy within
+  // MISSILE_REACQUIRE_RANGE. If nothing's in range, it goes ballistic
+  // — no steering input, just a small downward acceleration so it
+  // eventually hits the ground and detonates.
+  //
+  // ClusterParent additionally checks for "near target" each tick and
+  // splits into 4 sub-missiles when within CLUSTER_SPLIT_DISTANCE.
+  // The carrier deals no damage itself; the children carry the load.
+  bool isGuided = (p.kind == ProjectileKind::Missile ||
+                   p.kind == ProjectileKind::ClusterParent) &&
+                  p.turnRate > 0.0f;
+  if (isGuided) {
+    // Resolve current target by id.
     const Entity *target = nullptr;
-    for (const Entity &e : m_entities) {
-      if (e.alive && e.id == p.seekTargetId) {
-        target = &e;
-        break;
+    if (p.seekTargetId != 0) {
+      for (const Entity &e : m_entities) {
+        if (e.alive && e.id == p.seekTargetId) {
+          target = &e;
+          break;
+        }
       }
     }
+    // Reacquire if the prior target is gone (or never had one).
+    if (!target) {
+      uint32_t newId = 0;
+      float bestDist = Config::MISSILE_REACQUIRE_RANGE;
+      for (const Entity &e : m_entities) {
+        if (!e.alive) continue;
+        if (e.type == EntityType::Projectile) continue;
+        if (e.type == EntityType::Collector ||
+            e.type == EntityType::RepairStation ||
+            e.type == EntityType::RadarBooster)
+          continue;
+        float d = Vector3Distance(e.pos, p.pos);
+        if (d < bestDist) {
+          bestDist = d;
+          newId = e.id;
+          target = &e;
+        }
+      }
+      p.seekTargetId = newId; // 0 if still none
+    }
+
     if (target) {
       Vector3 toTarget = Vector3Subtract(target->pos, p.pos);
       float dist = Vector3Length(toTarget);
+
+      // ClusterParent split check — if we're inside the split radius,
+      // detonate the carrier and spawn 4 sub-missiles. Each child
+      // inherits the carrier's speed + a 4-way perpendicular spread,
+      // gets a fresh local target lock so they spread out across
+      // adjacent enemies.
+      if (p.kind == ProjectileKind::ClusterParent &&
+          dist < Config::CLUSTER_SPLIT_DISTANCE) {
+        float speed = Vector3Length(p.vel);
+        if (speed < 1.0f) speed = Config::MISSILE_SPEED;
+        Vector3 fwd = Vector3Scale(p.vel, 1.0f / speed);
+        // Build a stable perpendicular basis (right + up) using a
+        // world-up reference. If fwd is near-vertical, swap to world-Z.
+        Vector3 worldUp = {0.0f, 1.0f, 0.0f};
+        if (fabsf(fwd.y) > 0.95f) worldUp = {0.0f, 0.0f, 1.0f};
+        Vector3 rightV = {
+            fwd.y * worldUp.z - fwd.z * worldUp.y,
+            fwd.z * worldUp.x - fwd.x * worldUp.z,
+            fwd.x * worldUp.y - fwd.y * worldUp.x};
+        float rl = Vector3Length(rightV);
+        if (rl > 0.001f) rightV = Vector3Scale(rightV, 1.0f / rl);
+        Vector3 upV = {
+            rightV.y * fwd.z - rightV.z * fwd.y,
+            rightV.z * fwd.x - rightV.x * fwd.z,
+            rightV.x * fwd.y - rightV.y * fwd.x};
+
+        float spreadTan =
+            tanf(Config::CLUSTER_SPREAD * (3.14159f / 180.0f));
+        // Four cardinal offsets in the perpendicular plane.
+        const Vector3 offsets[4] = {
+            {rightV.x * spreadTan, rightV.y * spreadTan,
+             rightV.z * spreadTan},
+            {-rightV.x * spreadTan, -rightV.y * spreadTan,
+             -rightV.z * spreadTan},
+            {upV.x * spreadTan, upV.y * spreadTan, upV.z * spreadTan},
+            {-upV.x * spreadTan, -upV.y * spreadTan,
+             -upV.z * spreadTan},
+        };
+        for (int i = 0; i < 4; ++i) {
+          Vector3 dir = {fwd.x + offsets[i].x, fwd.y + offsets[i].y,
+                         fwd.z + offsets[i].z};
+          float dl = sqrtf(dir.x * dir.x + dir.y * dir.y +
+                           dir.z * dir.z);
+          if (dl > 0.001f) {
+            dir.x /= dl;
+            dir.y /= dl;
+            dir.z /= dl;
+          }
+          Vector3 childPos = Vector3Add(p.pos, Vector3Scale(dir, 0.8f));
+          Vector3 childVel = Vector3Scale(dir, speed);
+          // Each child reacquires individually next tick (id=0).
+          // Damage: each sub-missile carries 45% of MISSILE_DAMAGE so
+          // a single carrier overlapping 4 enemies delivers ~1.8x
+          // single-missile damage in total.
+          spawnProjectile(childPos, childVel,
+                          Config::MISSILE_DAMAGE * 0.45f,
+                          Config::MISSILE_RANGE, Config::MISSILE_SPEED,
+                          ProjectileOwner::Player,
+                          ProjectileKind::Missile, Config::PLASMA_SPLASH,
+                          0 /* no lock — children reacquire next tick */,
+                          Config::MISSILE_TURN_RATE);
+        }
+        // Carrier vanishes silently (no kill burst — it's a carrier,
+        // not a warhead).
+        p.alive = false;
+        --m_liveProjectiles;
+        return;
+      }
+
+      // Standard proportional-nav steering toward target.
       if (dist > 0.001f) {
         Vector3 desiredDir = Vector3Scale(toTarget, 1.0f / dist);
         float speed = Vector3Length(p.vel);
         if (speed > 0.001f) {
           Vector3 currentDir = Vector3Scale(p.vel, 1.0f / speed);
-          // Slerp-style: rotate currentDir toward desiredDir by up to
-          // turnRate*dt radians. cheap approximation: blend then
-          // renormalize.
           float cosA = Vector3DotProduct(currentDir, desiredDir);
           if (cosA < 1.0f) {
-            float maxBlend = p.turnRate * dt;
-            // Convert angular step to blend weight via small-angle
-            // approximation — good enough for the missile's curve.
-            float blend = maxBlend;
+            float blend = p.turnRate * dt;
             if (blend > 1.0f) blend = 1.0f;
             Vector3 newDir = {
                 currentDir.x + (desiredDir.x - currentDir.x) * blend,
@@ -1034,11 +1196,44 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
         }
       }
     } else {
-      // Target gone — clear the lock so we don't keep scanning for it.
-      p.seekTargetId = 0;
+      // Ballistic — no target anywhere in range. Apply a small
+      // downward acceleration so the missile dips toward the
+      // terrain and detonates instead of flying out to its lifetime
+      // limit and disappearing. The ClusterParent in this state
+      // also splits NOW so the children at least scatter on the way
+      // down (they'll go ballistic too, but spread the warhead).
+      if (p.kind == ProjectileKind::ClusterParent) {
+        float speed = Vector3Length(p.vel);
+        if (speed < 1.0f) speed = Config::MISSILE_SPEED;
+        Vector3 fwd = Vector3Scale(p.vel, 1.0f / speed);
+        for (int i = 0; i < 4; ++i) {
+          // 4-way nudge in the XZ plane; tiny pitch jitter.
+          float a = (i * 1.5708f); // 90° per child
+          Vector3 dir = {fwd.x * cosf(0.1f) + sinf(a) * 0.1f, fwd.y,
+                         fwd.z * cosf(0.1f) + cosf(a) * 0.1f};
+          float dl = sqrtf(dir.x * dir.x + dir.y * dir.y +
+                           dir.z * dir.z);
+          if (dl > 0.001f) {
+            dir.x /= dl;
+            dir.y /= dl;
+            dir.z /= dl;
+          }
+          spawnProjectile(p.pos, Vector3Scale(dir, speed),
+                          Config::MISSILE_DAMAGE * 0.45f,
+                          Config::MISSILE_RANGE, Config::MISSILE_SPEED,
+                          ProjectileOwner::Player,
+                          ProjectileKind::Missile, Config::PLASMA_SPLASH,
+                          0, Config::MISSILE_TURN_RATE);
+        }
+        p.alive = false;
+        --m_liveProjectiles;
+        return;
+      }
+      p.vel.y -= Config::MISSILE_BALLISTIC_DIP * dt;
     }
-    // Smoke trail — emit a small grey puff each tick so missiles read
-    // as distinct from cannon tracers at chase distance.
+
+    // Smoke trail — every guided projectile leaves a trail so it
+    // reads as a missile/carrier at chase distance.
     Vector3 trailVel = Vector3Scale(p.vel, -0.2f);
     trailVel.y += 0.5f;
     Color smoke = {180, 180, 190, 200};
@@ -1503,6 +1698,21 @@ void EntityManager::renderProjectile(const Entity &p) const {
     // distinct so the player can see which weapon is firing.
     DrawCubeV(p.pos, {0.9f, 0.9f, 0.9f}, {220, 80, 240, 255});
     DrawCubeV(p.pos, {1.4f, 1.4f, 1.4f}, {220, 80, 240, 80}); // soft halo
+    break;
+  }
+  case ProjectileKind::DepthCharge: {
+    // Big dark drum + bright fin on top so it reads as "heavy
+    // gravity bomb" against the sky as it falls.
+    DrawCubeV(p.pos, {1.4f, 1.0f, 1.4f}, {60, 70, 90, 255});
+    DrawCubeV({p.pos.x, p.pos.y + 0.6f, p.pos.z}, {0.5f, 0.4f, 0.5f},
+              {220, 200, 80, 255});
+    break;
+  }
+  case ProjectileKind::ClusterParent: {
+    // Slightly larger silver body with a yellow band so the carrier
+    // reads distinct from a single-shot missile as it streaks in.
+    DrawCubeV(p.pos, {0.9f, 0.9f, 2.0f}, {220, 230, 240, 255});
+    DrawCubeV(p.pos, {1.0f, 0.4f, 0.4f}, {255, 220, 80, 255});
     break;
   }
   case ProjectileKind::Missile: {

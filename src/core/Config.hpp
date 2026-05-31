@@ -29,28 +29,30 @@ constexpr float MAX_FRAME_TIME = 0.05f;   // spiral-of-death guard
 constexpr float PLAYER_MIN_ALTITUDE = 5.0f;   // hard floor AGL
 constexpr float PLAYER_MAX_ALTITUDE = 500.0f; // hard ceiling AGL
 
-constexpr float NEWTON_GRAVITY = 9.8f;         // m/s² world-down
-constexpr float NEWTON_THRUST = 24.0f;         // m/s² along local UP
-constexpr float NEWTON_DRAG = 0.15f;           // linear damping per second
-                                               // ~14% velocity loss/sec at hover;
-                                               // ship coasts but eventually stops
-constexpr float NEWTON_PITCH_MAX = 1.30f;      // ~74° — steep but not inverted
-constexpr float NEWTON_ROLL_MAX = 0.78f;       // ±45° banking limit
-constexpr float NEWTON_MAX_SPEED = 70.0f;      // hard clamp to prevent runaway
+constexpr float NEWTON_GRAVITY = 9.8f;    // m/s² world-down
+constexpr float NEWTON_THRUST = 24.0f;    // m/s² along local UP
+constexpr float NEWTON_DRAG = 0.15f;      // linear damping per second
+                                          // ~14% velocity loss/sec at hover;
+                                          // ship coasts but eventually stops
+constexpr float NEWTON_PITCH_MAX = 1.30f; // ~74° — steep but not inverted
+constexpr float NEWTON_ROLL_MAX = 0.78f;  // ±45° banking limit
+constexpr float NEWTON_MAX_SPEED = 70.0f; // hard clamp to prevent runaway
 constexpr float NEWTON_MOUSE_PITCH_SENS = 0.0025f; // rad per pixel
 constexpr float NEWTON_MOUSE_YAW_SENS = 0.003f;    // rad per pixel
 constexpr float NEWTON_MOUSE_ROLL_SENS = 0.002f;   // rad per pixel
-constexpr float NEWTON_INPUT_SMOOTH = 12.0f;       // lowpass per second on mouse
-constexpr float NEWTON_PITCH_RATE = 1.8f;          // keyboard pitch rad/s
-constexpr float NEWTON_YAW_RATE = 1.4f;            // keyboard yaw rad/s
-constexpr float NEWTON_ROLL_RATE = 2.0f;           // keyboard roll rad/s
-constexpr float NEWTON_CRASH_SPEED = 12.0f;        // |vel.y| above this = crash
-constexpr float NEWTON_LAND_SPEED = 3.0f;          // safe landing speed
-constexpr float NEWTON_LAND_ATTITUDE = 0.14f;      // ~8° pitch+roll tolerance for soft landing
-constexpr float NEWTON_THRUST_CHARGE_MAX = 100.0f;   // thrust charge units
-constexpr float NEWTON_THRUST_DRAIN_RATE = 18.0f;    // units/sec while thrusting
-constexpr float NEWTON_THRUST_RECHARGE_RATE = 14.0f; // units/sec while not thrusting
-constexpr float NEWTON_FLIGHT_CEILING = 250.0f;      // AGL above which thrust cuts
+constexpr float NEWTON_INPUT_SMOOTH = 12.0f; // lowpass per second on mouse
+constexpr float NEWTON_PITCH_RATE = 1.8f;    // keyboard pitch rad/s
+constexpr float NEWTON_YAW_RATE = 1.4f;      // keyboard yaw rad/s
+constexpr float NEWTON_ROLL_RATE = 2.0f;     // keyboard roll rad/s
+constexpr float NEWTON_CRASH_SPEED = 12.0f;  // |vel.y| above this = crash
+constexpr float NEWTON_LAND_SPEED = 3.0f;    // safe landing speed
+constexpr float NEWTON_LAND_ATTITUDE =
+    0.14f; // ~8° pitch+roll tolerance for soft landing
+constexpr float NEWTON_THRUST_CHARGE_MAX = 100.0f; // thrust charge units
+constexpr float NEWTON_THRUST_DRAIN_RATE = 18.0f;  // units/sec while thrusting
+constexpr float NEWTON_THRUST_RECHARGE_RATE =
+    14.0f;                                      // units/sec while not thrusting
+constexpr float NEWTON_FLIGHT_CEILING = 250.0f; // AGL above which thrust cuts
 
 // Flight-assist Level 3 terrain look-ahead
 constexpr float ASSIST_PULLUP_LOOKAHEAD = 0.4f; // seconds ahead
@@ -69,29 +71,29 @@ constexpr float ASSIST_LEVEL_COEFFS[4] = {0.0f, 0.18f, 0.42f, 0.75f};
 // ----------------------------------------------------------------
 
 // Shared
-constexpr float CAM_FOV = 75.0f;     // degrees
-constexpr float CAM_LERP = 8.0f;     // follow position lerp per second
+constexpr float CAM_FOV = 75.0f; // degrees
+constexpr float CAM_LERP = 8.0f; // follow position lerp per second
 
 // Chase (View 1) and Velocity (View 2)
-constexpr float CAM_HEIGHT = 8.0f;            // units above player
-constexpr float CAM_DISTANCE = 18.0f;         // units behind player
-constexpr float VELOCITY_CAM_MIN_SPD = 5.0f;  // blend to chase below this speed
+constexpr float CAM_HEIGHT = 8.0f;           // units above player
+constexpr float CAM_DISTANCE = 18.0f;        // units behind player
+constexpr float VELOCITY_CAM_MIN_SPD = 5.0f; // blend to chase below this speed
 
 // Tactical overhead (View 3) — note: camera.up MUST be {0,0,1}, not {0,1,0}
 constexpr float TACTICAL_CAM_ALTITUDE = 130.0f; // world units above player
-constexpr float TACTICAL_CAM_FOV = 55.0f;       // narrower FOV for less distortion
+constexpr float TACTICAL_CAM_FOV = 55.0f; // narrower FOV for less distortion
 
 // Threat-lock (View 4)
-constexpr float THREAT_CAM_MAX_ROT = 1.5708f;   // rad/s — 90°/sec rotation cap
-constexpr float THREAT_CAM_HYSTERESIS = 0.20f;  // 20% score gap to switch target
+constexpr float THREAT_CAM_MAX_ROT = 1.5708f;  // rad/s — 90°/sec rotation cap
+constexpr float THREAT_CAM_HYSTERESIS = 0.20f; // 20% score gap to switch target
 
 // Classic / original-Virus view (View 5) — fixed world-space offset,
 // camera never rotates with the ship; world-north stays at top of screen.
-constexpr float CLASSIC_CAM_OFFSET_X = -15.0f;  // east-west offset
-constexpr float CLASSIC_CAM_OFFSET_Z = -35.0f;  // north of player (-Z = north)
-constexpr float CLASSIC_CAM_ALTITUDE = 42.0f;   // above player
-constexpr float CLASSIC_CAM_FOV = 65.0f;        // slightly narrower than chase
-constexpr float CLASSIC_CAM_LERP = 5.0f;        // slower = more detached feel
+constexpr float CLASSIC_CAM_OFFSET_X = -15.0f; // east-west offset
+constexpr float CLASSIC_CAM_OFFSET_Z = -35.0f; // north of player (-Z = north)
+constexpr float CLASSIC_CAM_ALTITUDE = 42.0f;  // above player
+constexpr float CLASSIC_CAM_FOV = 65.0f;       // slightly narrower than chase
+constexpr float CLASSIC_CAM_LERP = 5.0f;       // slower = more detached feel
 
 // View-switch label fade (2 second display, last 0.5s fades to transparent)
 constexpr float CAM_VIEW_LABEL_DURATION = 2.0f;
@@ -100,11 +102,12 @@ constexpr float CAM_VIEW_LABEL_FADE = 0.5f;
 // ----------------------------------------------------------------
 // Terrain / planet — Fourier (sine) synthesis, toroidal world
 // ----------------------------------------------------------------
-constexpr int HEIGHTMAP_SIZE = 1025;  // must be 2^n + 1
-constexpr int CHUNK_COUNT = 16;       // 1024/16 = 64 cells per chunk
-constexpr int CHUNK_VERTS = 32;       // quads per chunk edge
-constexpr float TERRAIN_SCALE = 8.0f; // world units per heightmap cell (world ~8192×8192)
-constexpr float TERRAIN_HEIGHT_MAX = 220.0f; // peak elevation, world units
+constexpr int HEIGHTMAP_SIZE = 1025; // must be 2^n + 1
+constexpr int CHUNK_COUNT = 16;      // 1024/16 = 64 cells per chunk
+constexpr int CHUNK_VERTS = 32;      // quads per chunk edge
+constexpr float TERRAIN_SCALE =
+    8.0f; // world units per heightmap cell (world ~8192×8192)
+constexpr float TERRAIN_HEIGHT_MAX = 220.0f;  // peak elevation, world units
 constexpr float TERRAIN_CURVATURE = 0.00015f; // curvature cosine coefficient
 constexpr float FOG_NEAR = 700.0f;
 constexpr float FOG_FAR = 2000.0f;
@@ -142,8 +145,20 @@ constexpr float MISSILE_LOCK_CONE = 0.6f; // ~34° half-angle, fire-time lock
 constexpr int MISSILE_AMMO_MAX = 20;
 
 constexpr int CLUSTER_SUBMUNITIONS = 4;
-constexpr float CLUSTER_SPREAD = 12.0f; // degrees
+constexpr float CLUSTER_SPREAD =
+    12.0f; // degrees (perpendicular spread at split)
 constexpr int CLUSTER_AMMO_MAX = 10;
+// Distance to target at which the carrier splits into submunitions.
+// Wider split (45m) so the 4 children have time to spread across a
+// loose swarm and reacquire individually rather than all converging
+// on the same target the carrier was locked on.
+constexpr float CLUSTER_SPLIT_DISTANCE = 45.0f;
+// Sub-missile reacquisition: when a child missile's target dies, it
+// scans every alive enemy within REACQUIRE_RANGE for a new lock. If
+// nothing's in range, it goes ballistic — fly straight with a small
+// downward acceleration so it eventually lands somewhere.
+constexpr float MISSILE_REACQUIRE_RANGE = 300.0f;
+constexpr float MISSILE_BALLISTIC_DIP = 6.0f; // m/s² downward when ballistic
 
 constexpr float DEPTH_CHARGE_DAMAGE = 80.0f;
 constexpr float DEPTH_CHARGE_RADIUS = 14.0f;
@@ -174,21 +189,22 @@ constexpr float SHIELD_RECHARGE_DELAY = 3.0f; // sec after last hit
 // constants so adding the missile warning ring and ghost-blip pool
 // later doesn't require Config changes.
 // ----------------------------------------------------------------
-constexpr float RADAR_BASE_RANGE = 300.0f;     // world units (default)
-constexpr float RADAR_BOOST_RANGE = 500.0f;    // with Radar Booster alive
-constexpr float RADAR_ALT_STRIP_RANGE = 150.0f; // ±units shown on alt strip
-constexpr float RADAR_BLINK_NEAR = 80.0f;      // distance for fast blink
-constexpr float RADAR_BLINK_FAR = 250.0f;      // distance for slow blink
-constexpr float RADAR_BLINK_FAST = 0.12f;      // sec/cycle (near)
-constexpr float RADAR_BLINK_SLOW = 0.60f;      // sec/cycle (far)
-constexpr float RADAR_GHOST_LIFETIME = 8.0f;   // ghost blip persistence
-constexpr float RADAR_VECTOR_MAX_LEN = 18.0f;  // px at max world speed
-constexpr float RADAR_JAM_MAX_OFFSET = 12.0f;  // px jitter near Carrier
+constexpr float RADAR_BASE_RANGE = 300.0f;       // world units (default)
+constexpr float RADAR_BOOST_RANGE = 500.0f;      // with Radar Booster alive
+constexpr float RADAR_ALT_STRIP_RANGE = 150.0f;  // ±units shown on alt strip
+constexpr float RADAR_BLINK_NEAR = 80.0f;        // distance for fast blink
+constexpr float RADAR_BLINK_FAR = 250.0f;        // distance for slow blink
+constexpr float RADAR_BLINK_FAST = 0.12f;        // sec/cycle (near)
+constexpr float RADAR_BLINK_SLOW = 0.60f;        // sec/cycle (far)
+constexpr float RADAR_GHOST_LIFETIME = 8.0f;     // ghost blip persistence
+constexpr float RADAR_VECTOR_MAX_LEN = 18.0f;    // px at max world speed
+constexpr float RADAR_JAM_MAX_OFFSET = 12.0f;    // px jitter near Carrier
 constexpr float RADAR_MISSILE_WARN_MIN = 120.0f; // dist to start warning ring
-constexpr float RADAR_DISC_RADIUS_PX = 60.0f;  // half of 120px disc
-constexpr float RADAR_INNER_RING_FRAC = 0.35f; // cannon range ring
-constexpr float RADAR_OUTER_RING_FRAC = 0.75f; // missile range ring
-constexpr float RADAR_CLASSIC_VIEW_SCALE = 1.20f; // disc scale-up factor in Classic view
+constexpr float RADAR_DISC_RADIUS_PX = 60.0f;    // half of 120px disc
+constexpr float RADAR_INNER_RING_FRAC = 0.35f;   // cannon range ring
+constexpr float RADAR_OUTER_RING_FRAC = 0.75f;   // missile range ring
+constexpr float RADAR_CLASSIC_VIEW_SCALE =
+    1.20f; // disc scale-up factor in Classic view
 
 // ----------------------------------------------------------------
 // AI
@@ -236,13 +252,13 @@ constexpr float SHIELD_CARRIER_PER_SECTOR =
 constexpr float SHIELD_TURRET = 0.0f;
 
 // Hull HP (derived: total - shield)
-constexpr float HULL_DRONE = TOTAL_DRONE - SHIELD_DRONE;          // 8
-constexpr float HULL_SEEDER = TOTAL_SEEDER - SHIELD_SEEDER;       // 50
-constexpr float HULL_FIGHTER = TOTAL_FIGHTER - SHIELD_FIGHTER;    // 160
-constexpr float HULL_BOMBER = TOTAL_BOMBER - SHIELD_BOMBER;       // 350
+constexpr float HULL_DRONE = TOTAL_DRONE - SHIELD_DRONE;       // 8
+constexpr float HULL_SEEDER = TOTAL_SEEDER - SHIELD_SEEDER;    // 50
+constexpr float HULL_FIGHTER = TOTAL_FIGHTER - SHIELD_FIGHTER; // 160
+constexpr float HULL_BOMBER = TOTAL_BOMBER - SHIELD_BOMBER;    // 350
 constexpr float HULL_CARRIER =
-    TOTAL_CARRIER - (SHIELD_CARRIER_PER_SECTOR * 4.0f);            // 1500
-constexpr float HULL_TURRET = TOTAL_TURRET - SHIELD_TURRET;       // 400
+    TOTAL_CARRIER - (SHIELD_CARRIER_PER_SECTOR * 4.0f);     // 1500
+constexpr float HULL_TURRET = TOTAL_TURRET - SHIELD_TURRET; // 400
 
 // Shield recharge (delay before regen starts; rate while regenerating)
 constexpr float SHIELD_DELAY_FIGHTER = 4.0f;
@@ -261,9 +277,9 @@ constexpr float PLAYER_SHIELD_FLASH = 0.7f;  // sec — bubble visible after hit
 constexpr float PLAYER_SHIELD_RADIUS = 4.5f; // world units, sphere radius
 
 // Fighter return-fire stats — ~25 DPS per spec player-survivability table
-constexpr float FIGHTER_FIRE_RATE = 0.20f;     // sec between shots
-constexpr float FIGHTER_FIRE_DAMAGE = 5.0f;    // 5 / 0.20 = 25 DPS
-constexpr float FIGHTER_PROJ_SPEED = 90.0f;    // slower than player cannon
+constexpr float FIGHTER_FIRE_RATE = 0.20f;  // sec between shots
+constexpr float FIGHTER_FIRE_DAMAGE = 5.0f; // 5 / 0.20 = 25 DPS
+constexpr float FIGHTER_PROJ_SPEED = 90.0f; // slower than player cannon
 constexpr float FIGHTER_PROJ_RANGE = 80.0f;
 constexpr float FIGHTER_THRUST = 18.0f;        // m/s² forward thrust
 constexpr float FIGHTER_MAX_SPEED = 35.0f;     // slower than player
@@ -273,10 +289,10 @@ constexpr float FIGHTER_PREFERRED_ALT = 60.0f; // AGL hover target
 // Drone — kamikaze swarm enemy. No weapons; damages by contact.
 // Boids-style flocking (separation + alignment + cohesion) plus a
 // pursuit force toward the player. 1-shot kill from Cannon (TTK 0.08s).
-constexpr float DRONE_CONTACT_DAMAGE = 10.0f;  // damage to player on impact
-constexpr float DRONE_THRUST = 26.0f;          // m/s² (faster than fighter)
+constexpr float DRONE_CONTACT_DAMAGE = 10.0f; // damage to player on impact
+constexpr float DRONE_THRUST = 26.0f;         // m/s² (faster than fighter)
 constexpr float DRONE_MAX_SPEED = 30.0f;
-constexpr float DRONE_PREFERRED_ALT = 30.0f;   // AGL hover target
+constexpr float DRONE_PREFERRED_ALT = 30.0f; // AGL hover target
 constexpr float DRONE_HIT_RADIUS = 1.5f;
 // Boids weights / radii
 constexpr float DRONE_SEP_RADIUS = 5.0f;
@@ -291,15 +307,15 @@ constexpr float DRONE_PURSUE_WEIGHT = 1.4f;
 // drifting at high altitude. Fragile on its own (TTK 0.5s), so the
 // player can stop the drone bleed by killing the seeder. Force
 // multiplier — one seeder left alive can spawn an entire swarm.
-constexpr float SEEDER_THRUST = 8.0f;            // m/s² (slow)
-constexpr float SEEDER_MAX_SPEED = 14.0f;        // top horizontal speed
-constexpr float SEEDER_PREFERRED_ALT = 95.0f;    // hovers high — above fighter
-constexpr float SEEDER_HIT_RADIUS = 3.0f;        // fat target — easy to hit
-constexpr float SEEDER_DEPLOY_INTERVAL = 4.0f;   // sec between drone drops
-constexpr float SEEDER_DEPLOY_RANGE = 240.0f;    // only deploys if player closer
-constexpr float SEEDER_FIRST_DROP_DELAY = 2.0f;  // grace period after spawn
-constexpr float SEEDER_DRIFT_RADIUS = 120.0f;    // orbit radius around player
-constexpr float SEEDER_RETREAT_RANGE = 90.0f;    // closer than this = peel away
+constexpr float SEEDER_THRUST = 8.0f;           // m/s² (slow)
+constexpr float SEEDER_MAX_SPEED = 14.0f;       // top horizontal speed
+constexpr float SEEDER_PREFERRED_ALT = 95.0f;   // hovers high — above fighter
+constexpr float SEEDER_HIT_RADIUS = 3.0f;       // fat target — easy to hit
+constexpr float SEEDER_DEPLOY_INTERVAL = 4.0f;  // sec between drone drops
+constexpr float SEEDER_DEPLOY_RANGE = 240.0f;   // only deploys if player closer
+constexpr float SEEDER_FIRST_DROP_DELAY = 2.0f; // grace period after spawn
+constexpr float SEEDER_DRIFT_RADIUS = 120.0f;   // orbit radius around player
+constexpr float SEEDER_RETREAT_RANGE = 90.0f;   // closer than this = peel away
 
 // Carrier — boss-tier enemy. Hovers high overhead and continuously
 // spawns drones. Four-sector directional shield is the headline
@@ -313,15 +329,15 @@ constexpr float SEEDER_RETREAT_RANGE = 90.0f;    // closer than this = peel away
 // drip + opportunity cost (every second the Carrier is alive is
 // another drone in your face). Same hover-and-drift pattern as
 // Seeder but lower drift speed, higher altitude.
-constexpr float CARRIER_THRUST = 6.0f;            // m/s² (very slow)
-constexpr float CARRIER_MAX_SPEED = 10.0f;        // top horizontal speed
-constexpr float CARRIER_PREFERRED_ALT = 130.0f;   // above everything else
-constexpr float CARRIER_HIT_RADIUS = 6.0f;        // huge target
-constexpr float CARRIER_DRIFT_RADIUS = 160.0f;    // orbit radius around player
-constexpr float CARRIER_RETREAT_RANGE = 120.0f;   // peel away if closer
-constexpr float CARRIER_DEPLOY_INTERVAL = 1.8f;   // sec between drone drops
-constexpr float CARRIER_DEPLOY_RANGE = 320.0f;    // wide engagement
-constexpr float CARRIER_FIRST_DROP_DELAY = 3.0f;  // grace after spawn
+constexpr float CARRIER_THRUST = 6.0f;           // m/s² (very slow)
+constexpr float CARRIER_MAX_SPEED = 10.0f;       // top horizontal speed
+constexpr float CARRIER_PREFERRED_ALT = 130.0f;  // above everything else
+constexpr float CARRIER_HIT_RADIUS = 6.0f;       // huge target
+constexpr float CARRIER_DRIFT_RADIUS = 160.0f;   // orbit radius around player
+constexpr float CARRIER_RETREAT_RANGE = 120.0f;  // peel away if closer
+constexpr float CARRIER_DEPLOY_INTERVAL = 1.8f;  // sec between drone drops
+constexpr float CARRIER_DEPLOY_RANGE = 320.0f;   // wide engagement
+constexpr float CARRIER_FIRST_DROP_DELAY = 3.0f; // grace after spawn
 
 // Bomber — heavy bruiser. Slower than Fighter on every axis (turn,
 // thrust, top speed) but heavier hull + shield (TTK 5s) and a slow
@@ -330,32 +346,32 @@ constexpr float CARRIER_FIRST_DROP_DELAY = 3.0f;  // grace after spawn
 // PURSUE/ATTACK/EVADE state machine as Fighter, with the same
 // damaged-engines visual when below 25% hull. STRAFE_FRIENDLY state
 // is deferred to 5g when friendly units land.
-constexpr float BOMBER_FIRE_RATE = 0.80f;       // sec between shots (slow)
-constexpr float BOMBER_FIRE_DAMAGE = 25.0f;     // 25 / 0.8 = 31.25 DPS
-constexpr float BOMBER_PROJ_SPEED = 70.0f;      // slower tracer (dodgeable)
+constexpr float BOMBER_FIRE_RATE = 0.80f;   // sec between shots (slow)
+constexpr float BOMBER_FIRE_DAMAGE = 25.0f; // 25 / 0.8 = 31.25 DPS
+constexpr float BOMBER_PROJ_SPEED = 70.0f;  // slower tracer (dodgeable)
 constexpr float BOMBER_PROJ_RANGE = 110.0f;
-constexpr float BOMBER_THRUST = 14.0f;          // m/s² forward thrust
-constexpr float BOMBER_MAX_SPEED = 28.0f;       // top horizontal speed
-constexpr float BOMBER_TURN_RATE = 0.7f;        // rad/s yaw rate
-constexpr float BOMBER_PREFERRED_ALT = 50.0f;   // AGL hover target
-constexpr float BOMBER_HIT_RADIUS = 4.0f;       // big target
+constexpr float BOMBER_THRUST = 14.0f;        // m/s² forward thrust
+constexpr float BOMBER_MAX_SPEED = 28.0f;     // top horizontal speed
+constexpr float BOMBER_TURN_RATE = 0.7f;      // rad/s yaw rate
+constexpr float BOMBER_PREFERRED_ALT = 50.0f; // AGL hover target
+constexpr float BOMBER_HIT_RADIUS = 4.0f;     // big target
 
 // Ground Turret — stationary, terrain-anchored. Tracks the player
 // with a rotating barrel and fires when in range and aligned. First
 // low-altitude threat, makes hugging the ground risky. No shield,
 // medium hull (TTK 4.0s), long engagement range so the player has to
 // actively suppress them rather than ignoring.
-constexpr float TURRET_AIM_RATE = 1.5f;          // rad/s rotation cap
-constexpr float TURRET_ENGAGE_RANGE = 180.0f;    // start tracking inside this
-constexpr float TURRET_FIRE_RANGE = 150.0f;      // open fire inside this
-constexpr float TURRET_FIRE_CONE_ENEMY = 0.10f;  // ~6° fire cone
-constexpr float TURRET_ENEMY_FIRE_RATE = 0.45f;  // sec between shots
-constexpr float TURRET_ENEMY_DAMAGE = 8.0f;      // ~18 DPS
-constexpr float TURRET_PROJ_SPEED = 100.0f;      // tracer
+constexpr float TURRET_AIM_RATE = 1.5f;         // rad/s rotation cap
+constexpr float TURRET_ENGAGE_RANGE = 180.0f;   // start tracking inside this
+constexpr float TURRET_FIRE_RANGE = 150.0f;     // open fire inside this
+constexpr float TURRET_FIRE_CONE_ENEMY = 0.10f; // ~6° fire cone
+constexpr float TURRET_ENEMY_FIRE_RATE = 0.45f; // sec between shots
+constexpr float TURRET_ENEMY_DAMAGE = 8.0f;     // ~18 DPS
+constexpr float TURRET_PROJ_SPEED = 100.0f;     // tracer
 constexpr float TURRET_PROJ_RANGE = 220.0f;
 constexpr float TURRET_HIT_RADIUS = 2.8f;
-constexpr float TURRET_MOUNT_HEIGHT = 1.6f;      // base above terrain
-constexpr float TURRET_BARREL_HEIGHT = 3.4f;     // barrel pivot above ground
+constexpr float TURRET_MOUNT_HEIGHT = 1.6f;       // base above terrain
+constexpr float TURRET_BARREL_HEIGHT = 3.4f;      // barrel pivot above ground
 constexpr float TURRET_GROUND_SPAWN_DIST = 90.0f; // place this far from player
 
 // Pool sizes — pre-allocated, no heap in hot path
@@ -365,11 +381,11 @@ constexpr int PROJECTILE_POOL_SIZE = 512; // player + enemy projectiles
 // Wave manager — staggered spawning + intermission between waves.
 // Wave list is hardcoded for now; difficulty escalates after the
 // table runs out (count grows linearly past the last defined wave).
-constexpr float WAVE_INTERMISSION = 5.0f;     // sec between waves
-constexpr float WAVE_FIRST_DELAY = 2.0f;      // sec before wave 1 starts
-constexpr float WAVE_SPAWN_RING_MIN = 130.0f; // min radius around player
-constexpr float WAVE_SPAWN_RING_MAX = 220.0f; // max radius
-constexpr float WAVE_SPAWN_ALT_OFFSET = 25.0f;// spawn altitude above player
+constexpr float WAVE_INTERMISSION = 5.0f;      // sec between waves
+constexpr float WAVE_FIRST_DELAY = 2.0f;       // sec before wave 1 starts
+constexpr float WAVE_SPAWN_RING_MIN = 130.0f;  // min radius around player
+constexpr float WAVE_SPAWN_RING_MAX = 220.0f;  // max radius
+constexpr float WAVE_SPAWN_ALT_OFFSET = 25.0f; // spawn altitude above player
 
 // Collision
 constexpr float HIT_RADIUS_PROJECTILE = 0.4f; // projectile sphere radius
@@ -402,13 +418,14 @@ constexpr float EXPLOSION_LIFETIME = 0.8f;
 // emit cycle. Small pixel-dot visuals — flat-shaded cubes here match
 // the geometric, hard-edged look the user remembers.
 constexpr float EXHAUST_LIFETIME = 0.45f;
-constexpr float EXHAUST_EMIT_RATE = 130.0f;     // particles/sec while thrusting
-constexpr float EXHAUST_INITIAL_SIZE = 0.30f;   // world units (cube side)
-constexpr float EXHAUST_INITIAL_SPEED = 22.0f;  // m/s downward (local-down)
-constexpr float EXHAUST_SPREAD = 1.6f;          // m/s lateral random spread
-constexpr float EXHAUST_GRAVITY = 9.8f;         // matches world NEWTON_GRAVITY
-constexpr float EXHAUST_RESTITUTION = 0.5f;     // Y kept on bounce (original 1/2)
-constexpr float EXHAUST_BOUNCE_FRICTION = 0.5f; // X/Z kept on bounce (original 1/2)
+constexpr float EXHAUST_EMIT_RATE = 130.0f;    // particles/sec while thrusting
+constexpr float EXHAUST_INITIAL_SIZE = 0.30f;  // world units (cube side)
+constexpr float EXHAUST_INITIAL_SPEED = 22.0f; // m/s downward (local-down)
+constexpr float EXHAUST_SPREAD = 1.6f;         // m/s lateral random spread
+constexpr float EXHAUST_GRAVITY = 9.8f;        // matches world NEWTON_GRAVITY
+constexpr float EXHAUST_RESTITUTION = 0.5f; // Y kept on bounce (original 1/2)
+constexpr float EXHAUST_BOUNCE_FRICTION =
+    0.5f; // X/Z kept on bounce (original 1/2)
 
 // ----------------------------------------------------------------
 // Ground shadow — player ship's drop shadow on terrain. Both alpha
@@ -416,12 +433,12 @@ constexpr float EXHAUST_BOUNCE_FRICTION = 0.5f; // X/Z kept on bounce (original 
 // convention) so the shadow reads as a strong altitude cue at low
 // AGL and disappears at modest height.
 // ----------------------------------------------------------------
-constexpr float SHADOW_RADIUS = 3.2f;          // world units, AGL=0
-constexpr float SHADOW_FADE_MAX_AGL = 80.0f;   // fully transparent above this
-constexpr float SHADOW_FADE_EXPONENT = 1.6f;   // >1 = more aggressive mid-range
-constexpr float SHADOW_BASE_ALPHA = 180.0f;    // alpha at AGL=0 (max 255)
-constexpr float SHADOW_SHRINK = 0.7f;          // 1 − 0.7 = 30% radius at fade max
-constexpr float SHADOW_MARGIN = 0.5f;          // height above local terrain
+constexpr float SHADOW_RADIUS = 3.2f;        // world units, AGL=0
+constexpr float SHADOW_FADE_MAX_AGL = 80.0f; // fully transparent above this
+constexpr float SHADOW_FADE_EXPONENT = 1.6f; // >1 = more aggressive mid-range
+constexpr float SHADOW_BASE_ALPHA = 180.0f;  // alpha at AGL=0 (max 255)
+constexpr float SHADOW_SHRINK = 0.7f;        // 1 − 0.7 = 30% radius at fade max
+constexpr float SHADOW_MARGIN = 0.5f;        // height above local terrain
 
 // ----------------------------------------------------------------
 // Audio
@@ -439,15 +456,18 @@ constexpr float AUDIO_MAX_DISTANCE = 300.0f;
 // ----------------------------------------------------------------
 constexpr float SEA_LEVEL = 0.30f; // fraction of HEIGHT_MAX — ~30% ocean
 
-constexpr int FBM_OCTAVES = 7;          // octaves accumulated for each cell
-constexpr int FBM_LARGEST_CELL = 512;   // largest lattice spacing (heightmap cells)
-                                        // 512, 256, 128, 64, 32, 16, 8 — all divide 1024
-constexpr float FBM_PERSISTENCE = 0.50f;// amplitude multiplier per octave
-                                        // Lower = bigger continents, fewer islands
-constexpr float FBM_SHAPE_EXPONENT = 1.40f; // symmetric contrast around 0.5
-                                        // >1 = peaks rise, valleys deepen,
-                                        // median stays put → SEA_LEVEL holds
-                                        // its meaning regardless of shaping
+constexpr int FBM_OCTAVES = 7; // octaves accumulated for each cell
+constexpr int FBM_LARGEST_CELL =
+    512; // largest lattice spacing (heightmap cells)
+         // 512, 256, 128, 64, 32, 16, 8 — all divide 1024
+constexpr float FBM_PERSISTENCE =
+    0.50f; // amplitude multiplier per octave
+           // Lower = bigger continents, fewer islands
+constexpr float FBM_SHAPE_EXPONENT =
+    1.40f; // symmetric contrast around 0.5
+           // >1 = peaks rise, valleys deepen,
+           // median stays put → SEA_LEVEL holds
+           // its meaning regardless of shaping
 
 // Mountain layer — ridged fBM masked to high-elevation regions only.
 // `(1 - |perlin|)^2` gives sharp ridge lines (Musgrave's classic
@@ -483,9 +503,9 @@ constexpr int LAKE_COUNT = 14;
 constexpr float LAKE_MIN_H = 0.42f;
 constexpr float LAKE_MAX_H = 0.65f;
 constexpr int LAKE_MAX_CELLS = 600;
-constexpr int LAKE_MIN_SIZE = 20;        // drop floods smaller than this
-constexpr float LAKE_FILL_EPSILON = 0.012f; // basin-fill height margin
-constexpr float LAKE_MIN_DEPTH = 0.003f;    // depth below higher neighbours
+constexpr int LAKE_MIN_SIZE = 20;             // drop floods smaller than this
+constexpr float LAKE_FILL_EPSILON = 0.012f;   // basin-fill height margin
+constexpr float LAKE_MIN_DEPTH = 0.003f;      // depth below higher neighbours
 constexpr int LAKE_MIN_HIGHER_NEIGHBOURS = 7; // of 8; lower = more lakes
 
 } // namespace Config

@@ -49,6 +49,14 @@ enum class ProjectileKind : uint8_t {
   Cannon = 0,
   Plasma,
   Missile,
+  // Heavy gravity-bomb: no propulsion, falls under gravity, big
+  // splash radius on terrain impact. Used for Depth Charge.
+  DepthCharge,
+  // Cluster parent carrier — flies like a missile until it nears the
+  // target, then splits into 4 child Missiles that spread out and
+  // reacquire individually. Does NOT damage anything itself; its
+  // job is delivery.
+  ClusterParent,
 };
 
 // AI state machine — Drones and projectiles ignore this.

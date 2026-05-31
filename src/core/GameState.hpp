@@ -158,6 +158,19 @@ private:
   // for raylib's KEY_KB_MENU (348) plus headroom.
   std::array<bool, 512> m_keyWasDown{};
 
+  // Beam Laser this-tick render state. The beam damages and updates
+  // each physics tick, but it's drawn from the 3D pass; we stash the
+  // endpoints + hit id here so the render path can pull them.
+  bool m_beamActive = false;
+  Vector3 m_beamLineFrom{};
+  Vector3 m_beamLineTo{};
+  uint32_t m_beamHitId = 0;
+
+  // Auto Turret cooldown lives on the gameplay-side (GameState owns
+  // EntityManager and the firing logic), not on Player. The Player
+  // only flags whether the subsystem is enabled.
+  float m_autoTurretTimer = 0.0f;
+
   // HUD font handle. Loaded in init() via initHudFont(); falls back
   // to the raylib default when no system TTF is found.
   Font m_hudFont = {};

@@ -59,6 +59,16 @@ public:
   // pending flag fires; no projectile involved (instant area effect).
   void applyEMPStun(Vector3 pos, float radius, float duration);
 
+  // Beam Laser hit resolution — raycast from origin along dir up to
+  // maxRange against every alive enemy. Returns the entity id of the
+  // nearest hit (0 if no hit), and writes the hit distance + impact
+  // point. Applies `dps * dt` damage to the hit entity. GameState
+  // draws the beam line from origin to outHitPos (or origin + dir *
+  // maxRange if no hit).
+  uint32_t beamRaycast(Vector3 origin, Vector3 dir, float maxRange,
+                       float damageThisTick, ParticleSystem &particles,
+                       Vector3 &outHitPos);
+
   void update(float dt, const Planet &planet, Player &player,
               ParticleSystem &particles);
   void render() const;
