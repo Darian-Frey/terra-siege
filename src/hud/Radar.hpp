@@ -57,6 +57,14 @@ struct GhostBlip {
   bool active = false;
 };
 
+// Tier 2 missile warning — one per incoming enemy projectile that's
+// closing on the player AND inside RADAR_MISSILE_WARN_MIN. Drawn as
+// a fast-blinking red arrow on the disc rim pointing at the threat.
+struct IncomingThreat {
+  float bearing = 0.0f; // radians in ship-local frame (0 = nose, +X = right)
+  float tti = 0.0f;     // seconds to closest approach
+};
+
 class Radar {
 public:
   Radar() = default;
@@ -109,4 +117,36 @@ private:
   float m_gameTime = 0.0f;
 
   bool m_boosted = false; // wired to RadarBooster friendly when alive
+
+  // Tier 2/3 state
+  // Snapshot of last-tick contacts so we can spot disappearances
+  // (entity dies / leaves the pool) and spawn ghosts at last-known pos.
+  struct PrevContact {
+    uint32_t id = 0;
+    Vector3 pos = {};
+    BlipType type = BlipType::Drone;
+  };
+  std::vector<PrevContact> m_prevContacts;
+
+  // Jam factor — 0 = clean, 1 = max jitter. Set per tick from the
+  // distance to the nearest live Carrier (only enemies jam radar).
+  float m_jamFactor = 0.0f;
+
+  // Incoming-threat list rebuilt each tick from the projectile pool.
+  // Capped at a reasonable max — chaos still shouldn't fill the rim.
+  std::vector<IncomingThreat> m_threats;
+
+  // Helpers
+  void updateGhosts(float dt);
+  // Apply jam jitter to a screen-space blip position. seed is the
+  // contact's entity id so per-blip jitter stays stable frame-to-frame
+  // (with a gameTime perturbation so the noise is actually animated).
+  Vector2 applyJam(Vector2 pos, uint32_t seed) const;
+  // Draw a small velocity-direction arrow at radarPos pointing along
+  // the contact's horizontal velocity, length proportional to speed.
+  void drawVelocityArrow(Vector2 radarPos, Vector3 velocity,
+                         float playerYaw, Color col) const;
+  // Draw the rim-mounted incoming-missile warnings as red blinking
+  // arrows pointing at each threat's bearing.
+  void drawMissileWarnings(Vector2 centre, float radius) const;
 };

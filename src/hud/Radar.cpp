@@ -63,7 +63,6 @@ inline unsigned char clampU(float v) {
 // ====================================================================
 void Radar::update(float dt, const EntityManager &entities, Vector3 playerPos,
                    float playerYaw, float gameTime) {
-  (void)dt;
   m_playerPos = playerPos;
   m_playerYaw = playerYaw;
   m_gameTime = gameTime;
@@ -74,9 +73,18 @@ void Radar::update(float dt, const EntityManager &entities, Vector3 playerPos,
                             : Config::RADAR_BASE_RANGE;
 
   m_contacts.clear();
+  // Tier 2 jam factor — scan for the nearest live Carrier. Inside
+  // RADAR_JAM_RANGE, jamFactor lerps 0 → 1 as the player closes.
+  // Friendlies and other enemy types don't jam.
+  float carrierDist = 1e9f;
   for (const Entity &e : entities.entities()) {
     if (!e.alive) continue;
-    if (e.type == EntityType::Projectile) continue; // Tier 2 missile-only
+    if (e.type == EntityType::Projectile) continue;
+
+    if (e.type == EntityType::Carrier) {
+      float d = Vector3Distance(e.pos, playerPos);
+      if (d < carrierDist) carrierDist = d;
+    }
 
     Vector3 d = Vector3Subtract(e.pos, playerPos);
     float horiz = sqrtf(d.x * d.x + d.z * d.z);
@@ -93,6 +101,176 @@ void Radar::update(float dt, const EntityManager &entities, Vector3 playerPos,
     c.colour = col;
     c.id = e.id;
     m_contacts.push_back(c);
+  }
+  // Jam strength — 1.0 at zero distance, linearly fades to 0 at
+  // RADAR_JAM_RANGE. Clamped.
+  if (carrierDist < Config::RADAR_JAM_RANGE) {
+    m_jamFactor = 1.0f - (carrierDist / Config::RADAR_JAM_RANGE);
+    if (m_jamFactor < 0.0f) m_jamFactor = 0.0f;
+    if (m_jamFactor > 1.0f) m_jamFactor = 1.0f;
+  } else {
+    m_jamFactor = 0.0f;
+  }
+
+  // Tier 3 ghost-blip persistence — any contact id that was present
+  // last tick but is missing this tick (entity died / slot recycled)
+  // gets a ghost at its last known position. Decay handled inside
+  // updateGhosts().
+  for (const PrevContact &p : m_prevContacts) {
+    bool stillThere = false;
+    for (const RadarContact &c : m_contacts) {
+      if (c.id == p.id) {
+        stillThere = true;
+        break;
+      }
+    }
+    if (stillThere) continue;
+    // Find a free slot in the ghost pool, or recycle the oldest.
+    int slot = -1;
+    float oldest = 1e9f;
+    for (size_t i = 0; i < m_ghosts.size(); ++i) {
+      if (!m_ghosts[i].active) {
+        slot = static_cast<int>(i);
+        break;
+      }
+      if (m_ghosts[i].lifetime < oldest) {
+        oldest = m_ghosts[i].lifetime;
+        slot = static_cast<int>(i);
+      }
+    }
+    if (slot < 0) continue;
+    m_ghosts[slot].active = true;
+    m_ghosts[slot].lastPos = p.pos;
+    m_ghosts[slot].type = p.type;
+    m_ghosts[slot].lifetime = Config::RADAR_GHOST_LIFETIME;
+  }
+  // Tick existing ghosts; expire when lifetime hits 0.
+  updateGhosts(dt);
+
+  // Snapshot current contacts for next tick's ghost-detection pass.
+  m_prevContacts.clear();
+  m_prevContacts.reserve(m_contacts.size());
+  for (const RadarContact &c : m_contacts) {
+    m_prevContacts.push_back({c.id, c.position, c.blipType});
+  }
+
+  // Tier 2 missile-warning ring — scan the projectile pool for
+  // enemy-owned shots that are closing on the player. For each one,
+  // compute closest-approach time (TTI) using the relative velocity
+  // and gate by RADAR_MISSILE_WARN_MIN + RADAR_MISSILE_WARN_TTI.
+  m_threats.clear();
+  for (const Entity &p : entities.projectiles()) {
+    if (!p.alive) continue;
+    if (p.owner != ProjectileOwner::Enemy) continue;
+    Vector3 rel = Vector3Subtract(playerPos, p.pos);
+    float dist = Vector3Length(rel);
+    if (dist > Config::RADAR_MISSILE_WARN_MIN) continue;
+    // Closing rate = -d/dt(distance) = dot(rel, p.vel) / |rel|.
+    // Positive means the projectile is heading toward the player.
+    float relSpeed = Vector3DotProduct(rel, p.vel);
+    if (relSpeed <= 0.0f) continue;
+    relSpeed /= (dist > 0.001f ? dist : 1.0f);
+    float tti = dist / (relSpeed > 0.1f ? relSpeed : 0.1f);
+    if (tti > Config::RADAR_MISSILE_WARN_TTI) continue;
+
+    // Bearing in ship-local space. Same world→local rotation as
+    // worldToRadar uses.
+    float dx = p.pos.x - playerPos.x;
+    float dz = p.pos.z - playerPos.z;
+    float c = cosf(playerYaw);
+    float s = sinf(playerYaw);
+    float lx = dx * c - dz * s;
+    float lz = dx * s + dz * c;
+    // atan2(x, z): 0 = nose (+Z), π/2 = starboard (+X).
+    IncomingThreat t;
+    t.bearing = atan2f(lx, lz);
+    t.tti = tti;
+    m_threats.push_back(t);
+    if (m_threats.size() >= 8) break; // cap rim clutter
+  }
+}
+
+void Radar::updateGhosts(float dt) {
+  for (GhostBlip &g : m_ghosts) {
+    if (!g.active) continue;
+    g.lifetime -= dt;
+    if (g.lifetime <= 0.0f) {
+      g.active = false;
+      g.lifetime = 0.0f;
+    }
+  }
+}
+
+// Per-blip jam jitter. Seed combines the entity id with the current
+// game time so the noise is stable per-blip but animated globally.
+// Magnitude scales with m_jamFactor (0..1).
+Vector2 Radar::applyJam(Vector2 pos, uint32_t seed) const {
+  if (m_jamFactor <= 0.001f) return pos;
+  // xorshift32 per-blip. Mix in gameTime so the offset animates.
+  uint32_t s = seed * 2654435761u +
+               static_cast<uint32_t>(m_gameTime * 17.0f);
+  s ^= s << 13;
+  s ^= s >> 17;
+  s ^= s << 5;
+  float fx = (static_cast<float>(s & 0xFFFF) / 65535.0f) - 0.5f;
+  s = s * 1103515245u + 12345u;
+  float fy = (static_cast<float>(s & 0xFFFF) / 65535.0f) - 0.5f;
+  float mag = Config::RADAR_JAM_MAX_OFFSET * m_jamFactor;
+  return {pos.x + fx * 2.0f * mag, pos.y + fy * 2.0f * mag};
+}
+
+void Radar::drawVelocityArrow(Vector2 radarPos, Vector3 velocity,
+                              float playerYaw, Color col) const {
+  // Rotate velocity into ship-local space — same convention as
+  // worldToRadar so the arrow lines up with the blip's motion on
+  // the disc.
+  float c = cosf(playerYaw);
+  float s = sinf(playerYaw);
+  float vx = velocity.x * c - velocity.z * s;
+  float vz = velocity.x * s + velocity.z * c;
+  float spd = sqrtf(vx * vx + vz * vz);
+  if (spd < 1.0f) return; // stationary contacts get no arrow
+
+  // Length proportional to speed, capped at RADAR_VECTOR_MAX_LEN.
+  // Reference speed: NEWTON_MAX_SPEED (player top speed). Anything
+  // faster reads as "max length".
+  float t = spd / Config::NEWTON_MAX_SPEED;
+  if (t > 1.0f) t = 1.0f;
+  float len = Config::RADAR_VECTOR_MAX_LEN * t;
+  // Local +Z (forward) maps to screen-up (-Y); +X to screen-right.
+  Vector2 tip = {radarPos.x + (vx / spd) * len,
+                 radarPos.y - (vz / spd) * len};
+  Color faded = {col.r, col.g, col.b,
+                 static_cast<unsigned char>(col.a * 0.7f)};
+  DrawLineEx(radarPos, tip, 1.0f, faded);
+}
+
+void Radar::drawMissileWarnings(Vector2 centre, float radius) const {
+  if (m_threats.empty()) return;
+  // Fast blink (0.1s period) — alarm cadence regardless of distance.
+  bool on = fmodf(m_gameTime, 0.20f) < 0.12f;
+  if (!on) return;
+  for (const IncomingThreat &t : m_threats) {
+    // Bearing 0 = nose (top of disc, screen-up). Convert to screen
+    // angle: screen x = sin(b), screen y = -cos(b).
+    float bx = sinf(t.bearing);
+    float bz = cosf(t.bearing);
+    Vector2 dirS = {bx, -bz};
+    // Place an arrow on the rim pointing inward (toward the player)
+    // — that's the "incoming" reading; the arrow LOOKS in toward
+    // centre, pointing where the threat is coming from.
+    float rimR = radius * 1.05f;
+    Vector2 base = {centre.x + dirS.x * rimR,
+                    centre.y + dirS.y * rimR};
+    // Build a small triangle pointing inward (toward centre).
+    Vector2 inwardDir = {-dirS.x, -dirS.y};
+    Vector2 perp = {-inwardDir.y, inwardDir.x};
+    float L = 8.0f, W = 5.0f;
+    Vector2 tip = {base.x + inwardDir.x * L,
+                   base.y + inwardDir.y * L};
+    Vector2 a = {base.x + perp.x * W, base.y + perp.y * W};
+    Vector2 b = {base.x - perp.x * W, base.y - perp.y * W};
+    DrawTriangle(tip, a, b, {255, 60, 60, 240});
   }
 }
 
@@ -205,9 +383,9 @@ void Radar::drawBlip(Vector2 radarPos, float distance, BlipType type,
   case BlipType::Drone:    DrawCircleV(radarPos, 2.0f, col); break;
   case BlipType::Seeder:   DrawCircleV(radarPos, 3.0f, col); break;
   case BlipType::Fighter: {
-    // Triangle pointing in horizontal travel direction (rotated to
-    // radar space the same way contact position is — see
-    // worldToRadar; using +yaw inverts world→local).
+    // Triangle pointing in horizontal travel direction. (Tier 3
+    // velocity arrow already drawn separately in draw() — this is
+    // just the shape pointing along its own velocity vector.)
     float cy = cosf(playerYaw);
     float sy = sinf(playerYaw);
     float vx = velocity.x * cy - velocity.z * sy;
@@ -247,21 +425,48 @@ void Radar::drawBlip(Vector2 radarPos, float distance, BlipType type,
 void Radar::draw(Vector2 discCentre, float discRadius) const {
   drawDisc(discCentre, discRadius);
 
-  // Blips — clamp out-of-range contacts to the disc rim so the player
-  // still sees a directional indicator even for distant threats.
+  // Ghost blips first — drawn underneath active blips so a fresh
+  // contact at the same position overdraws cleanly.
+  for (const GhostBlip &g : m_ghosts) {
+    if (!g.active) continue;
+    Vector2 rp = worldToRadar(g.lastPos, discCentre, discRadius);
+    Vector2 toGhost = {rp.x - discCentre.x, rp.y - discCentre.y};
+    float bDist = sqrtf(toGhost.x * toGhost.x + toGhost.y * toGhost.y);
+    if (bDist > discRadius) continue; // out of range — drop ghost from view
+    float alphaF = g.lifetime / Config::RADAR_GHOST_LIFETIME;
+    if (alphaF < 0.0f) alphaF = 0.0f;
+    if (alphaF > 1.0f) alphaF = 1.0f;
+    unsigned char a = static_cast<unsigned char>(120 * alphaF);
+    Color ghost = {180, 60, 60, a};
+    // Subtle X — distinct from a live blip shape.
+    DrawLineEx({rp.x - 3.0f, rp.y - 3.0f}, {rp.x + 3.0f, rp.y + 3.0f},
+               1.0f, ghost);
+    DrawLineEx({rp.x - 3.0f, rp.y + 3.0f}, {rp.x + 3.0f, rp.y - 3.0f},
+               1.0f, ghost);
+  }
+
+  // Active blips — clamp out-of-range contacts to the disc rim so the
+  // player still sees a directional indicator even for distant threats.
+  // Jam jitter applied per-contact for Tier 2 Carrier-proximity effect.
   for (const auto &c : m_contacts) {
     Vector2 rp = worldToRadar(c.position, discCentre, discRadius);
     Vector2 toBlip = {rp.x - discCentre.x, rp.y - discCentre.y};
     float bDist = sqrtf(toBlip.x * toBlip.x + toBlip.y * toBlip.y);
     if (bDist > discRadius) {
-      // Clip to rim
       float k = discRadius / bDist;
       rp = {discCentre.x + toBlip.x * k, discCentre.y + toBlip.y * k};
     }
+    // Apply jam jitter — no-op when no live Carrier is near.
+    rp = applyJam(rp, c.id);
 
     Color tinted = altitudeTint(c.colour, c.altDelta);
+    // Velocity arrow first so the blip shape sits on top of its tail.
+    drawVelocityArrow(rp, c.velocity, m_playerYaw, tinted);
     drawBlip(rp, c.distance, c.blipType, tinted, c.velocity, m_playerYaw);
   }
+
+  // Incoming-missile warning arrows on the rim.
+  drawMissileWarnings(discCentre, discRadius);
 
   // Altitude strip immediately right of the disc.
   const float stripW = 16.0f;

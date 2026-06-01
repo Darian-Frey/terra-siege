@@ -95,6 +95,12 @@ public:
   const std::array<Entity, Config::ENTITY_POOL_SIZE> &entities() const {
     return m_entities;
   }
+  // Projectile iteration — used by Radar tier 2's incoming-missile
+  // warning. Read-only; consumers should check `alive` per slot.
+  const std::array<Entity, Config::PROJECTILE_POOL_SIZE> &
+  projectiles() const {
+    return m_projectiles;
+  }
 
 private:
   std::array<Entity, Config::ENTITY_POOL_SIZE> m_entities{};
