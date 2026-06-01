@@ -16,7 +16,17 @@
 // GameState — top-level state machine
 // ====================================================================
 
-enum class AppState { MainMenu, Playing, Paused, GameOver, Victory };
+enum class AppState {
+  MainMenu,
+  // Pre-flight loadout selection. Sits between MainMenu and Playing;
+  // exited by clicking LAUNCH (applies the chosen weapons to the
+  // player and transitions to Playing) or BACK (returns to MainMenu).
+  LoadoutSelect,
+  Playing,
+  Paused,
+  GameOver,
+  Victory,
+};
 enum class CamMode { Follow, FreeRoam }; // F1 toggles in dev mode
 
 // Five-view player camera system. Selected with keys 1–5 while in
@@ -79,13 +89,19 @@ private:
   void drawMainMenu();
   void drawPauseMenu();
   void drawSettingsPanel();
+  void drawLoadoutSelect();
 
   // State transitions
   void enterMainMenu();
-  void enterPlaying();   // first-time game start from main menu
+  void enterLoadoutSelect(); // open pre-flight loadout picker
+  void enterPlaying();       // apply loadout + start combat
   void enterPaused();
   void resumePlaying();  // unpause back to Playing without resetting world
   void resetCombat();    // clear entities, respawn fighters, reset player
+
+  // Apply the currently-selected loadout to the player. Called by
+  // enterPlaying() after resetCombat() has respawned the player.
+  void applyLoadout();
 
   // Apply current settings to runtime state (player flags, etc.).
   // Live-applied settings call this on each toggle.
@@ -176,6 +192,18 @@ private:
   // game-over condition. Reset by spawnFriendliesForRound().
   int m_friendlyTotalAtStart = 0;
   bool m_friendliesLostHandled = false;
+
+  // Pre-flight loadout (5f). Selected on the LoadoutSelect screen,
+  // applied to the player by applyLoadout() right before Playing
+  // begins. Persists across restarts so "Restart" from GameOver
+  // can skip the picker and re-use the last loadout.
+  struct Loadout {
+    Player::PrimaryWeapon primary = Player::PrimaryWeapon::Cannon;
+    Player::SecondaryWeapon secondary = Player::SecondaryWeapon::Missile;
+    Player::SpecialWeapon special = Player::SpecialWeapon::EMP;
+    bool autoTurret = false;
+  };
+  Loadout m_loadout{};
 
   // Spawn the round's friendly roster on terrain. Called from
   // loadWorld(); deterministic per-seed.

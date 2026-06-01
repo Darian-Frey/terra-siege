@@ -107,6 +107,15 @@ public:
   SpecialWeapon specialWeapon() const { return m_specialWeapon; }
   bool autoTurretEnabled() const { return m_autoTurretEnabled; }
 
+  // Loadout setters — called by the pre-flight LoadoutSelect screen
+  // (5f) right after init() and before the player can take input, so
+  // the chosen primary/secondary/special is the starting weapon for
+  // the round. Tab/Z/X/T cycling still works mid-flight on top.
+  void setPrimaryWeapon(PrimaryWeapon w) { m_primaryWeapon = w; }
+  void setSecondaryWeapon(SecondaryWeapon w) { m_secondaryWeapon = w; }
+  void setSpecialWeapon(SpecialWeapon w) { m_specialWeapon = w; }
+  void setAutoTurretEnabled(bool on) { m_autoTurretEnabled = on; }
+
   // Ammo / energy / cooldown accessors for HUD.
   int missileAmmo() const { return m_missileAmmo; }
   int clusterAmmo() const { return m_clusterAmmo; }

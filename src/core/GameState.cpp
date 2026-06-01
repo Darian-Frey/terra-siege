@@ -1176,6 +1176,7 @@ void GameState::render(float alpha) {
     break;
   }
   case AppState::MainMenu:
+  case AppState::LoadoutSelect:
   case AppState::Paused: {
     // Render the live (or frozen) world as a backdrop so the menu
     // floats over the actual game surface — the player sees what
@@ -1205,6 +1206,8 @@ void GameState::render(float alpha) {
 
     if (m_state == AppState::MainMenu)
       drawMainMenu();
+    else if (m_state == AppState::LoadoutSelect)
+      drawLoadoutSelect();
     else
       drawPauseMenu();
     break;
@@ -1248,6 +1251,9 @@ void GameState::render(float alpha) {
     float by = sh / 2 - 30;
     if (drawMenuButton({bx, by, bw, bh}, "RESTART", mouse, clickEdge))
       enterPlaying();
+    by += bh + 14;
+    if (drawMenuButton({bx, by, bw, bh}, "CHANGE LOADOUT", mouse, clickEdge))
+      enterLoadoutSelect();
     by += bh + 14;
     if (drawMenuButton({bx, by, bw, bh}, "MAIN MENU", mouse, clickEdge))
       enterMainMenu();
@@ -2217,11 +2223,25 @@ void GameState::enterMainMenu() {
   setCursorForGameplay(false);
 }
 
+void GameState::enterLoadoutSelect() {
+  m_state = AppState::LoadoutSelect;
+  m_settingsOpen = false;
+  setCursorForGameplay(false); // need the cursor visible to click options
+}
+
 void GameState::enterPlaying() {
   resetCombat();
+  applyLoadout();
   m_state = AppState::Playing;
   m_settingsOpen = false;
   setCursorForGameplay(true);
+}
+
+void GameState::applyLoadout() {
+  m_player.setPrimaryWeapon(m_loadout.primary);
+  m_player.setSecondaryWeapon(m_loadout.secondary);
+  m_player.setSpecialWeapon(m_loadout.special);
+  m_player.setAutoTurretEnabled(m_loadout.autoTurret);
 }
 
 void GameState::enterPaused() {
@@ -2273,7 +2293,7 @@ void GameState::drawMainMenu() {
   float by = sh / 2 - 30;
 
   if (drawMenuButton({bx, by, bw, bh}, "START GAME", mouse, clickEdge))
-    enterPlaying();
+    enterLoadoutSelect();
   by += bh + 14;
   if (drawMenuButton({bx, by, bw, bh}, "SETTINGS", mouse, clickEdge))
     m_settingsOpen = true;
@@ -2399,6 +2419,128 @@ void GameState::drawSettingsPanel() {
   Rectangle back{px + pw / 2 - 80, py + ph - 60, 160, 40};
   if (drawMenuButton(back, "BACK", mouse, clickEdge)) {
     m_settingsOpen = false;
+  }
+
+  m_lastClickState = clickNow;
+}
+
+// ====================================================================
+// drawLoadoutSelect — pre-flight weapon picker.
+//
+// Four labelled rows (Primary / Secondary / Special / Auto Turret),
+// each rendered as a group of click-to-select pill buttons. The
+// currently-selected option is highlighted. Bottom row holds LAUNCH
+// (applies the loadout + transitions to Playing) and BACK (returns
+// to MainMenu without starting a round).
+//
+// Selection is stored in m_loadout and persists across the
+// LoadoutSelect → Playing → GameOver → LoadoutSelect loop, so the
+// player's choice survives between rounds. The Restart-from-GameOver
+// path bypasses this screen entirely (see drawGameOver).
+// ====================================================================
+void GameState::drawLoadoutSelect() {
+  int sw = GetScreenWidth();
+  int sh = GetScreenHeight();
+  Vector2 mouse = GetMousePosition();
+  bool clickNow = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+  bool clickEdge = clickNow && !m_lastClickState;
+
+  // Dimming overlay
+  DrawRectangle(0, 0, sw, sh, {0, 0, 0, 160});
+
+  // Panel background
+  const float pw = 560.0f, ph = 460.0f;
+  float px = sw / 2 - pw / 2;
+  float py = sh / 2 - ph / 2;
+  DrawRectangle(static_cast<int>(px), static_cast<int>(py),
+                static_cast<int>(pw), static_cast<int>(ph),
+                {18, 24, 36, 240});
+  DrawRectangleLinesEx({px, py, pw, ph}, 2.0f, {120, 150, 200, 220});
+
+  const char *title = "SELECT LOADOUT";
+  int tw = measureHudText(title, 28);
+  drawHudText(title, static_cast<int>(px + pw / 2 - tw / 2),
+              static_cast<int>(py + 18), 28, {220, 235, 255, 255});
+
+  // Helper — draws a labelled row with N pill options; returns the
+  // index of the option clicked this frame, or -1 if none. The
+  // `selected` index is highlighted regardless of click.
+  auto drawSlotRow = [&](float rowY, const char *label, const char *opts[],
+                         int optCount, int selected) -> int {
+    drawHudText(label, static_cast<int>(px + 24),
+                static_cast<int>(rowY + 6), 16, {200, 215, 235, 240});
+    const float optW = 130.0f, optH = 32.0f, gap = 6.0f;
+    float ox = px + 130;
+    int hit = -1;
+    for (int i = 0; i < optCount; ++i) {
+      Rectangle r{ox + i * (optW + gap), rowY, optW, optH};
+      bool hover = CheckCollisionPointRec(mouse, r);
+      bool sel = (i == selected);
+      Color bg = sel ? Color{60, 120, 180, 240}
+                     : hover ? Color{60, 80, 110, 240}
+                             : Color{30, 40, 60, 220};
+      Color border = sel ? Color{220, 240, 255, 255}
+                         : hover ? Color{180, 200, 230, 220}
+                                 : Color{100, 130, 170, 180};
+      Color fg = sel ? Color{255, 255, 255, 255}
+                     : Color{200, 215, 235, 240};
+      DrawRectangleRec(r, bg);
+      DrawRectangleLinesEx(r, sel ? 2.5f : 1.5f, border);
+      int lw = measureHudText(opts[i], 15);
+      drawHudText(opts[i], static_cast<int>(r.x + r.width / 2 - lw / 2),
+                  static_cast<int>(r.y + r.height / 2 - 8), 15, fg);
+      if (hover && clickEdge) hit = i;
+    }
+    return hit;
+  };
+
+  // Primary row — Cannon / Plasma / Beam.
+  {
+    const char *opts[3] = {"CANNON", "PLASMA", "BEAM"};
+    int sel = static_cast<int>(m_loadout.primary);
+    int hit = drawSlotRow(py + 78, "PRIMARY", opts, 3, sel);
+    if (hit >= 0)
+      m_loadout.primary = static_cast<Player::PrimaryWeapon>(hit);
+  }
+  // Secondary row — Missile / Cluster / Depth Charge.
+  {
+    const char *opts[3] = {"MISSILE", "CLUSTER", "DEPTHCHG"};
+    int sel = static_cast<int>(m_loadout.secondary);
+    int hit = drawSlotRow(py + 130, "SECONDARY", opts, 3, sel);
+    if (hit >= 0)
+      m_loadout.secondary = static_cast<Player::SecondaryWeapon>(hit);
+  }
+  // Special row — EMP / Shield Booster.
+  {
+    const char *opts[2] = {"EMP", "SHIELD BOOST"};
+    int sel = static_cast<int>(m_loadout.special);
+    int hit = drawSlotRow(py + 182, "SPECIAL", opts, 2, sel);
+    if (hit >= 0)
+      m_loadout.special = static_cast<Player::SpecialWeapon>(hit);
+  }
+  // Auto Turret row — OFF / ON.
+  {
+    const char *opts[2] = {"OFF", "ON"};
+    int sel = m_loadout.autoTurret ? 1 : 0;
+    int hit = drawSlotRow(py + 234, "AUTO TURRET", opts, 2, sel);
+    if (hit >= 0) m_loadout.autoTurret = (hit == 1);
+  }
+
+  // Hint text — tells the player they can still cycle mid-flight.
+  const char *hint =
+      "Tab cycles primary  |  Z secondary  |  X special  |  T toggles auto turret";
+  int hw = measureHudText(hint, 12);
+  drawHudText(hint, static_cast<int>(px + pw / 2 - hw / 2),
+              static_cast<int>(py + 296), 12, {160, 180, 210, 200});
+
+  // LAUNCH + BACK buttons
+  Rectangle launch{px + pw / 2 - 200, py + ph - 70, 180, 50};
+  Rectangle back{px + pw / 2 + 20, py + ph - 70, 180, 50};
+  if (drawMenuButton(launch, "LAUNCH", mouse, clickEdge)) {
+    enterPlaying();
+  }
+  if (drawMenuButton(back, "BACK", mouse, clickEdge)) {
+    enterMainMenu();
   }
 
   m_lastClickState = clickNow;
