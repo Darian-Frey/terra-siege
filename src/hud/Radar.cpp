@@ -224,7 +224,8 @@ void Radar::drawVelocityArrow(Vector2 radarPos, Vector3 velocity,
                               float playerYaw, Color col) const {
   // Rotate velocity into ship-local space — same convention as
   // worldToRadar so the arrow lines up with the blip's motion on
-  // the disc.
+  // the disc. screenX is negated to match the left/right convention
+  // used by worldToRadar (see comment there).
   float c = cosf(playerYaw);
   float s = sinf(playerYaw);
   float vx = velocity.x * c - velocity.z * s;
@@ -238,8 +239,9 @@ void Radar::drawVelocityArrow(Vector2 radarPos, Vector3 velocity,
   float t = spd / Config::NEWTON_MAX_SPEED;
   if (t > 1.0f) t = 1.0f;
   float len = Config::RADAR_VECTOR_MAX_LEN * t;
-  // Local +Z (forward) maps to screen-up (-Y); +X to screen-right.
-  Vector2 tip = {radarPos.x + (vx / spd) * len,
+  // Local +Z (forward) maps to screen-up (-Y); +X to screen-left
+  // (matching worldToRadar's screenX negation).
+  Vector2 tip = {radarPos.x - (vx / spd) * len,
                  radarPos.y - (vz / spd) * len};
   Color faded = {col.r, col.g, col.b,
                  static_cast<unsigned char>(col.a * 0.7f)};
@@ -253,10 +255,11 @@ void Radar::drawMissileWarnings(Vector2 centre, float radius) const {
   if (!on) return;
   for (const IncomingThreat &t : m_threats) {
     // Bearing 0 = nose (top of disc, screen-up). Convert to screen
-    // angle: screen x = sin(b), screen y = -cos(b).
+    // angle. screen x is negated to match the left/right convention
+    // worldToRadar uses (see comment there).
     float bx = sinf(t.bearing);
     float bz = cosf(t.bearing);
-    Vector2 dirS = {bx, -bz};
+    Vector2 dirS = {-bx, -bz};
     // Place an arrow on the rim pointing inward (toward the player)
     // — that's the "incoming" reading; the arrow LOOKS in toward
     // centre, pointing where the threat is coming from.
@@ -285,19 +288,18 @@ Vector2 Radar::worldToRadar(Vector3 worldPos, Vector2 discCentre,
   float dx = worldPos.x - m_playerPos.x;
   float dz = worldPos.z - m_playerPos.z;
   // World → ship-local. Player yaw=0 faces +Z; yaw increases
-  // clockwise (right turn). The inverse-rotation by +yaw gives a
-  // local frame where +Z is the ship's nose, +X is its starboard.
-  //   local.x = world.x * cos(yaw) - world.z * sin(yaw)
-  //   local.z = world.x * sin(yaw) + world.z * cos(yaw)
-  // Using -yaw here is wrong: it applies the forward rotation
-  // instead of the inverse, so a target directly in front of an
-  // east-facing player would end up at the bottom of the disc.
+  // clockwise (right turn). Using +yaw rotates the inverse correctly
+  // for front/back (a target ahead lands at the top of the disc).
+  // The screenX offset is then NEGATED to put the player's starboard
+  // (local +X) on the right of the disc — empirical fix; the
+  // "clean" inverse-rotation produced a left/right mirror on screen
+  // that read wrong against the live camera view.
   float c = cosf(m_playerYaw);
   float s = sinf(m_playerYaw);
   float rx = dx * c - dz * s;
   float rz = dx * s + dz * c;
   float scale = discRadius / m_activeRange;
-  return {discCentre.x + rx * scale,
+  return {discCentre.x - rx * scale,
           // +Z (forward in local frame) maps to "up" = -screenY.
           discCentre.y - rz * scale};
 }
