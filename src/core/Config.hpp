@@ -359,6 +359,16 @@ constexpr float BOMBER_TURN_RATE = 0.7f;      // rad/s yaw rate
 constexpr float BOMBER_PREFERRED_ALT = 50.0f; // AGL hover target
 constexpr float BOMBER_HIT_RADIUS = 4.0f;     // big target
 
+// Ground Tank — formerly a stationary turret, now a tracked vehicle
+// that drives toward the player while in good shape and reverses
+// course at low HP. TANK_TURN_RATE governs chassis rotation; the
+// existing TURRET_* fire constants are reused for the barrel since
+// the visual + projectile model is identical.
+constexpr float TANK_DRIVE_SPEED = 14.0f;       // m/s forward speed
+constexpr float TANK_TURN_RATE = 1.1f;          // rad/s chassis rotation
+constexpr float TANK_EVADE_RECOVERY = 0.50f;    // hull frac to leave EVADE
+constexpr float TANK_FIRE_CONE = 0.20f;         // ~25° cone (wider, moving target)
+
 // Ground Turret — stationary, terrain-anchored. Tracks the player
 // with a rotating barrel and fires when in range and aligned. First
 // low-altitude threat, makes hugging the ground risky. No shield,
@@ -393,9 +403,17 @@ constexpr float COLLECTOR_DWELL_TIME = 1.6f; // sec at each end of the loop
 constexpr int COLLECTOR_DELIVERY_SCORE = 25; // points per successful delivery
 
 // Base — Collector delivery destination. Stationary, durable, counts
-// as friendly for game-over. One spawned per round.
+// as friendly for game-over. One spawned per round. Carries a defensive
+// auto-turret that engages the nearest enemy in range; turret damage is
+// modest so the player still has to defend it.
 constexpr float BASE_HULL = 240.0f;
 constexpr float BASE_HIT_RADIUS = 4.5f;
+constexpr float BASE_TURRET_RANGE = 110.0f;       // engagement radius
+constexpr float BASE_TURRET_AIM_RATE = 2.2f;      // rad/s rotation
+constexpr float BASE_TURRET_FIRE_RATE = 0.45f;    // sec between shots
+constexpr float BASE_TURRET_DAMAGE = 7.0f;        // per shot (15 DPS)
+constexpr float BASE_TURRET_FIRE_CONE = 0.12f;    // ~14° fire cone
+constexpr float BASE_TURRET_BARREL_HEIGHT = 5.0f; // muzzle Y above base pos
 
 constexpr float REPAIR_STATION_HULL = 90.0f;
 constexpr float REPAIR_STATION_HEAL_RADIUS = 30.0f; // player needs to be close

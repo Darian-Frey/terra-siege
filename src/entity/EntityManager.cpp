@@ -1041,51 +1041,73 @@ void EntityManager::updateCarrier(Entity &e, float dt, const Planet &planet,
 }
 
 // ====================================================================
-// Ground Turret — stationary, anchored to terrain. Rotates the barrel
-// toward the player at TURRET_AIM_RATE; fires when the player is in
-// range AND the barrel is within the firing cone. No movement, no
-// shield — it's a hard point that the player has to suppress.
+// Ground Tank — was a stationary turret in 5d.2; now a tracked vehicle
+// that drives toward the player while healthy, fires when in range
+// and roughly aligned, and reverses course at low HP. Same chassis
+// + barrel visual as the original turret; only behaviour changed.
 //
-// pos is fixed at spawn (set y to heightAt + mount height there). yaw
-// stores the barrel angle, NOT the chassis angle — the rendered base
-// stays world-aligned, the turret cap rotates.
+// State machine:
+//   Pursue → close the distance, fire en route
+//   Attack → same as Pursue but eased throttle when in firing range
+//   Evade  → hull below AI_EVADE_HEALTH (25%); drive AWAY from player,
+//            do not fire. Hysteresis: returns to Pursue only after
+//            hull recovers past TANK_EVADE_RECOVERY (50%) — tanks
+//            can't self-repair so this effectively means "evade for
+//            the rest of the round once committed".
+//
+// yaw is now the chassis/barrel angle in one (no separate turret
+// cap rotation — the whole chassis aims forward). Render path
+// already uses e.yaw for the barrel direction so the visual matches.
 // ====================================================================
 void EntityManager::updateGroundTurret(Entity &e, float dt,
                                        const Planet &planet,
                                        const Player &player) {
-  // Resnap to terrain in case the heightmap shifts (e.g., procedural
-  // re-gen). Cheap and keeps barrel pivot honest.
-  float ground = planet.heightAt(e.pos.x, e.pos.z);
-  e.pos.y = ground + Config::TURRET_MOUNT_HEIGHT;
-
-  // Barrel pivot is above the chassis — aim from there so the lead
-  // looks correct visually.
-  Vector3 muzzle = {e.pos.x, e.pos.y + Config::TURRET_BARREL_HEIGHT, e.pos.z};
-  Vector3 toPlayer = Vector3Subtract(player.position(), muzzle);
+  Vector3 toPlayer = Vector3Subtract(player.position(), e.pos);
   Vector3 toPlayerH = {toPlayer.x, 0.0f, toPlayer.z};
   float distH = Vector3Length(toPlayerH);
   float dist = Vector3Length(toPlayer);
 
+  // EVADE entry/exit with hysteresis. Once committed, stay committed
+  // until hull crawls back above TANK_EVADE_RECOVERY (won't happen
+  // without a heal — by design, badly damaged tanks try to retreat).
+  bool wantEvade = (e.hullMax > 0.0f) &&
+                   ((e.hullHP / e.hullMax) < Config::AI_EVADE_HEALTH);
+  if (wantEvade) {
+    e.aiState = AIState::Evade;
+  } else if (e.aiState == AIState::Evade &&
+             (e.hullHP / e.hullMax) > Config::TANK_EVADE_RECOVERY) {
+    e.aiState = AIState::Pursue;
+  }
+
+  // Chassis yaw — toward player in Pursue/Attack, AWAY in Evade.
   if (distH > 0.001f) {
     float desiredYaw = atan2f(toPlayerH.x, toPlayerH.z);
+    if (e.aiState == AIState::Evade) desiredYaw += 3.14159f;
     float yawErr = desiredYaw - e.yaw;
     while (yawErr > 3.14159f) yawErr -= 6.28318f;
     while (yawErr < -3.14159f) yawErr += 6.28318f;
-    float maxStep = Config::TURRET_AIM_RATE * dt;
+    float maxStep = Config::TANK_TURN_RATE * dt;
     if (yawErr > maxStep) yawErr = maxStep;
     else if (yawErr < -maxStep) yawErr = -maxStep;
     e.yaw += yawErr;
   }
 
-  // Fire: in range + nose-aligned within fire cone + cooldown ready.
-  if (dist < Config::TURRET_FIRE_RANGE && e.fireTimer <= 0.0f) {
+  // Drive forward along chassis direction.
+  Vector3 fwd = {sinf(e.yaw), 0.0f, cosf(e.yaw)};
+  e.pos.x += fwd.x * Config::TANK_DRIVE_SPEED * dt;
+  e.pos.z += fwd.z * Config::TANK_DRIVE_SPEED * dt;
+  // Resnap to terrain.
+  float ground = planet.heightAt(e.pos.x, e.pos.z);
+  e.pos.y = ground + Config::TURRET_MOUNT_HEIGHT;
+
+  // Fire — only outside EVADE, only when player in range AND chassis
+  // roughly aligned. Wider cone than fighters (~25°) because the
+  // whole chassis turns: the cannon's aim is the body's heading.
+  if (e.aiState != AIState::Evade &&
+      dist < Config::TURRET_FIRE_RANGE && e.fireTimer <= 0.0f) {
     Vector3 toPlayerN = Vector3Normalize(toPlayer);
-    Vector3 fwd = {sinf(e.yaw), 0.0f, cosf(e.yaw)};
     float dot = Vector3DotProduct(fwd, toPlayerN);
-    // Use a more permissive cone than fighters because the turret is
-    // immobile horizontally — the player can always strafe out, so
-    // tight cones make turrets useless.
-    if (dot > (1.0f - Config::TURRET_FIRE_CONE_ENEMY)) {
+    if (dot > (1.0f - Config::TANK_FIRE_CONE)) {
       fireTurretShot(e, player);
       e.fireTimer = Config::TURRET_ENEMY_FIRE_RATE;
     }
@@ -1232,12 +1254,92 @@ void EntityManager::updateCollector(Entity &e, float dt, const Planet &planet) {
 }
 
 // ====================================================================
-// Base — stationary delivery destination. No movement; yaw animates
-// a rotating landing-light beacon for the render path.
+// Base — stationary delivery destination + defensive auto-turret.
+//
+// Each tick: scan the entity pool for the nearest enemy in
+// BASE_TURRET_RANGE. If found, rotate yaw toward it at
+// BASE_TURRET_AIM_RATE and fire whenever the barrel is within the
+// fire cone and the cooldown is ready. If no target is in range,
+// idle-rotate slowly so the turret still reads as "active" at
+// distance.
+//
+// fireTimer is the turret cooldown. Decremented at the top of the
+// main update loop so we don't need to tick it here. yaw stores the
+// turret's barrel angle (same convention as the Ground Tank now).
 // ====================================================================
 void EntityManager::updateBase(Entity &e, float dt) {
-  e.yaw += 1.0f * dt;
-  if (e.yaw > 6.28318f) e.yaw -= 6.28318f;
+  // Find nearest enemy in range. Friendlies and projectiles are
+  // skipped; the friendly-type filter mirrors the one used by
+  // acquireTarget / applyEMPStun / applySplashDamage.
+  uint32_t targetId = 0;
+  Vector3 targetPos{};
+  float bestDist = Config::BASE_TURRET_RANGE;
+  for (const Entity &other : m_entities) {
+    if (!other.alive) continue;
+    if (other.type == EntityType::Projectile) continue;
+    if (other.type == EntityType::Collector ||
+        other.type == EntityType::RepairStation ||
+        other.type == EntityType::RadarBooster ||
+        other.type == EntityType::Base)
+      continue;
+    float d = Vector3Distance(other.pos, e.pos);
+    if (d < bestDist) {
+      bestDist = d;
+      targetId = other.id;
+      targetPos = other.pos;
+    }
+  }
+
+  if (targetId == 0) {
+    // No target — idle rotation so the turret reads as alive.
+    e.yaw += 0.6f * dt;
+    if (e.yaw > 6.28318f) e.yaw -= 6.28318f;
+    return;
+  }
+
+  // Aim turret yaw at the target. Barrel rises from
+  // BASE_TURRET_BARREL_HEIGHT above the base, but for yaw resolution
+  // we use the horizontal vector to the target.
+  Vector3 toTarget = Vector3Subtract(targetPos, e.pos);
+  float distH = sqrtf(toTarget.x * toTarget.x + toTarget.z * toTarget.z);
+  if (distH > 0.001f) {
+    float desiredYaw = atan2f(toTarget.x, toTarget.z);
+    float yawErr = desiredYaw - e.yaw;
+    while (yawErr > 3.14159f) yawErr -= 6.28318f;
+    while (yawErr < -3.14159f) yawErr += 6.28318f;
+    float maxStep = Config::BASE_TURRET_AIM_RATE * dt;
+    if (yawErr > maxStep) yawErr = maxStep;
+    else if (yawErr < -maxStep) yawErr = -maxStep;
+    e.yaw += yawErr;
+  }
+
+  // Fire — in range + nose-aligned within fire cone + cooldown ready.
+  if (e.fireTimer <= 0.0f) {
+    Vector3 toTargetN = Vector3Normalize(toTarget);
+    Vector3 fwd = {sinf(e.yaw), 0.0f, cosf(e.yaw)};
+    float dot = Vector3DotProduct(fwd, toTargetN);
+    if (dot > (1.0f - Config::BASE_TURRET_FIRE_CONE)) {
+      // Muzzle sits on top of the control tower. Spawn shot slightly
+      // ahead of the muzzle along the firing direction.
+      Vector3 muzzle = {e.pos.x + 2.5f, e.pos.y +
+                                            Config::BASE_TURRET_BARREL_HEIGHT,
+                        e.pos.z + 2.5f};
+      Vector3 dir3 = Vector3Subtract(targetPos, muzzle);
+      float d3 = Vector3Length(dir3);
+      if (d3 > 0.001f) {
+        dir3 = Vector3Scale(dir3, 1.0f / d3);
+        Vector3 spawn = Vector3Add(muzzle, Vector3Scale(dir3, 1.5f));
+        Vector3 vel = Vector3Scale(dir3, Config::CANNON_SPEED);
+        // Player-owned so the projectile→entity collision path picks
+        // up enemies (and the friendly-fire filter below skips
+        // friendlies).
+        spawnProjectile(spawn, vel, Config::BASE_TURRET_DAMAGE,
+                        Config::BASE_TURRET_RANGE, Config::CANNON_SPEED,
+                        ProjectileOwner::Player);
+        e.fireTimer = Config::BASE_TURRET_FIRE_RATE;
+      }
+    }
+  }
 }
 
 // ====================================================================
@@ -1573,6 +1675,16 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
   if (p.owner == ProjectileOwner::Player) {
     for (auto &e : m_entities) {
       if (!e.alive) continue;
+      // Friendly-fire filter — player cannon / plasma / missile /
+      // cluster / depth charge / auto-turret / base-turret shots all
+      // skip friendlies. Splash damage already filters friendlies
+      // inside applySplashDamage(), so a player splash on a near-miss
+      // can't collateral-kill a Collector either.
+      if (e.type == EntityType::Collector ||
+          e.type == EntityType::RepairStation ||
+          e.type == EntityType::RadarBooster ||
+          e.type == EntityType::Base)
+        continue;
       float d = Vector3Distance(p.pos, e.pos);
       if (d < (e.radius + p.radius)) {
         emitHitBurst(p.pos, particles);
@@ -2114,11 +2226,21 @@ void EntityManager::renderEnemy(const Entity &e) const {
               {2.0f, 4.0f, 2.0f}, tower);
     DrawCubeV({e.pos.x + 2.5f, e.pos.y + 4.5f, e.pos.z + 2.5f},
               {2.6f, 0.6f, 2.6f}, top);
-    // Rotating beacon on top of the tower — yaw animates.
+    // Turret cap on top of the tower — same yaw used by the fire
+    // logic. Cap is a small cube, barrel extrudes along yaw, bright
+    // tip pip so direction reads at distance.
+    Color capCol = {180, 110, 90, 255};
+    Color barrelCol = {220, 220, 220, 255};
+    if (e.damageFlashTimer > 0.0f) capCol = barrelCol = {255, 255, 255, 255};
+    Vector3 capPos = {e.pos.x + 2.5f, e.pos.y + Config::BASE_TURRET_BARREL_HEIGHT,
+                      e.pos.z + 2.5f};
+    DrawCubeV(capPos, {1.4f, 0.8f, 1.4f}, capCol);
     float dx = sinf(e.yaw), dz = cosf(e.yaw);
-    Vector3 beacon = {e.pos.x + 2.5f + dx * 0.6f, e.pos.y + 5.0f,
-                      e.pos.z + 2.5f + dz * 0.6f};
-    DrawCubeV(beacon, {0.5f, 0.5f, 0.5f}, {255, 100, 80, 255});
+    Vector3 barrel = {capPos.x + dx * 1.1f, capPos.y,
+                      capPos.z + dz * 1.1f};
+    DrawCubeV(barrel, {0.5f, 0.4f, 0.5f}, barrelCol);
+    Vector3 tip = {capPos.x + dx * 1.8f, capPos.y, capPos.z + dz * 1.8f};
+    DrawCubeV(tip, {0.4f, 0.35f, 0.4f}, {255, 220, 100, 255});
 
     // Hull bar above the tower so killing the base is visible.
     if (e.hullMax > 0.0f) {
