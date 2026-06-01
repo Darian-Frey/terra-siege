@@ -30,6 +30,7 @@ enum class EntityType : uint8_t {
   Collector,
   RepairStation,
   RadarBooster,
+  Base, // delivery destination for Collectors; counts as friendly
   // Other
   Projectile,
 };
@@ -59,13 +60,21 @@ enum class ProjectileKind : uint8_t {
   ClusterParent,
 };
 
-// AI state machine — Drones and projectiles ignore this.
+// AI state machine — Drones and projectiles ignore this. The
+// Collector-* values run a separate state machine (delivery loop)
+// and never overlap with the enemy aiStates above.
 enum class AIState : uint8_t {
   Idle = 0,
   Pursue,
   Attack,
   Evade,
   StrafeFriendly, // Bomber-only
+  // Collector economy loop — runs out from base to a pickup site,
+  // dwells, returns to base, dwells, scores a delivery, repeats.
+  CollectorOutbound,
+  CollectorPickup,
+  CollectorInbound,
+  CollectorUnload,
 };
 
 // Shield sector — for entities with directional (4-quadrant) shields
@@ -134,4 +143,12 @@ struct Entity {
   // EMP stun — non-zero means this entity is frozen by an EMP blast.
   // AI update skips while this is positive; render path tints blue.
   float stunTimer = 0.0f;
+
+  // Collector economy loop (5h). targetPos is the current navigation
+  // goal — either a randomly-picked pickup site or the home base
+  // position. hasCargo flips after a successful pickup and back to
+  // false on delivery; rendering uses it for the cabin-pip colour.
+  // seekTargetId on Collectors holds the home Base entity id.
+  Vector3 targetPos = {0, 0, 0};
+  bool hasCargo = false;
 };

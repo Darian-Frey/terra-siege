@@ -85,6 +85,14 @@ public:
   // Nearest live friendly entity. Returns 0 if no friendlies alive.
   // outPos is filled with the target's world position on success.
   uint32_t nearestFriendly(Vector3 origin, Vector3 &outPos) const;
+  // Nearest live Base entity (for Collector delivery loops). Returns
+  // 0 if no Base alive; collectors then idle in place.
+  uint32_t nearestBase(Vector3 origin, Vector3 &outPos) const;
+
+  // Collector delivery counter. Incremented inside updateCollector
+  // each time a collector returns to a Base and finishes unloading.
+  // GameState reads this for the score HUD; resets via clear().
+  int deliveryCount() const { return m_deliveryCount; }
 
   // Visual feedback emitters — public so GameState can fire the
   // player's final death explosion at the crash site.
@@ -109,6 +117,7 @@ private:
   size_t m_nextProjectile = 0;
   int m_liveEnemies = 0;
   int m_liveProjectiles = 0;
+  int m_deliveryCount = 0; // Collector deliveries completed this round
   uint32_t m_nextId = 1;
 
   // Per-entity update bodies
@@ -143,6 +152,9 @@ private:
   void updateCollector(Entity &e, float dt, const Planet &planet);
   void updateRepairStation(Entity &e, float dt, Player &player);
   void updateRadarBooster(Entity &e, float dt);
+  // Base — passive friendly building, Collector delivery destination.
+  // No movement; only renders + animates a landing-light yaw.
+  void updateBase(Entity &e, float dt);
 
   // Ground Turret — stationary, rotates toward player, fires in cone.
   void updateGroundTurret(Entity &e, float dt, const Planet &planet,

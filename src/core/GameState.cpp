@@ -343,8 +343,33 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
     return Vector3{x, y, z};
   };
 
+  // Base first — collectors look for it on their first update tick,
+  // so it has to exist by the time they spawn. Anchor it close to
+  // the player start so the player has a clear "home" reference.
+  Vector3 basePos;
+  {
+    // Place on terrain, ~30-60m from the player so it's visible
+    // immediately but not on top of the spawn point.
+    float a = randF(0.0f, 6.28318f);
+    float r = 40.0f;
+    float x = playerStart.x + r * sinf(a);
+    float z = playerStart.z + r * cosf(a);
+    float y = m_planet.heightAt(x, z) + 0.6f;
+    basePos = {x, y, z};
+    m_em.spawnEnemy(EntityType::Base, basePos);
+    placed.push_back(basePos);
+  }
+
   for (int i = 0; i < Config::FRIENDLY_COLLECTOR_COUNT; ++i) {
-    Vector3 pos = pickSpot();
+    // Collectors spawn near the Base (not in the wide friendly ring)
+    // so they start the loop from a sensible position rather than
+    // having to walk hundreds of metres before their first delivery.
+    float a = randF(0.0f, 6.28318f);
+    float r = 12.0f + randF(0.0f, 10.0f);
+    float x = basePos.x + r * sinf(a);
+    float z = basePos.z + r * cosf(a);
+    float y = m_planet.heightAt(x, z) + 0.8f;
+    Vector3 pos = {x, y, z};
     m_em.spawnEnemy(EntityType::Collector, pos);
     placed.push_back(pos);
   }
@@ -1732,6 +1757,22 @@ void GameState::drawHUD() const {
       int fby = by + 26;
       DrawRectangle(fbx, fby, ftw + 20, 18, {0, 0, 0, 140});
       drawHudText(fbuf, fbx + 10, fby + 3, 14, fCol);
+
+      // Score readout — Collector deliveries × COLLECTOR_DELIVERY_SCORE.
+      // Tucked directly under the friendly counter so the two
+      // "objective" stats sit together. Only shown once a delivery
+      // is on the board (zero is implicit when the row is hidden).
+      int deliveries = m_em.deliveryCount();
+      if (deliveries > 0) {
+        char sbuf[48];
+        snprintf(sbuf, sizeof(sbuf), "SCORE %d",
+                 deliveries * Config::COLLECTOR_DELIVERY_SCORE);
+        int stw = measureHudText(sbuf, 14);
+        int sbx = sw / 2 - (stw + 20) / 2;
+        int sby = fby + 22;
+        DrawRectangle(sbx, sby, stw + 20, 18, {0, 0, 0, 140});
+        drawHudText(sbuf, sbx + 10, sby + 3, 14, {220, 220, 120, 240});
+      }
     }
   }
 

@@ -32,6 +32,7 @@ BlipType blipTypeFromEntity(EntityType t) {
   case EntityType::Collector:
   case EntityType::RepairStation:
   case EntityType::RadarBooster: return BlipType::Friendly;
+  case EntityType::Base:         return BlipType::Base;
   default:                       return BlipType::Fighter;
   }
 }

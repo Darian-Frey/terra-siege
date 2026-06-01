@@ -16,6 +16,7 @@ void EntityManager::clear() {
   m_nextProjectile = 0;
   m_liveEnemies = 0;
   m_liveProjectiles = 0;
+  m_deliveryCount = 0;
 }
 
 // Dev hotkey support — silent enemy clear. No explosions, no scoring,
@@ -183,6 +184,15 @@ Entity *EntityManager::spawnEnemy(EntityType type, Vector3 pos) {
     // yaw is animated by updateRadarBooster (rotating dish visual).
     e->yaw = 0.0f;
     break;
+  case EntityType::Base:
+    // Stationary delivery destination. High HP — losing this means
+    // losing the collector economy, so it should take real effort
+    // to destroy. yaw animates a landing-light beacon at render time.
+    e->hullMax = Config::BASE_HULL;
+    e->hullHP = e->hullMax;
+    e->radius = Config::HIT_RADIUS_BASE;
+    e->yaw = 0.0f;
+    break;
   default:
     e->hullMax = 100.0f;
     e->hullHP = 100.0f;
@@ -238,7 +248,8 @@ uint32_t EntityManager::acquireTarget(Vector3 origin, Vector3 forward,
     if (e.type == EntityType::Projectile) continue;
     if (e.type == EntityType::Collector ||
         e.type == EntityType::RepairStation ||
-        e.type == EntityType::RadarBooster)
+        e.type == EntityType::RadarBooster ||
+        e.type == EntityType::Base)
       continue; // never target friendlies
     Vector3 d = Vector3Subtract(e.pos, origin);
     float dist = Vector3Length(d);
@@ -283,7 +294,8 @@ uint32_t EntityManager::beamRaycast(Vector3 origin, Vector3 dir,
     if (e.type == EntityType::Projectile) continue;
     if (e.type == EntityType::Collector ||
         e.type == EntityType::RepairStation ||
-        e.type == EntityType::RadarBooster)
+        e.type == EntityType::RadarBooster ||
+        e.type == EntityType::Base)
       continue;
     Vector3 oc = Vector3Subtract(e.pos, origin);
     float tCentre = Vector3DotProduct(oc, dn);
@@ -321,7 +333,8 @@ void EntityManager::applyEMPStun(Vector3 pos, float radius, float duration) {
     if (e.type == EntityType::Projectile) continue;
     if (e.type == EntityType::Collector ||
         e.type == EntityType::RepairStation ||
-        e.type == EntityType::RadarBooster)
+        e.type == EntityType::RadarBooster ||
+        e.type == EntityType::Base)
       continue;
     Vector3 d = Vector3Subtract(e.pos, pos);
     float d2 = d.x * d.x + d.y * d.y + d.z * d.z;
@@ -401,6 +414,9 @@ void EntityManager::update(float dt, const Planet &planet, Player &player,
       break;
     case EntityType::RadarBooster:
       updateRadarBooster(e, dt);
+      break;
+    case EntityType::Base:
+      updateBase(e, dt);
       break;
     default:
       break;
@@ -1077,35 +1093,151 @@ void EntityManager::updateGroundTurret(Entity &e, float dt,
 }
 
 // ====================================================================
-// Collector — ground vehicle that wanders between waypoints. We don't
-// track an explicit waypoint list (yet); instead the collector picks
-// a fresh random heading every few seconds and walks that way at
-// ground level. Resnaps Y to terrain each tick. fireTimer doubles
-// as the next-heading-pick countdown.
+// Collector — ground vehicle running an out-and-back delivery loop.
 //
-// Score / cargo-delivery loop is deferred to the broader friendly
-// economy pass. For 5g the Collector just exists as a soft target
-// the Bomber prefers.
+// State machine (stored in aiState):
+//   CollectorOutbound  — heading toward a random pickup site
+//   CollectorPickup    — dwelling at the site, loading cargo
+//   CollectorInbound   — heading back to the home Base
+//   CollectorUnload    — dwelling at the base, unloading + scoring
+//
+// targetPos holds the current destination. seekTargetId holds the
+// home Base entity id; resolved each tick so a re-spawned base
+// after a kill picks up cleanly. stateTimer is the dwell countdown
+// at each end. hasCargo flips on pickup-done and off on unload-done;
+// rendering uses it to colour the cabin pip (yellow=empty / green=full).
+//
+// If no Base is alive, the collector idles in place — there's
+// nowhere to deliver to. Once a Base spawns / respawns, the loop
+// resumes from the start.
 // ====================================================================
 void EntityManager::updateCollector(Entity &e, float dt, const Planet &planet) {
-  e.fireTimer -= dt;
-  if (e.fireTimer <= 0.0f) {
-    // Pseudo-random heading delta — uses entity id + nextId as a
-    // cheap deterministic-per-tick seed so different collectors
-    // don't pivot together. Picks a new heading every 3-5s.
-    uint32_t s = (e.id * 2654435761u) ^ m_nextId;
-    e.yaw += ((s % 1000) / 1000.0f - 0.5f) * 3.14159f * 0.8f;
-    e.fireTimer = 3.0f + ((s >> 10) % 200) / 100.0f;
+  // Find / refresh the home Base. If our seekTargetId is stale, look
+  // up the nearest live Base and adopt it.
+  Vector3 basePos = {0, 0, 0};
+  const Entity *base = nullptr;
+  if (e.seekTargetId != 0) {
+    for (const Entity &b : m_entities) {
+      if (b.alive && b.id == e.seekTargetId &&
+          b.type == EntityType::Base) {
+        base = &b;
+        basePos = b.pos;
+        break;
+      }
+    }
+  }
+  if (!base) {
+    uint32_t newId = nearestBase(e.pos, basePos);
+    if (newId == 0) {
+      // No base alive — collector idles in place.
+      e.vel = {0, 0, 0};
+      e.pos.y = planet.heightAt(e.pos.x, e.pos.z) + 0.8f;
+      return;
+    }
+    e.seekTargetId = newId;
+    // First-time setup: pick a pickup site and head out.
+    e.aiState = AIState::CollectorOutbound;
+    e.hasCargo = false;
   }
 
-  float spd = Config::COLLECTOR_SPEED;
-  e.vel.x = sinf(e.yaw) * spd;
-  e.vel.z = cosf(e.yaw) * spd;
+  // Pick a fresh pickup site whenever we transition into Outbound
+  // without a valid target — i.e. round start, or after returning.
+  auto pickPickupSite = [&]() {
+    uint32_t s = (e.id * 2654435761u) ^
+                 static_cast<uint32_t>(m_nextId + (int)(e.pos.x * 7.0f));
+    s ^= s << 13;
+    s ^= s >> 17;
+    s ^= s << 5;
+    float a = (static_cast<float>(s & 0xFFFF) / 65535.0f) * 6.28318f;
+    s = s * 1103515245u + 12345u;
+    float t = static_cast<float>(s & 0xFFFF) / 65535.0f;
+    float r = Config::COLLECTOR_PICKUP_MIN_DIST +
+              t * (Config::COLLECTOR_PICKUP_MAX_DIST -
+                   Config::COLLECTOR_PICKUP_MIN_DIST);
+    float x = basePos.x + sinf(a) * r;
+    float z = basePos.z + cosf(a) * r;
+    e.targetPos = {x, planet.heightAt(x, z) + 0.8f, z};
+  };
 
-  e.pos.x += e.vel.x * dt;
-  e.pos.z += e.vel.z * dt;
-  // Resnap to terrain — collector hugs the ground.
+  switch (e.aiState) {
+  case AIState::CollectorOutbound: {
+    // Pick a pickup site if we don't have one yet (first cycle).
+    Vector3 toTgt = Vector3Subtract(e.targetPos, e.pos);
+    float distXZ = sqrtf(toTgt.x * toTgt.x + toTgt.z * toTgt.z);
+    if (distXZ < 0.01f || (e.targetPos.x == 0.0f && e.targetPos.z == 0.0f)) {
+      pickPickupSite();
+      toTgt = Vector3Subtract(e.targetPos, e.pos);
+      distXZ = sqrtf(toTgt.x * toTgt.x + toTgt.z * toTgt.z);
+    }
+    if (distXZ <= Config::COLLECTOR_WAYPOINT_RADIUS) {
+      e.aiState = AIState::CollectorPickup;
+      e.stateTimer = Config::COLLECTOR_DWELL_TIME;
+      e.vel = {0, 0, 0};
+    } else {
+      e.yaw = atan2f(toTgt.x, toTgt.z);
+      float spd = Config::COLLECTOR_SPEED;
+      e.vel.x = sinf(e.yaw) * spd;
+      e.vel.z = cosf(e.yaw) * spd;
+      e.pos.x += e.vel.x * dt;
+      e.pos.z += e.vel.z * dt;
+    }
+    break;
+  }
+  case AIState::CollectorPickup: {
+    e.stateTimer -= dt;
+    if (e.stateTimer <= 0.0f) {
+      e.hasCargo = true;
+      e.targetPos = basePos;
+      e.aiState = AIState::CollectorInbound;
+    }
+    break;
+  }
+  case AIState::CollectorInbound: {
+    Vector3 toTgt = Vector3Subtract(basePos, e.pos);
+    float distXZ = sqrtf(toTgt.x * toTgt.x + toTgt.z * toTgt.z);
+    if (distXZ <= Config::COLLECTOR_WAYPOINT_RADIUS) {
+      e.aiState = AIState::CollectorUnload;
+      e.stateTimer = Config::COLLECTOR_DWELL_TIME;
+      e.vel = {0, 0, 0};
+    } else {
+      e.yaw = atan2f(toTgt.x, toTgt.z);
+      float spd = Config::COLLECTOR_SPEED;
+      e.vel.x = sinf(e.yaw) * spd;
+      e.vel.z = cosf(e.yaw) * spd;
+      e.pos.x += e.vel.x * dt;
+      e.pos.z += e.vel.z * dt;
+    }
+    break;
+  }
+  case AIState::CollectorUnload: {
+    e.stateTimer -= dt;
+    if (e.stateTimer <= 0.0f) {
+      // Delivery complete — count it, drop cargo, head out again.
+      ++m_deliveryCount;
+      e.hasCargo = false;
+      pickPickupSite();
+      e.aiState = AIState::CollectorOutbound;
+    }
+    break;
+  }
+  default:
+    // Unexpected state on a fresh collector — bootstrap into Outbound.
+    e.aiState = AIState::CollectorOutbound;
+    e.hasCargo = false;
+    break;
+  }
+
+  // Resnap to terrain — collector hugs the ground regardless of state.
   e.pos.y = planet.heightAt(e.pos.x, e.pos.z) + 0.8f;
+}
+
+// ====================================================================
+// Base — stationary delivery destination. No movement; yaw animates
+// a rotating landing-light beacon for the render path.
+// ====================================================================
+void EntityManager::updateBase(Entity &e, float dt) {
+  e.yaw += 1.0f * dt;
+  if (e.yaw > 6.28318f) e.yaw -= 6.28318f;
 }
 
 // ====================================================================
@@ -1147,7 +1279,8 @@ int EntityManager::liveFriendlyCount() const {
     if (!e.alive) continue;
     if (e.type == EntityType::Collector ||
         e.type == EntityType::RepairStation ||
-        e.type == EntityType::RadarBooster) {
+        e.type == EntityType::RadarBooster ||
+        e.type == EntityType::Base) {
       ++n;
     }
   }
@@ -1162,8 +1295,25 @@ uint32_t EntityManager::nearestFriendly(Vector3 origin,
     if (!e.alive) continue;
     if (e.type != EntityType::Collector &&
         e.type != EntityType::RepairStation &&
-        e.type != EntityType::RadarBooster)
+        e.type != EntityType::RadarBooster &&
+        e.type != EntityType::Base)
       continue;
+    float d = Vector3Distance(e.pos, origin);
+    if (d < bestDist) {
+      bestDist = d;
+      bestId = e.id;
+      outPos = e.pos;
+    }
+  }
+  return bestId;
+}
+
+uint32_t EntityManager::nearestBase(Vector3 origin, Vector3 &outPos) const {
+  uint32_t bestId = 0;
+  float bestDist = 1e9f;
+  for (const Entity &e : m_entities) {
+    if (!e.alive) continue;
+    if (e.type != EntityType::Base) continue;
     float d = Vector3Distance(e.pos, origin);
     if (d < bestDist) {
       bestDist = d;
@@ -1247,7 +1397,8 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
         if (e.type == EntityType::Projectile) continue;
         if (e.type == EntityType::Collector ||
             e.type == EntityType::RepairStation ||
-            e.type == EntityType::RadarBooster)
+            e.type == EntityType::RadarBooster ||
+            e.type == EntityType::Base)
           continue;
         float d = Vector3Distance(e.pos, p.pos);
         if (d < bestDist) {
@@ -1467,7 +1618,8 @@ void EntityManager::applySplashDamage(Vector3 pos, float radius, float damage,
     if (e.type == EntityType::Projectile) continue;
     if (e.type == EntityType::Collector ||
         e.type == EntityType::RepairStation ||
-        e.type == EntityType::RadarBooster)
+        e.type == EntityType::RadarBooster ||
+        e.type == EntityType::Base)
       continue;
     Vector3 d = Vector3Subtract(e.pos, pos);
     float d2 = d.x * d.x + d.y * d.y + d.z * d.z;
@@ -1845,9 +1997,12 @@ void EntityManager::renderEnemy(const Entity &e) const {
   case EntityType::Collector: {
     // Low boxy hull with side treads + a small cabin pip. Olive +
     // green palette to read distinct from enemy types at a glance.
+    // Cabin pip switches yellow→green when cargo is loaded so the
+    // player can tell "this one's heading home" at a glance.
     Color hull = {80, 110, 70, 255};
     Color tread = {40, 50, 35, 255};
-    Color cab = {220, 200, 80, 255};
+    Color cab = e.hasCargo ? Color{120, 220, 100, 255}
+                           : Color{220, 200, 80, 255};
     if (e.damageFlashTimer > 0.0f) hull = tread = cab = {255, 255, 255, 255};
     DrawCubeV(e.pos, {3.0f, 1.4f, 4.5f}, hull);
     // Treads to either side of the hull (axis-aligned for now; turret
@@ -1925,6 +2080,52 @@ void EntityManager::renderEnemy(const Entity &e) const {
       if (t < 0.0f) t = 0.0f;
       Vector3 a = {e.pos.x - 2.0f, e.pos.y + 4.4f, e.pos.z};
       Vector3 b = {e.pos.x - 2.0f + 4.0f * t, e.pos.y + 4.4f, e.pos.z};
+      DrawLine3D(a, b, {80, 220, 100, 220});
+    }
+    break;
+  }
+  case EntityType::Base: {
+    // Wide landing pad + control tower + rotating beacon. The
+    // beacon yaw animates so the base reads as "active" at distance,
+    // and the central control tower gives a clear silhouette
+    // collectors are visibly approaching.
+    Color pad = {90, 100, 110, 255};
+    Color tower = {120, 130, 150, 255};
+    Color top = {200, 220, 240, 255};
+    if (e.damageFlashTimer > 0.0f) pad = tower = top = {255, 255, 255, 255};
+
+    // Landing pad — wide square.
+    DrawCubeV({e.pos.x, e.pos.y + 0.2f, e.pos.z}, {9.0f, 0.6f, 9.0f},
+              pad);
+    // Edge lighting strips — small bright cubes at each corner.
+    Color light = {255, 220, 80, 255};
+    DrawCubeV({e.pos.x + 4.0f, e.pos.y + 0.6f, e.pos.z + 4.0f},
+              {0.5f, 0.5f, 0.5f}, light);
+    DrawCubeV({e.pos.x - 4.0f, e.pos.y + 0.6f, e.pos.z + 4.0f},
+              {0.5f, 0.5f, 0.5f}, light);
+    DrawCubeV({e.pos.x + 4.0f, e.pos.y + 0.6f, e.pos.z - 4.0f},
+              {0.5f, 0.5f, 0.5f}, light);
+    DrawCubeV({e.pos.x - 4.0f, e.pos.y + 0.6f, e.pos.z - 4.0f},
+              {0.5f, 0.5f, 0.5f}, light);
+
+    // Control tower offset from centre so collectors land on a
+    // clear part of the pad.
+    DrawCubeV({e.pos.x + 2.5f, e.pos.y + 2.2f, e.pos.z + 2.5f},
+              {2.0f, 4.0f, 2.0f}, tower);
+    DrawCubeV({e.pos.x + 2.5f, e.pos.y + 4.5f, e.pos.z + 2.5f},
+              {2.6f, 0.6f, 2.6f}, top);
+    // Rotating beacon on top of the tower — yaw animates.
+    float dx = sinf(e.yaw), dz = cosf(e.yaw);
+    Vector3 beacon = {e.pos.x + 2.5f + dx * 0.6f, e.pos.y + 5.0f,
+                      e.pos.z + 2.5f + dz * 0.6f};
+    DrawCubeV(beacon, {0.5f, 0.5f, 0.5f}, {255, 100, 80, 255});
+
+    // Hull bar above the tower so killing the base is visible.
+    if (e.hullMax > 0.0f) {
+      float t = e.hullHP / e.hullMax;
+      if (t < 0.0f) t = 0.0f;
+      Vector3 a = {e.pos.x - 4.0f, e.pos.y + 6.0f, e.pos.z};
+      Vector3 b = {e.pos.x - 4.0f + 8.0f * t, e.pos.y + 6.0f, e.pos.z};
       DrawLine3D(a, b, {80, 220, 100, 220});
     }
     break;

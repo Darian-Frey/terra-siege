@@ -385,6 +385,17 @@ constexpr float COLLECTOR_HULL = 60.0f;
 constexpr float COLLECTOR_SPEED = 6.0f;          // ground vehicle
 constexpr float COLLECTOR_WAYPOINT_RADIUS = 4.0f;
 constexpr float COLLECTOR_HIT_RADIUS = 2.4f;
+// Delivery loop — pickup sites are picked randomly inside this radius
+// around the home Base each cycle. Dwell time at pickup AND unload.
+constexpr float COLLECTOR_PICKUP_MIN_DIST = 80.0f;
+constexpr float COLLECTOR_PICKUP_MAX_DIST = 200.0f;
+constexpr float COLLECTOR_DWELL_TIME = 1.6f; // sec at each end of the loop
+constexpr int COLLECTOR_DELIVERY_SCORE = 25; // points per successful delivery
+
+// Base — Collector delivery destination. Stationary, durable, counts
+// as friendly for game-over. One spawned per round.
+constexpr float BASE_HULL = 240.0f;
+constexpr float BASE_HIT_RADIUS = 4.5f;
 
 constexpr float REPAIR_STATION_HULL = 90.0f;
 constexpr float REPAIR_STATION_HEAL_RADIUS = 30.0f; // player needs to be close
@@ -432,6 +443,7 @@ constexpr float HIT_RADIUS_CARRIER = 6.0f;
 constexpr float HIT_RADIUS_COLLECTOR = 2.4f;
 constexpr float HIT_RADIUS_REPAIR = 3.0f;
 constexpr float HIT_RADIUS_BOOSTER = 2.8f;
+constexpr float HIT_RADIUS_BASE = 4.5f;
 constexpr float HIT_RADIUS_PLAYER = 2.0f;
 
 // ----------------------------------------------------------------
