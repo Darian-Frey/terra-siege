@@ -1,6 +1,7 @@
 #include "Player.hpp"
 #include "core/Config.hpp"
 #include "entity/Entity.hpp" // ShieldSector enum
+#include "mesh/MeshRegistry.hpp"
 #include "rlgl.h"
 #include "world/Planet.hpp"
 #include <cmath>
@@ -883,9 +884,11 @@ void Player::buildMesh() {
 // ====================================================================
 // Render — local→world transform: Rz(roll) → Rx(-pitch) → Ry(yaw) → T(pos)
 // ====================================================================
-void Player::render() const {
-  if (!m_built) return;
-
+void Player::render(const tsmesh::MeshRegistry *registry) const {
+  // Build the full attitude matrix once; both paths use it. Order:
+  // Rz(roll) → Rx(-pitch) → Ry(yaw) → T(position). Matches the
+  // orientation accessors (forward/up/right) so what you see matches
+  // what the physics is using.
   Matrix worldMat = MatrixMultiply(
       MatrixMultiply(
           MatrixMultiply(MatrixRotateZ(m_roll), MatrixRotateX(-m_pitch)),
@@ -893,7 +896,19 @@ void Player::render() const {
       MatrixTranslate(m_pos.x, m_pos.y, m_pos.z));
 
   rlDisableBackfaceCulling();
-  DrawMesh(m_mesh, m_model.materials[0], worldMat);
+
+  // Mesh-based path — if the registry has the OBJ loaded, render from
+  // it. The hovercraft mesh has per-vertex colours baked in from the
+  // palette so we pass WHITE as the material colour.
+  const Model *playerModel = registry ? registry->playerModel() : nullptr;
+  if (playerModel && playerModel->meshCount > 0) {
+    DrawMesh(playerModel->meshes[0], playerModel->materials[0], worldMat);
+  } else if (m_built) {
+    // Procedural fallback — used until the OBJ pipeline migration is
+    // complete or if the OBJ failed to load. buildMesh()'s output.
+    DrawMesh(m_mesh, m_model.materials[0], worldMat);
+  }
+
   rlEnableBackfaceCulling();
 }
 

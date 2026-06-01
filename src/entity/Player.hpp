@@ -5,6 +5,10 @@
 #include "raymath.h"
 #include <cstdint>
 
+namespace tsmesh {
+class MeshRegistry;
+}
+
 class Planet;
 
 // ====================================================================
@@ -23,7 +27,11 @@ public:
   void init(Vector3 startPos,
             int flightAssistLevel = Config::FLIGHT_ASSIST_DEFAULT);
   void update(float dt, const Planet &planet);
-  void render() const;
+  // Renders the hovercraft. If `registry` has a player mesh loaded
+  // (assets/meshes/hovercraft.obj), it's drawn with the full
+  // roll/pitch/yaw matrix. Otherwise falls back to the procedural
+  // mesh built in buildMesh() during init().
+  void render(const tsmesh::MeshRegistry *registry = nullptr) const;
   // Drop-shadow on the terrain directly below the ship. Fades with
   // altitude. Called from GameState between planet and player render
   // so the shadow sits on the terrain below the ship.

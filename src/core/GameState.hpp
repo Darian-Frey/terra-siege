@@ -5,6 +5,7 @@
 #include "entity/EntityManager.hpp"
 #include "entity/Player.hpp"
 #include "hud/Radar.hpp"
+#include "mesh/MeshRegistry.hpp"
 #include "raylib.h"
 #include "wave/WaveManager.hpp"
 #include "world/Planet.hpp"
@@ -221,6 +222,11 @@ private:
   EntityManager m_em;
   Radar m_radar;
   WaveManager m_waves;
+  // Mesh registry — startup-loaded raylib Models indexed by EntityType
+  // (and a dedicated player slot). Entities not yet migrated to OBJ
+  // keep their procedural render path; the registry returns false
+  // from has() for those slots.
+  tsmesh::MeshRegistry m_meshRegistry;
 
   // Camera
   Camera3D m_camera = {};

@@ -174,6 +174,13 @@ void GameState::init() {
   double t0 = GetTime();
   m_particles.init();
   initHudFont();
+  // Mesh registry — load every OBJ under assets/meshes/. Entities
+  // without a matching file fall back to procedural rendering, so
+  // partial migration is safe. Must run AFTER InitWindow (which
+  // main.cpp guarantees by calling game.init() after the window).
+  m_meshRegistry.loadAll(
+      std::filesystem::path(TERRA_SIEGE_PROJECT_ROOT) / "assets" /
+      "meshes");
   loadWorld(12345u); // stable default seed — DEV_MODE F5 rerolls
   double t1 = GetTime();
   TraceLog(LOG_INFO, "Terrain generation: %.2f seconds (%d x %d heightmap)",
@@ -1175,7 +1182,7 @@ void GameState::render(float alpha) {
     }
     m_planet.draw(m_camera.position);
     m_player.renderGroundShadow(m_planet);
-    m_player.render();
+    m_player.render(&m_meshRegistry);
     m_em.render();
     m_particles.render(m_camera);
     // Beam Laser — drawn before the shield bubble so the bubble
@@ -1221,7 +1228,7 @@ void GameState::render(float alpha) {
     }
     m_planet.draw(m_camera.position);
     m_player.renderGroundShadow(m_planet);
-    m_player.render();
+    m_player.render(&m_meshRegistry);
     m_em.render();
     m_particles.render(m_camera);
     // Shield bubble drawn AFTER everything else in 3D so its alpha
@@ -1255,7 +1262,7 @@ void GameState::render(float alpha) {
     }
     m_planet.draw(m_camera.position);
     m_player.renderGroundShadow(m_planet);
-    m_player.render(); // wreck stays visible at the crash site
+    m_player.render(&m_meshRegistry); // wreck stays visible at the crash site
     m_em.render();
     m_particles.render(m_camera);
     EndMode3D();
@@ -2595,6 +2602,7 @@ void GameState::shutdown() {
   m_particles.unload();
   m_player.unload();
   m_planet.unload();
+  m_meshRegistry.unloadAll();
   if (m_hudFontLoaded) {
     UnloadFont(m_hudFont);
     m_hudFontLoaded = false;

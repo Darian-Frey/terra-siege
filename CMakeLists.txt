@@ -29,6 +29,22 @@ set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(BUILD_GAMES    OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(raylib)
 
+# Fetch doctest for the test harness. Header-only, single header — chosen
+# over Catch2 for ~10× faster compile and a much smaller dependency
+# surface. Tests are opt-in via the TERRA_SIEGE_BUILD_TESTS option.
+option(TERRA_SIEGE_BUILD_TESTS "Build the test suite" ON)
+if(TERRA_SIEGE_BUILD_TESTS)
+    FetchContent_Declare(
+        doctest
+        GIT_REPOSITORY https://github.com/doctest/doctest.git
+        GIT_TAG        v2.4.11
+        GIT_SHALLOW    TRUE
+    )
+    set(DOCTEST_WITH_TESTS OFF CACHE BOOL "" FORCE)
+    set(DOCTEST_NO_INSTALL ON CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(doctest)
+endif()
+
 # ---------------------------------------------------------------
 # Source files
 # ---------------------------------------------------------------
@@ -108,6 +124,12 @@ set(SOURCES
     src/wave/WaveManager.cpp
     src/wave/WaveManager.hpp
     src/wave/WaveDef.hpp
+
+    src/mesh/Palette.hpp
+    src/mesh/ObjLoader.cpp
+    src/mesh/ObjLoader.hpp
+    src/mesh/MeshRegistry.cpp
+    src/mesh/MeshRegistry.hpp
 )
 
 add_executable(terra-siege ${SOURCES})
@@ -140,6 +162,25 @@ add_custom_command(TARGET terra-siege POST_BUILD
 # Platform-specific links
 if(UNIX AND NOT APPLE)
     target_link_libraries(terra-siege PRIVATE m dl pthread)
+endif()
+
+# ---------------------------------------------------------------
+# Tests — doctest-based, opt-in via TERRA_SIEGE_BUILD_TESTS.
+# Each test_*.cpp is its own executable so failures bisect easily.
+# Tests link only against the mesh subsystem + raylib (for Vector3 /
+# Color); they DON'T link the whole game so they stay fast to build.
+# ---------------------------------------------------------------
+if(TERRA_SIEGE_BUILD_TESTS)
+    enable_testing()
+    add_executable(test_obj_loader
+        tests/test_obj_loader.cpp
+        src/mesh/ObjLoader.cpp
+    )
+    target_include_directories(test_obj_loader PRIVATE src)
+    target_link_libraries(test_obj_loader PRIVATE doctest raylib)
+    target_compile_definitions(test_obj_loader PRIVATE
+        TERRA_SIEGE_FIXTURE_ROOT="${CMAKE_SOURCE_DIR}/tests/fixtures")
+    add_test(NAME obj_loader COMMAND test_obj_loader)
 endif()
 
 message(STATUS "terra-siege ${PROJECT_VERSION} | Build: ${CMAKE_BUILD_TYPE} | C++${CMAKE_CXX_STANDARD}")

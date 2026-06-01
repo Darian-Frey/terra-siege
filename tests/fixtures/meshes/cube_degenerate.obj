@@ -1,0 +1,31 @@
+# Test fixture — cube + one zero-area triangle (T-05).
+# Loader should skip the degenerate face with a warning and load the
+# remaining 12 faces normally.
+o cube_degenerate
+
+v -1.0 -1.0 -1.0
+v  1.0 -1.0 -1.0
+v  1.0  1.0 -1.0
+v -1.0  1.0 -1.0
+v -1.0 -1.0  1.0
+v  1.0 -1.0  1.0
+v  1.0  1.0  1.0
+v -1.0  1.0  1.0
+# 9th vertex — same position as v1 to make the degenerate triangle below.
+v -1.0 -1.0 -1.0
+
+usemtl c01
+f 1 3 2
+f 1 4 3
+f 5 6 7
+f 5 7 8
+f 1 8 4
+f 1 5 8
+f 2 3 7
+f 2 7 6
+f 1 2 6
+f 1 6 5
+f 4 8 7
+f 4 7 3
+# Zero-area triangle: v1, v9 (same as v1), v2 — collapses to a line.
+f 1 9 2
