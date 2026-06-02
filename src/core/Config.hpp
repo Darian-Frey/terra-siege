@@ -189,17 +189,17 @@ constexpr float SHIELD_RECHARGE_DELAY = 3.0f; // sec after last hit
 // constants so adding the missile warning ring and ghost-blip pool
 // later doesn't require Config changes.
 // ----------------------------------------------------------------
-constexpr float RADAR_BASE_RANGE = 300.0f;       // world units (default)
-constexpr float RADAR_BOOST_RANGE = 500.0f;      // with Radar Booster alive
-constexpr float RADAR_ALT_STRIP_RANGE = 150.0f;  // ±units shown on alt strip
-constexpr float RADAR_BLINK_NEAR = 80.0f;        // distance for fast blink
-constexpr float RADAR_BLINK_FAR = 250.0f;        // distance for slow blink
-constexpr float RADAR_BLINK_FAST = 0.12f;        // sec/cycle (near)
-constexpr float RADAR_BLINK_SLOW = 0.60f;        // sec/cycle (far)
-constexpr float RADAR_GHOST_LIFETIME = 8.0f;     // ghost blip persistence
-constexpr float RADAR_VECTOR_MAX_LEN = 18.0f;    // px at max world speed
-constexpr float RADAR_JAM_MAX_OFFSET = 12.0f;    // px jitter near Carrier
-constexpr float RADAR_JAM_RANGE = 250.0f;        // Carrier dist that starts jamming
+constexpr float RADAR_BASE_RANGE = 300.0f;      // world units (default)
+constexpr float RADAR_BOOST_RANGE = 500.0f;     // with Radar Booster alive
+constexpr float RADAR_ALT_STRIP_RANGE = 150.0f; // ±units shown on alt strip
+constexpr float RADAR_BLINK_NEAR = 80.0f;       // distance for fast blink
+constexpr float RADAR_BLINK_FAR = 250.0f;       // distance for slow blink
+constexpr float RADAR_BLINK_FAST = 0.12f;       // sec/cycle (near)
+constexpr float RADAR_BLINK_SLOW = 0.60f;       // sec/cycle (far)
+constexpr float RADAR_GHOST_LIFETIME = 8.0f;    // ghost blip persistence
+constexpr float RADAR_VECTOR_MAX_LEN = 18.0f;   // px at max world speed
+constexpr float RADAR_JAM_MAX_OFFSET = 12.0f;   // px jitter near Carrier
+constexpr float RADAR_JAM_RANGE = 250.0f; // Carrier dist that starts jamming
 constexpr float RADAR_MISSILE_WARN_MIN = 120.0f; // dist to start warning ring
 constexpr float RADAR_MISSILE_WARN_TTI = 3.5f;   // sec time-to-impact threshold
 constexpr float RADAR_VECTOR_LOOKAHEAD = 1.5f;   // sec ahead for velocity arrow
@@ -293,8 +293,8 @@ constexpr float FIGHTER_PREFERRED_ALT = 60.0f; // AGL hover target
 // Boids-style flocking (separation + alignment + cohesion) plus a
 // pursuit force toward the player. 1-shot kill from Cannon (TTK 0.08s).
 constexpr float DRONE_CONTACT_DAMAGE = 10.0f; // damage to player on impact
-constexpr float DRONE_THRUST = 26.0f;         // m/s² (faster than fighter)
-constexpr float DRONE_MAX_SPEED = 30.0f;
+constexpr float DRONE_THRUST = 20.0f;         // m/s² (faster than fighter)
+constexpr float DRONE_MAX_SPEED = 25.0f;
 constexpr float DRONE_PREFERRED_ALT = 30.0f; // AGL hover target
 constexpr float DRONE_HIT_RADIUS = 1.5f;
 // Boids weights / radii
@@ -364,10 +364,10 @@ constexpr float BOMBER_HIT_RADIUS = 4.0f;     // big target
 // course at low HP. TANK_TURN_RATE governs chassis rotation; the
 // existing TURRET_* fire constants are reused for the barrel since
 // the visual + projectile model is identical.
-constexpr float TANK_DRIVE_SPEED = 14.0f;       // m/s forward speed
-constexpr float TANK_TURN_RATE = 1.1f;          // rad/s chassis rotation
-constexpr float TANK_EVADE_RECOVERY = 0.50f;    // hull frac to leave EVADE
-constexpr float TANK_FIRE_CONE = 0.20f;         // ~25° cone (wider, moving target)
+constexpr float TANK_DRIVE_SPEED = 3.0f;     // m/s forward speed
+constexpr float TANK_TURN_RATE = 0.6f;       // rad/s chassis rotation
+constexpr float TANK_EVADE_RECOVERY = 0.50f; // hull frac to leave EVADE
+constexpr float TANK_FIRE_CONE = 0.20f;      // ~25° cone (wider, moving target)
 
 // Ground Turret — stationary, terrain-anchored. Tracks the player
 // with a rotating barrel and fires when in range and aligned. First
@@ -392,7 +392,7 @@ constexpr float TURRET_GROUND_SPAWN_DIST = 90.0f; // place this far from player
 // Bombers prefer friendlies as targets when one is within their
 // engagement range — that's the entity's main pressure axis.
 constexpr float COLLECTOR_HULL = 60.0f;
-constexpr float COLLECTOR_SPEED = 6.0f;          // ground vehicle
+constexpr float COLLECTOR_SPEED = 6.0f; // ground vehicle
 constexpr float COLLECTOR_WAYPOINT_RADIUS = 4.0f;
 constexpr float COLLECTOR_HIT_RADIUS = 2.4f;
 // Delivery loop — pickup sites are picked randomly inside this radius
@@ -428,7 +428,7 @@ constexpr float RADAR_BOOSTER_HIT_RADIUS = 2.8f;
 constexpr int FRIENDLY_COLLECTOR_COUNT = 2;
 constexpr int FRIENDLY_REPAIR_COUNT = 1;
 constexpr int FRIENDLY_BOOSTER_COUNT = 1;
-constexpr float FRIENDLY_SPAWN_RING = 220.0f; // metres from player start
+constexpr float FRIENDLY_SPAWN_RING = 220.0f;    // metres from player start
 constexpr float FRIENDLY_SPAWN_MIN_DIST = 40.0f; // keep them separated
 
 // Bomber engagement of friendlies — preference threshold. If the

@@ -47,3 +47,4 @@ desktop.ini
 
 # Dev-mode flight telemetry / debug captures
 tests/logs/
+notes   
