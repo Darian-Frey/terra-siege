@@ -69,4 +69,30 @@ Model uploadModel(const Mesh3D &mesh);
 // to edit.
 Model loadModel(const std::filesystem::path &path);
 
-} // namespace Mesh
+// ====================================================================
+// Inspector save support (3d_assets.md §8.3 round-trip preservation).
+//
+// The inspector edits vertex positions only — never topology or
+// materials. To preserve the rest of the file byte-exactly we read
+// the original line-by-line and rewrite only `v ` directives.
+// Everything else (comments, blank lines, vn/vt/f/o/g/usemtl) is
+// kept verbatim, in original order.
+// ====================================================================
+
+// Read every line of a file verbatim. CR stripping is the only
+// normalisation. Returns empty vector if the file can't be opened.
+std::vector<std::string> readObjLines(const std::filesystem::path &path);
+
+// Save vertices back to an OBJ. The N-th `v ` line in the original
+// is rewritten with newVerts[N]; everything else is preserved
+// exactly. An "edited by terra-siege inspector <timestamp>" comment
+// is appended (or updated in place if a previous one exists).
+//
+// If `isDirty` is false the file is NOT written at all — this is
+// the T-06 contract (no edits → no save → on-disk bytes unchanged).
+//
+// Returns true on success.
+bool saveObjVertices(const std::filesystem::path &path,
+                     const std::vector<Vector3> &newVerts, bool isDirty);
+
+} // namespace tsmesh

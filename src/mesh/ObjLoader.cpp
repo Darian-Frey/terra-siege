@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -271,4 +272,122 @@ Model loadModel(const std::filesystem::path &path) {
   return uploadModel(lr.mesh);
 }
 
-} // namespace Mesh
+// ====================================================================
+// Inspector save (3d_assets.md §8.3) — line-by-line round-trip.
+// ====================================================================
+
+std::vector<std::string> readObjLines(const std::filesystem::path &path) {
+  std::vector<std::string> out;
+  std::ifstream in(path);
+  if (!in.is_open()) return out;
+  std::string line;
+  while (std::getline(in, line)) {
+    // Drop carriage returns so cross-platform diffs stay clean.
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    out.push_back(std::move(line));
+  }
+  return out;
+}
+
+namespace {
+
+// True if `line` starts with `v ` or `v\t` — an actual vertex
+// directive, not vn/vt.
+bool isVertexLine(const std::string &line) {
+  if (line.size() < 2) return false;
+  if (line[0] != 'v') return false;
+  return line[1] == ' ' || line[1] == '\t';
+}
+
+bool isEditMarker(const std::string &line) {
+  // Match "# edited by terra-siege inspector ..." — used to update
+  // the trailing comment in place instead of stacking duplicates.
+  static const char *prefix = "# edited by terra-siege inspector";
+  size_t plen = std::strlen(prefix);
+  if (line.size() < plen) return false;
+  return std::strncmp(line.c_str(), prefix, plen) == 0;
+}
+
+std::string timestampLine() {
+  std::time_t t = std::time(nullptr);
+  std::tm tm{};
+#if defined(_WIN32)
+  localtime_s(&tm, &t);
+#else
+  localtime_r(&t, &tm);
+#endif
+  char buf[64];
+  std::strftime(buf, sizeof(buf),
+                "# edited by terra-siege inspector %Y-%m-%d %H:%M:%S",
+                &tm);
+  return buf;
+}
+
+} // anonymous namespace
+
+bool saveObjVertices(const std::filesystem::path &path,
+                     const std::vector<Vector3> &newVerts, bool isDirty) {
+  // T-06: no edits → no write. The file's on-disk bytes must be
+  // byte-identical after a save-with-no-edits, so we skip the IO.
+  if (!isDirty) return true;
+
+  std::vector<std::string> lines = readObjLines(path);
+  if (lines.empty()) {
+    // Either the file's missing or empty — either way we can't
+    // round-trip-preserve anything.
+    return false;
+  }
+
+  // Walk the original lines, rewriting the N-th `v ` line with
+  // newVerts[N]. Out-of-bounds vertex counts (file vs. caller's
+  // vector) cause a hard refuse — saving a partial set would
+  // silently truncate the mesh.
+  size_t vIdx = 0;
+  for (std::string &line : lines) {
+    if (!isVertexLine(line)) continue;
+    if (vIdx >= newVerts.size()) {
+      std::fprintf(stderr,
+                   "[ObjLoader] saveObjVertices: file has more `v` lines "
+                   "than newVerts (%zu); refusing to save\n",
+                   newVerts.size());
+      return false;
+    }
+    const Vector3 &v = newVerts[vIdx];
+    char buf[96];
+    std::snprintf(buf, sizeof(buf), "v %.6f %.6f %.6f", v.x, v.y, v.z);
+    line = buf;
+    ++vIdx;
+  }
+  if (vIdx != newVerts.size()) {
+    std::fprintf(stderr,
+                 "[ObjLoader] saveObjVertices: file has %zu `v` lines but "
+                 "newVerts has %zu; refusing to save\n",
+                 vIdx, newVerts.size());
+    return false;
+  }
+
+  // Append-or-update the edit-marker comment so the file shows when
+  // it was last touched by the inspector. Replace in place if one
+  // already exists; append at the end otherwise.
+  std::string marker = timestampLine();
+  bool replaced = false;
+  for (std::string &line : lines) {
+    if (isEditMarker(line)) {
+      line = marker;
+      replaced = true;
+      break;
+    }
+  }
+  if (!replaced) lines.push_back(marker);
+
+  // Write back. `\n` line endings (no CR) — keeps git diffs noise-free.
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  if (!out.is_open()) return false;
+  for (const std::string &line : lines) {
+    out.write(line.data(), static_cast<std::streamsize>(line.size()));
+    out.put('\n');
+  }
+  return out.good();
+}
+
+} // namespace tsmesh

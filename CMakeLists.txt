@@ -46,9 +46,26 @@ if(TERRA_SIEGE_BUILD_TESTS)
 endif()
 
 # ---------------------------------------------------------------
-# Source files
+# Shared mesh subsystem — used by the game, the inspector binary,
+# and the test executables. Keeping this as a single static lib
+# means changes to the loader / registry recompile once and all
+# three consumers re-link.
 # ---------------------------------------------------------------
-set(SOURCES
+add_library(terra_siege_mesh STATIC
+    src/mesh/ObjLoader.cpp
+    src/mesh/ObjLoader.hpp
+    src/mesh/MeshRegistry.cpp
+    src/mesh/MeshRegistry.hpp
+    src/mesh/Palette.hpp
+)
+target_include_directories(terra_siege_mesh PUBLIC src)
+target_link_libraries(terra_siege_mesh PUBLIC raylib)
+
+# ---------------------------------------------------------------
+# Game source files (no mesh sources — those come from the lib;
+# no inspector sources — those are a separate executable)
+# ---------------------------------------------------------------
+set(GAME_SOURCES
     src/main.cpp
 
     src/core/GameState.cpp
@@ -124,19 +141,13 @@ set(SOURCES
     src/wave/WaveManager.cpp
     src/wave/WaveManager.hpp
     src/wave/WaveDef.hpp
-
-    src/mesh/Palette.hpp
-    src/mesh/ObjLoader.cpp
-    src/mesh/ObjLoader.hpp
-    src/mesh/MeshRegistry.cpp
-    src/mesh/MeshRegistry.hpp
 )
 
-add_executable(terra-siege ${SOURCES})
+add_executable(terra-siege ${GAME_SOURCES})
 
 target_include_directories(terra-siege PRIVATE src)
 
-target_link_libraries(terra-siege PRIVATE raylib)
+target_link_libraries(terra-siege PRIVATE terra_siege_mesh)
 
 target_compile_definitions(terra-siege PRIVATE RAYMATH_IMPLEMENTATION)
 
@@ -165,22 +176,48 @@ if(UNIX AND NOT APPLE)
 endif()
 
 # ---------------------------------------------------------------
+# Inspector — separate executable. Takes a path to an OBJ on the
+# CLI and opens the in-engine editor. New tools (forward-axis,
+# weapon mount points, …) live under src/inspector/ and just need
+# to be appended to this source list.
+# ---------------------------------------------------------------
+add_executable(terra-siege-inspect
+    src/inspector/main.cpp
+    src/inspector/Inspector.cpp
+    src/inspector/Inspector.hpp
+    src/inspector/Tool.hpp
+    src/inspector/VertexTool.cpp
+    src/inspector/VertexTool.hpp
+)
+target_include_directories(terra-siege-inspect PRIVATE src)
+target_link_libraries(terra-siege-inspect PRIVATE terra_siege_mesh)
+target_compile_definitions(terra-siege-inspect PRIVATE RAYMATH_IMPLEMENTATION)
+target_compile_options(terra-siege-inspect PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic>
+    $<$<CXX_COMPILER_ID:MSVC>:/W4>
+)
+if(UNIX AND NOT APPLE)
+    target_link_libraries(terra-siege-inspect PRIVATE m dl pthread)
+endif()
+
+# ---------------------------------------------------------------
 # Tests — doctest-based, opt-in via TERRA_SIEGE_BUILD_TESTS.
 # Each test_*.cpp is its own executable so failures bisect easily.
-# Tests link only against the mesh subsystem + raylib (for Vector3 /
-# Color); they DON'T link the whole game so they stay fast to build.
+# Tests link the shared mesh lib, NOT the whole game, so they stay
+# fast to build.
 # ---------------------------------------------------------------
 if(TERRA_SIEGE_BUILD_TESTS)
     enable_testing()
-    add_executable(test_obj_loader
-        tests/test_obj_loader.cpp
-        src/mesh/ObjLoader.cpp
-    )
-    target_include_directories(test_obj_loader PRIVATE src)
-    target_link_libraries(test_obj_loader PRIVATE doctest raylib)
+    add_executable(test_obj_loader tests/test_obj_loader.cpp)
+    target_link_libraries(test_obj_loader PRIVATE doctest terra_siege_mesh)
     target_compile_definitions(test_obj_loader PRIVATE
         TERRA_SIEGE_FIXTURE_ROOT="${CMAKE_SOURCE_DIR}/tests/fixtures")
     add_test(NAME obj_loader COMMAND test_obj_loader)
+
+    # Inspector save (T-06 / T-07 + edit-marker dedupe + count mismatch).
+    add_executable(test_obj_save tests/test_obj_save.cpp)
+    target_link_libraries(test_obj_save PRIVATE doctest terra_siege_mesh)
+    add_test(NAME obj_save COMMAND test_obj_save)
 endif()
 
 message(STATUS "terra-siege ${PROJECT_VERSION} | Build: ${CMAKE_BUILD_TYPE} | C++${CMAKE_CXX_STANDARD}")
