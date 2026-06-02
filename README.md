@@ -107,6 +107,15 @@ cmake --build build -j$(nproc)
 ./build/terra-siege
 ```
 
+A single build produces two executables:
+
+| Binary | Purpose |
+|--------|---------|
+| `build/terra-siege` | The game |
+| `build/terra-siege-inspect` | Mesh inspector — see [Tooling](#tooling) |
+
+Both link against a shared `terra_siege_mesh` static library, so the OBJ loader and palette code are compiled once.
+
 ### Developer / Cheat Mode
 
 ```bash
@@ -150,38 +159,92 @@ The codebase is cross-platform. MinGW-w64 or MSVC builds planned once Linux deve
 
 ---
 
+## Tooling
+
+### Mesh Inspector — `terra-siege-inspect`
+
+Entity meshes live in `assets/meshes/*.obj` and are loaded at startup via the shared `terra_siege_mesh` library. The inspector is a separate executable for tweaking those meshes without leaving the build environment — useful when geometry needs a small nudge that's quicker to do in 3D than via Blender re-export.
+
+Build is the same `cmake --build` invocation as the game; both binaries land in `build/`. Run it against any OBJ:
+
+```bash
+./build/terra-siege-inspect assets/meshes/hovercraft.obj
+```
+
+It opens its own window with an orbit camera, the loaded mesh, and clickable vertex spheres. Edits save back to the source OBJ; only vertex (`v`) lines are rewritten — comments, materials, faces, normals, and vertex order are preserved verbatim, so files stay Blender-round-trip safe.
+
+#### Controls
+
+| Key / Mouse | Action |
+|-----|--------|
+| LMB on a vertex sphere | Select + start drag |
+| LMB drag | Translate vertex along the camera-aligned plane through its start position |
+| Hold X / Y / Z while dragging | Lock the drag to a world axis |
+| RMB + mouse | Orbit camera |
+| Mouse wheel | Zoom |
+| TAB | Cycle inspector tools |
+| S | Save edits back to the OBJ |
+| R | Reload from disk (discards unsaved edits) |
+| Q | Quit |
+
+#### Tool registry
+
+The inspector runs one "tool" at a time; **TAB** cycles. Each tool implements the small `Tool` interface in `src/inspector/Tool.hpp` (`handleInput` / `render3D` / `renderHud` / `save` / `isDirty`) and is registered in `Inspector::Inspector()`. The Inspector owns the mesh, camera, GPU model, and global hotkeys; tools own their own selection state and dirty flags.
+
+| Tool | Purpose |
+|-----|--------|
+| `vertex` | Click + drag vertices (free-plane or X/Y/Z axis-locked); save writes only vertex (`v`) lines |
+
+Adding a new tool is a localised change — a new `src/inspector/<Name>Tool.hpp/cpp` implementing `Tool`, a `m_tools.push_back(std::make_unique<NameTool>())` in `Inspector::Inspector()`, and the two paths appended to the `terra-siege-inspect` CMake source list. Planned next:
+
+- `forward` — assign / preview the forward-facing axis per mesh
+- `hardpoints` — place weapon mount points (cannon emitters, missile rails)
+
+---
+
 ## Project Structure
 
 ```text
 terra-siege/
-├── CMakeLists.txt
+├── CMakeLists.txt                    # Game + inspector + tests + shared mesh static lib
 ├── assets/
-│   └── shaders/                  # GLSL shaders (terrain, shield, exhaust — stubs)
+│   ├── meshes/                       # Entity meshes (*.obj), 32-colour palette via material names
+│   └── shaders/                      # GLSL shaders (terrain, shield, exhaust — stubs)
+├── tests/                            # doctest-based tests for the mesh subsystem
 └── src/
-    ├── main.cpp
+    ├── main.cpp                      # Game entry point
     ├── core/
-    │   ├── Clock.hpp             # Fixed-timestep accumulator (120 Hz)
-    │   ├── Config.hpp            # All tuning constants — single source of truth
-    │   ├── GameState.hpp/cpp     # Top-level state machine + menu overlays
-    │   ├── Particles.hpp/cpp     # 2000-slot pool, gravity + bounce flags
-    │   └── Settings.hpp/cpp      # Persistent settings (~/.config/terra-siege)
+    │   ├── Clock.hpp                 # Fixed-timestep accumulator (120 Hz)
+    │   ├── Config.hpp                # All tuning constants — single source of truth
+    │   ├── GameState.hpp/cpp         # Top-level state machine + menu overlays
+    │   ├── Particles.hpp/cpp         # 2000-slot pool, gravity + bounce flags
+    │   └── Settings.hpp/cpp          # Persistent settings (~/.config/terra-siege)
     ├── world/
-    │   ├── Heightmap.hpp/cpp     # Perlin fBM + ridged mountains + rivers + lakes
-    │   ├── TerrainChunk.hpp/cpp  # Flat-shaded mesh builder
-    │   └── Planet.hpp/cpp        # Chunk orchestration, heightAt() query
+    │   ├── Heightmap.hpp/cpp         # Perlin fBM + ridged mountains + rivers + lakes
+    │   ├── TerrainChunk.hpp/cpp      # Flat-shaded mesh builder
+    │   └── Planet.hpp/cpp            # Chunk orchestration, heightAt() query
     ├── entity/
-    │   ├── Entity.hpp            # Type-tagged struct (single pool layout)
-    │   ├── Player.hpp/cpp        # Hovercraft mesh, Newtonian physics, input
-    │   └── EntityManager.hpp/cpp # Flat enemy + projectile pools, AI dispatch
+    │   ├── Entity.hpp                # Type-tagged struct (single pool layout)
+    │   ├── Player.hpp/cpp            # Hovercraft mesh, Newtonian physics, input
+    │   └── EntityManager.hpp/cpp     # Flat enemy + projectile pools, AI dispatch
+    ├── mesh/                         # Shared (game + inspector + tests) — terra_siege_mesh lib
+    │   ├── ObjLoader.hpp/cpp         # Text-format OBJ load + round-trip-safe save
+    │   ├── MeshRegistry.hpp/cpp      # Startup-loaded raylib Models keyed by EntityType
+    │   └── Palette.hpp               # 32-colour palette + material-name lookup
+    ├── inspector/                    # terra-siege-inspect binary
+    │   ├── main.cpp                  # CLI parsing + window setup
+    │   ├── Inspector.hpp/cpp         # Mesh/camera/model owner + global hotkeys + tool registry
+    │   ├── Tool.hpp                  # Pluggable tool interface (TAB cycles)
+    │   └── VertexTool.hpp/cpp        # Vertex pick + drag + axis lock (first tool)
     ├── hud/
-    │   └── Radar.hpp/cpp         # Tier 1 ego-centric disc + altitude strip
+    │   └── Radar.hpp/cpp             # Tier 1 ego-centric disc + altitude strip
     ├── wave/
-    │   ├── WaveDef.hpp           # Declarative wave loadout
-    │   └── WaveManager.hpp/cpp   # Wave state machine + spawn placement
-    ├── weapon/                   # Plasma, Beam, Missiles, Auto Turret (Phase 3+, stubs)
-    ├── shield/                   # Directional shield system (Phase 4+, stubs)
-    ├── ai/                       # Bomber STRAFE_FRIENDLY, Carrier (5d.4+, stubs)
-    └── audio/                    # Positional audio manager (Phase 5+, stubs)
+    │   ├── WaveDef.hpp               # Declarative wave loadout
+    │   └── WaveManager.hpp/cpp       # Wave state machine + spawn placement
+    ├── weapon/                       # Plasma, Beam, Missiles, Auto Turret (Phase 3+, stubs)
+    ├── shield/                       # Directional shield system (Phase 4+, stubs)
+    ├── ai/                           # Bomber STRAFE_FRIENDLY, Carrier (5d.4+, stubs)
+    └── audio/                        # Positional audio manager (Phase 5+, stubs)
 ```
 
 ---
@@ -191,7 +254,7 @@ terra-siege/
 - **Fixed timestep** — physics runs at 120 Hz decoupled from render rate; smooth motion on any display
 - **No heap allocation in hot path** — entity, particle, and projectile pools pre-allocated at startup
 - **Data-oriented entity update** — flat arrays per entity type, not pointer-chasing polymorphism
-- **Procedural geometry** — all 3D assets (ship, terrain objects, UI elements) built in code; no model files required
+- **OBJ mesh pipeline** — entity meshes live in `assets/meshes/*.obj` and are loaded at startup into a `MeshRegistry` keyed by `EntityType`. A 32-colour palette is baked via material names (`c00`..`c31`) so files stay text-editable in Blender and round-trip cleanly through the [in-engine inspector](#tooling). Terrain remains procedurally generated.
 - **Platform-agnostic** — `std::filesystem::path` throughout, no platform `#ifdef` in game logic
 
 ---
