@@ -10,6 +10,9 @@
 class Planet;
 class Player;
 class ParticleSystem;
+namespace tsmesh {
+class MeshRegistry;
+}
 
 // ====================================================================
 // EntityManager — pre-allocated pools for enemies/friendlies and for
@@ -71,7 +74,13 @@ public:
 
   void update(float dt, const Planet &planet, Player &player,
               ParticleSystem &particles);
-  void render() const;
+  // Render every alive enemy + projectile. If a non-null registry is
+  // passed, each entity's body is drawn from its OBJ mesh when one is
+  // loaded; otherwise the per-type procedural geometry is used.
+  // Dynamic per-entity overlays (HP bars, Carrier shield panels,
+  // RadarBooster rotating dish, Base turret, Collector cabin pip) are
+  // rendered after the body in either path.
+  void render(const tsmesh::MeshRegistry *registry = nullptr) const;
 
   // Debug / HUD
   int liveEnemyCount() const { return m_liveEnemies; }
@@ -191,6 +200,7 @@ private:
   Entity *allocProjectile();
 
   // Render helpers
-  void renderEnemy(const Entity &e) const;
+  void renderEnemy(const Entity &e,
+                   const tsmesh::MeshRegistry *registry) const;
   void renderProjectile(const Entity &p) const;
 };

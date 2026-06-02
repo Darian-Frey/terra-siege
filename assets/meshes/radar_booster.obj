@@ -1,0 +1,41 @@
+# terra-siege radar booster — extends radar range while alive.
+# Tower + foundation. Rotating dish + tip pip stay procedural (animated yaw).
+# Local frame: +Z forward. c21 tower + foundation.
+o radar_booster
+
+# Foundation 2.6 × 0.6 × 2.6 at (0, 0.1, 0)
+v -1.3 -0.2 -1.3
+v  1.3 -0.2 -1.3
+v  1.3  0.4 -1.3
+v -1.3  0.4 -1.3
+v -1.3 -0.2  1.3
+v  1.3 -0.2  1.3
+v  1.3  0.4  1.3
+v -1.3  0.4  1.3
+
+# Tower 1.6 × 3.6 × 1.6 at (0, 1.8, 0)
+v -0.8  0.0 -0.8
+v  0.8  0.0 -0.8
+v  0.8  3.6 -0.8
+v -0.8  3.6 -0.8
+v -0.8  0.0  0.8
+v  0.8  0.0  0.8
+v  0.8  3.6  0.8
+v -0.8  3.6  0.8
+
+usemtl c21
+g foundation
+f 1 4 3 2
+f 5 6 7 8
+f 1 5 8 4
+f 2 3 7 6
+f 1 2 6 5
+f 4 8 7 3
+
+g tower
+f 9 12 11 10
+f 13 14 15 16
+f 9 13 16 12
+f 10 11 15 14
+f 9 10 14 13
+f 12 16 15 11

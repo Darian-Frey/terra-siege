@@ -1,6 +1,7 @@
 #include "EntityManager.hpp"
 #include "Player.hpp"
 #include "core/Particles.hpp"
+#include "mesh/MeshRegistry.hpp"
 #include "raymath.h"
 #include "rlgl.h"
 #include "world/Planet.hpp"
@@ -1871,10 +1872,10 @@ void EntityManager::emitKillExplosion(Vector3 pos,
 // Render — placeholder primitive geometry. Replace with procedural
 // flat-shaded meshes when each enemy type lands its own visual pass.
 // ====================================================================
-void EntityManager::render() const {
+void EntityManager::render(const tsmesh::MeshRegistry *registry) const {
   for (const auto &e : m_entities) {
     if (!e.alive) continue;
-    renderEnemy(e);
+    renderEnemy(e, registry);
   }
   for (const auto &p : m_projectiles) {
     if (!p.alive) continue;
@@ -1882,26 +1883,26 @@ void EntityManager::render() const {
   }
 }
 
-void EntityManager::renderEnemy(const Entity &e) const {
+void EntityManager::renderEnemy(const Entity &e,
+                                const tsmesh::MeshRegistry *registry) const {
   switch (e.type) {
   case EntityType::Fighter: {
-    // Simple red wedge — flat-shaded cube with a forward-pointing cap.
-    // Replaced by a proper procedural mesh in a later pass.
-    Color body = {200, 50, 50, 255};
-    Color tip = {240, 200, 80, 255};
-    // Damage flash — fully white for the first ~0.12s after a hit so
-    // the player sees impact even when shield/hull bars are off-screen.
-    if (e.damageFlashTimer > 0.0f) {
-      body = {255, 255, 255, 255};
-      tip = {255, 255, 255, 255};
+    if (registry && registry->has(EntityType::Fighter)) {
+      registry->draw(EntityType::Fighter, e.pos, e.yaw, 1.0f, WHITE);
+    } else {
+      // Procedural fallback — kept for when the OBJ fails to load.
+      Color body = {200, 50, 50, 255};
+      Color tip = {240, 200, 80, 255};
+      if (e.damageFlashTimer > 0.0f) {
+        body = {255, 255, 255, 255};
+        tip = {255, 255, 255, 255};
+      }
+      DrawCubeV(e.pos, {3.0f, 1.5f, 4.0f}, body);
+      Vector3 nose = {e.pos.x + sinf(e.yaw) * 2.0f, e.pos.y,
+                      e.pos.z + cosf(e.yaw) * 2.0f};
+      DrawCubeV(nose, {1.2f, 0.8f, 1.2f}, tip);
     }
-    DrawCubeV(e.pos, {3.0f, 1.5f, 4.0f}, body);
-    Vector3 nose = {e.pos.x + sinf(e.yaw) * 2.0f, e.pos.y,
-                    e.pos.z + cosf(e.yaw) * 2.0f};
-    DrawCubeV(nose, {1.2f, 0.8f, 1.2f}, tip);
-
-    // Health hint — a thin line above the cube whose length scales
-    // with hull HP. Quick visual confirmation of damage in v1.
+    // HP + shield bars (always rendered, mesh or procedural).
     if (e.hullMax > 0.0f) {
       float t = e.hullHP / e.hullMax;
       if (t < 0.0f) t = 0.0f;
@@ -1918,40 +1919,43 @@ void EntityManager::renderEnemy(const Entity &e) const {
     break;
   }
   case EntityType::Drone: {
-    // Magenta diamond — distinct from red fighters at a glance.
-    Color body = {200, 80, 220, 255};
-    if (e.damageFlashTimer > 0.0f) body = {255, 255, 255, 255};
-    // Stretched cube oriented along velocity gives a "buzzing
-    // forward" read against the swarm. Procedural mesh later.
-    DrawCubeV(e.pos, {1.6f, 1.0f, 1.6f}, body);
-    // Tiny bright pip on top for visibility against terrain.
-    DrawCubeV({e.pos.x, e.pos.y + 0.7f, e.pos.z}, {0.4f, 0.4f, 0.4f},
-              {255, 200, 255, 255});
+    if (registry && registry->has(EntityType::Drone)) {
+      registry->draw(EntityType::Drone, e.pos, e.yaw, 1.0f, WHITE);
+    } else {
+      Color body = {200, 80, 220, 255};
+      if (e.damageFlashTimer > 0.0f) body = {255, 255, 255, 255};
+      DrawCubeV(e.pos, {1.6f, 1.0f, 1.6f}, body);
+      DrawCubeV({e.pos.x, e.pos.y + 0.7f, e.pos.z}, {0.4f, 0.4f, 0.4f},
+                {255, 200, 255, 255});
+    }
     break;
   }
   case EntityType::Bomber: {
     // Heavy blocky fuselage in dark olive — visually obvious it's
     // the slow target. Twin underwing pods + nose tip cue facing.
-    Color body = {120, 130, 80, 255};
-    Color pod = {90, 100, 60, 255};
-    Color nose = {220, 180, 90, 255};
-    if (e.damageFlashTimer > 0.0f) {
-      body = pod = nose = {255, 255, 255, 255};
+    if (registry && registry->has(EntityType::Bomber)) {
+      registry->draw(EntityType::Bomber, e.pos, e.yaw, 1.0f, WHITE);
+    } else {
+      Color body = {120, 130, 80, 255};
+      Color pod = {90, 100, 60, 255};
+      Color nose = {220, 180, 90, 255};
+      if (e.damageFlashTimer > 0.0f) {
+        body = pod = nose = {255, 255, 255, 255};
+      }
+      DrawCubeV(e.pos, {5.0f, 2.2f, 6.0f}, body);
+      // Underwing pods — offset in local +X/-X along yaw.
+      float rx = cosf(e.yaw); // local-right direction in XZ
+      float rz = -sinf(e.yaw);
+      Vector3 podL = {e.pos.x - rx * 2.4f, e.pos.y - 0.8f,
+                      e.pos.z - rz * 2.4f};
+      Vector3 podR = {e.pos.x + rx * 2.4f, e.pos.y - 0.8f,
+                      e.pos.z + rz * 2.4f};
+      DrawCubeV(podL, {1.2f, 0.9f, 2.5f}, pod);
+      DrawCubeV(podR, {1.2f, 0.9f, 2.5f}, pod);
+      Vector3 noseV = {e.pos.x + sinf(e.yaw) * 3.0f, e.pos.y,
+                       e.pos.z + cosf(e.yaw) * 3.0f};
+      DrawCubeV(noseV, {1.0f, 0.8f, 1.0f}, nose);
     }
-    DrawCubeV(e.pos, {5.0f, 2.2f, 6.0f}, body);
-    // Underwing pods — offset in local +X/-X along yaw.
-    float rx = cosf(e.yaw); // local-right direction in XZ
-    float rz = -sinf(e.yaw);
-    Vector3 podL = {e.pos.x - rx * 2.4f, e.pos.y - 0.8f,
-                    e.pos.z - rz * 2.4f};
-    Vector3 podR = {e.pos.x + rx * 2.4f, e.pos.y - 0.8f,
-                    e.pos.z + rz * 2.4f};
-    DrawCubeV(podL, {1.2f, 0.9f, 2.5f}, pod);
-    DrawCubeV(podR, {1.2f, 0.9f, 2.5f}, pod);
-    // Forward nose pip.
-    Vector3 noseV = {e.pos.x + sinf(e.yaw) * 3.0f, e.pos.y,
-                     e.pos.z + cosf(e.yaw) * 3.0f};
-    DrawCubeV(noseV, {1.0f, 0.8f, 1.0f}, nose);
 
     // Hull + shield bars — same convention as Fighter.
     if (e.hullMax > 0.0f) {
@@ -1970,20 +1974,20 @@ void EntityManager::renderEnemy(const Entity &e) const {
     break;
   }
   case EntityType::Seeder: {
-    // Squat dark-purple lozenge — reads as a slow carrier from any
-    // angle. Underside hatch hint (lighter band) cues "drone drops
-    // come out of here". Damage flash overrides everything.
-    Color body = {120, 60, 160, 255};
-    Color hatch = {200, 140, 240, 255};
-    Color top = {80, 40, 120, 255};
-    if (e.damageFlashTimer > 0.0f) {
-      body = hatch = top = {255, 255, 255, 255};
+    if (registry && registry->has(EntityType::Seeder)) {
+      registry->draw(EntityType::Seeder, e.pos, e.yaw, 1.0f, WHITE);
+    } else {
+      Color body = {120, 60, 160, 255};
+      Color hatch = {200, 140, 240, 255};
+      Color top = {80, 40, 120, 255};
+      if (e.damageFlashTimer > 0.0f) {
+        body = hatch = top = {255, 255, 255, 255};
+      }
+      DrawCubeV(e.pos, {6.0f, 1.6f, 4.5f}, body);
+      DrawCubeV({e.pos.x, e.pos.y + 0.9f, e.pos.z}, {3.5f, 0.5f, 2.5f}, top);
+      DrawCubeV({e.pos.x, e.pos.y - 0.85f, e.pos.z}, {2.5f, 0.15f, 1.8f},
+                hatch);
     }
-    DrawCubeV(e.pos, {6.0f, 1.6f, 4.5f}, body);
-    DrawCubeV({e.pos.x, e.pos.y + 0.9f, e.pos.z}, {3.5f, 0.5f, 2.5f}, top);
-    // Underside hatch — thin bright band so the player can see drops.
-    DrawCubeV({e.pos.x, e.pos.y - 0.85f, e.pos.z}, {2.5f, 0.15f, 1.8f},
-              hatch);
 
     // Hull bar — same convention as Fighter so the player can read
     // damage at a glance.
@@ -1997,34 +2001,34 @@ void EntityManager::renderEnemy(const Entity &e) const {
     break;
   }
   case EntityType::Carrier: {
-    // Wide blocky hull + 4 directional shield panels. Whole model is
-    // drawn in carrier-local space inside an rlPushMatrix / rlRotatef
-    // so the hull AND the shield slabs rotate together — DrawCubeV
-    // always renders axis-aligned cubes, so without this the panels
-    // would slide across the world axes as the carrier yawed.
-    // (Procedural mesh replacement later — see ship-extraction note.)
-    Color hull = {70, 80, 110, 255};
-    Color belly = {40, 50, 80, 255};
-    Color spire = {180, 200, 240, 255};
-    if (e.damageFlashTimer > 0.0f) {
-      hull = belly = spire = {255, 255, 255, 255};
+    // Hull body — OBJ when available, procedural otherwise. Shield
+    // panels stay procedural either way because they fade per-sector
+    // (which an OBJ can't represent without a shader). The panels
+    // need their own rlPushMatrix/rlRotatef so they rotate with the
+    // carrier yaw — DrawCubeV is axis-aligned in world space.
+    if (registry && registry->has(EntityType::Carrier)) {
+      registry->draw(EntityType::Carrier, e.pos, e.yaw, 1.0f, WHITE);
+    } else {
+      Color hull = {70, 80, 110, 255};
+      Color belly = {40, 50, 80, 255};
+      Color spire = {180, 200, 240, 255};
+      if (e.damageFlashTimer > 0.0f) {
+        hull = belly = spire = {255, 255, 255, 255};
+      }
+      rlPushMatrix();
+      rlTranslatef(e.pos.x, e.pos.y, e.pos.z);
+      rlRotatef(e.yaw * RAD2DEG, 0.0f, 1.0f, 0.0f);
+      DrawCubeV({0.0f, 0.0f, 0.0f}, {10.0f, 3.0f, 12.0f}, hull);
+      DrawCubeV({0.0f, -1.8f, 0.0f}, {6.0f, 0.6f, 4.0f}, belly);
+      DrawCubeV({0.0f, 1.9f, 0.0f}, {3.0f, 0.9f, 3.0f}, spire);
+      rlPopMatrix();
     }
 
+    // Sector shield panels — always procedural. Own matrix block so
+    // the carrier-local axis-aligned slabs rotate with yaw.
     rlPushMatrix();
     rlTranslatef(e.pos.x, e.pos.y, e.pos.z);
-    // Yaw is around world-up; raylib's rlRotatef takes degrees.
     rlRotatef(e.yaw * RAD2DEG, 0.0f, 1.0f, 0.0f);
-
-    // Hull + belly + spire — all at local origin, axis-aligned in
-    // local space which IS the carrier's frame post-rotation.
-    DrawCubeV({0.0f, 0.0f, 0.0f}, {10.0f, 3.0f, 12.0f}, hull);
-    DrawCubeV({0.0f, -1.8f, 0.0f}, {6.0f, 0.6f, 4.0f}, belly);
-    DrawCubeV({0.0f, 1.9f, 0.0f}, {3.0f, 0.9f, 3.0f}, spire);
-
-    // Sector shield panels — one per face, in carrier-local space.
-    // Front = +Z, Rear = -Z, Right = +X, Left = -X. Slab thin along
-    // the face normal, wide across the face. Alpha tied to HP fraction
-    // so a depleted sector visually vanishes.
     struct PanelDef {
       Vector3 pos;
       Vector3 size;
@@ -2051,7 +2055,6 @@ void EntityManager::renderEnemy(const Entity &e) const {
                       static_cast<unsigned char>(220), alpha};
       DrawCubeV(pd.pos, pd.size, shield);
     }
-
     rlPopMatrix();
 
     // Hull bar — drawn in world space (above the carrier centre)
@@ -2071,28 +2074,29 @@ void EntityManager::renderEnemy(const Entity &e) const {
     // forward-pointing barrel. Barrel rotation uses e.yaw; chassis
     // stays world-aligned so the rotation axis reads visually.
     Color base = {110, 100, 90, 255};
-    Color cap = {160, 70, 60, 255};
-    Color barrel = {220, 220, 220, 255};
-    if (e.damageFlashTimer > 0.0f) {
-      base = cap = barrel = {255, 255, 255, 255};
+    if (registry && registry->has(EntityType::GroundTurret)) {
+      // Whole tank (chassis + cap + barrel + tip) baked into the OBJ
+      // and rotates as one with e.yaw.
+      registry->draw(EntityType::GroundTurret, e.pos, e.yaw, 1.0f, WHITE);
+    } else {
+      Color cap = {160, 70, 60, 255};
+      Color barrel = {220, 220, 220, 255};
+      if (e.damageFlashTimer > 0.0f) {
+        base = cap = barrel = {255, 255, 255, 255};
+      }
+      DrawCubeV({e.pos.x, e.pos.y, e.pos.z},
+                {3.0f, Config::TURRET_MOUNT_HEIGHT * 2.0f, 3.0f}, base);
+      Vector3 capPos = {e.pos.x,
+                        e.pos.y + Config::TURRET_BARREL_HEIGHT,
+                        e.pos.z};
+      DrawCubeV(capPos, {2.4f, 1.2f, 2.4f}, cap);
+      float bx = sinf(e.yaw);
+      float bz = cosf(e.yaw);
+      Vector3 muzzle = {capPos.x + bx * 1.6f, capPos.y, capPos.z + bz * 1.6f};
+      DrawCubeV(muzzle, {0.6f, 0.4f, 0.6f}, barrel);
+      Vector3 tip = {capPos.x + bx * 2.4f, capPos.y, capPos.z + bz * 2.4f};
+      DrawCubeV(tip, {0.35f, 0.35f, 0.35f}, {255, 230, 100, 255});
     }
-    // Chassis — boxy base flush with terrain.
-    DrawCubeV({e.pos.x, e.pos.y, e.pos.z}, {3.0f, Config::TURRET_MOUNT_HEIGHT * 2.0f,
-              3.0f}, base);
-    // Turret cap at barrel pivot height.
-    Vector3 capPos = {e.pos.x,
-                      e.pos.y + Config::TURRET_BARREL_HEIGHT,
-                      e.pos.z};
-    DrawCubeV(capPos, {2.4f, 1.2f, 2.4f}, cap);
-    // Barrel — extruded cube forward of cap along yaw.
-    float bx = sinf(e.yaw);
-    float bz = cosf(e.yaw);
-    Vector3 muzzle = {capPos.x + bx * 1.6f, capPos.y, capPos.z + bz * 1.6f};
-    DrawCubeV(muzzle, {0.6f, 0.4f, 0.6f}, barrel);
-    // Tip pip — bright dot at barrel tip so the firing direction is
-    // obvious from any camera angle.
-    Vector3 tip = {capPos.x + bx * 2.4f, capPos.y, capPos.z + bz * 2.4f};
-    DrawCubeV(tip, {0.35f, 0.35f, 0.35f}, {255, 230, 100, 255});
 
     // Hull bar above the cap.
     if (e.hullMax > 0.0f) {
@@ -2111,18 +2115,23 @@ void EntityManager::renderEnemy(const Entity &e) const {
     // green palette to read distinct from enemy types at a glance.
     // Cabin pip switches yellow→green when cargo is loaded so the
     // player can tell "this one's heading home" at a glance.
-    Color hull = {80, 110, 70, 255};
-    Color tread = {40, 50, 35, 255};
+    if (registry && registry->has(EntityType::Collector)) {
+      registry->draw(EntityType::Collector, e.pos, e.yaw, 1.0f, WHITE);
+    } else {
+      Color hull = {80, 110, 70, 255};
+      Color tread = {40, 50, 35, 255};
+      if (e.damageFlashTimer > 0.0f) hull = tread = {255, 255, 255, 255};
+      DrawCubeV(e.pos, {3.0f, 1.4f, 4.5f}, hull);
+      DrawCubeV({e.pos.x - 1.8f, e.pos.y - 0.4f, e.pos.z},
+                {0.6f, 0.6f, 4.5f}, tread);
+      DrawCubeV({e.pos.x + 1.8f, e.pos.y - 0.4f, e.pos.z},
+                {0.6f, 0.6f, 4.5f}, tread);
+    }
+    // Cabin pip — always procedural (its colour flips per cargo state,
+    // and rebuilding the mesh per frame to swap colour would be silly).
     Color cab = e.hasCargo ? Color{120, 220, 100, 255}
                            : Color{220, 200, 80, 255};
-    if (e.damageFlashTimer > 0.0f) hull = tread = cab = {255, 255, 255, 255};
-    DrawCubeV(e.pos, {3.0f, 1.4f, 4.5f}, hull);
-    // Treads to either side of the hull (axis-aligned for now; turret
-    // body is small enough that the slide is barely visible).
-    DrawCubeV({e.pos.x - 1.8f, e.pos.y - 0.4f, e.pos.z},
-              {0.6f, 0.6f, 4.5f}, tread);
-    DrawCubeV({e.pos.x + 1.8f, e.pos.y - 0.4f, e.pos.z},
-              {0.6f, 0.6f, 4.5f}, tread);
+    if (e.damageFlashTimer > 0.0f) cab = {255, 255, 255, 255};
     DrawCubeV({e.pos.x, e.pos.y + 0.9f, e.pos.z}, {1.4f, 0.6f, 1.4f},
               cab);
 
@@ -2140,20 +2149,22 @@ void EntityManager::renderEnemy(const Entity &e) const {
     // the player is within heal radius so the "I'm healing you" cue
     // reads instantly. Pulse magnitude derived from a sinusoid of
     // the entity's lifespan; cheap and doesn't need extra state.
-    Color base = {60, 80, 70, 255};
-    Color pad = {120, 200, 140, 255};
-    if (e.damageFlashTimer > 0.0f) base = pad = {255, 255, 255, 255};
-    // Base pad — squat and wide.
-    DrawCubeV(e.pos, {5.0f, 0.8f, 5.0f}, base);
-    DrawCubeV({e.pos.x, e.pos.y + 0.5f, e.pos.z}, {3.5f, 0.2f, 3.5f},
-              pad);
-    // Yellow cross on top — universal "heal" cue.
-    Color cross = {240, 220, 80, 255};
-    if (e.damageFlashTimer > 0.0f) cross = {255, 255, 255, 255};
-    DrawCubeV({e.pos.x, e.pos.y + 0.65f, e.pos.z}, {1.8f, 0.1f, 0.4f},
-              cross);
-    DrawCubeV({e.pos.x, e.pos.y + 0.65f, e.pos.z}, {0.4f, 0.1f, 1.8f},
-              cross);
+    if (registry && registry->has(EntityType::RepairStation)) {
+      registry->draw(EntityType::RepairStation, e.pos, e.yaw, 1.0f, WHITE);
+    } else {
+      Color base = {60, 80, 70, 255};
+      Color pad = {120, 200, 140, 255};
+      if (e.damageFlashTimer > 0.0f) base = pad = {255, 255, 255, 255};
+      DrawCubeV(e.pos, {5.0f, 0.8f, 5.0f}, base);
+      DrawCubeV({e.pos.x, e.pos.y + 0.5f, e.pos.z}, {3.5f, 0.2f, 3.5f},
+                pad);
+      Color cross = {240, 220, 80, 255};
+      if (e.damageFlashTimer > 0.0f) cross = {255, 255, 255, 255};
+      DrawCubeV({e.pos.x, e.pos.y + 0.65f, e.pos.z}, {1.8f, 0.1f, 0.4f},
+                cross);
+      DrawCubeV({e.pos.x, e.pos.y + 0.65f, e.pos.z}, {0.4f, 0.1f, 1.8f},
+                cross);
+    }
 
     if (e.hullMax > 0.0f) {
       float t = e.hullHP / e.hullMax;
@@ -2168,21 +2179,25 @@ void EntityManager::renderEnemy(const Entity &e) const {
     // Tall cylinder-ish tower with a rotating dish on top. yaw is
     // animated in updateRadarBooster — gives the booster a clear
     // "alive" indicator at distance.
-    Color tower = {90, 100, 130, 255};
+    if (registry && registry->has(EntityType::RadarBooster)) {
+      // Tower + foundation come from the OBJ; the dish rotates
+      // independently with e.yaw and stays procedural.
+      registry->draw(EntityType::RadarBooster, e.pos, 0.0f, 1.0f, WHITE);
+    } else {
+      Color tower = {90, 100, 130, 255};
+      if (e.damageFlashTimer > 0.0f) tower = {255, 255, 255, 255};
+      DrawCubeV({e.pos.x, e.pos.y + 1.8f, e.pos.z}, {1.6f, 3.6f, 1.6f},
+                tower);
+      DrawCubeV({e.pos.x, e.pos.y + 0.1f, e.pos.z}, {2.6f, 0.6f, 2.6f},
+                tower);
+    }
+    // Rotating dish + tip pip — always procedural.
     Color dish = {200, 220, 255, 255};
-    if (e.damageFlashTimer > 0.0f) tower = dish = {255, 255, 255, 255};
-    // Tower body.
-    DrawCubeV({e.pos.x, e.pos.y + 1.8f, e.pos.z}, {1.6f, 3.6f, 1.6f},
-              tower);
-    // Foundation.
-    DrawCubeV({e.pos.x, e.pos.y + 0.1f, e.pos.z}, {2.6f, 0.6f, 2.6f},
-              tower);
-    // Rotating dish — extruded along yaw.
+    if (e.damageFlashTimer > 0.0f) dish = {255, 255, 255, 255};
     float dx = sinf(e.yaw), dz = cosf(e.yaw);
     Vector3 dishPos = {e.pos.x + dx * 0.6f, e.pos.y + 3.6f,
                        e.pos.z + dz * 0.6f};
     DrawCubeV(dishPos, {1.8f, 0.5f, 1.8f}, dish);
-    // Bright tip pip so the dish direction is readable.
     Vector3 tip = {e.pos.x + dx * 1.6f, e.pos.y + 3.6f,
                    e.pos.z + dz * 1.6f};
     DrawCubeV(tip, {0.5f, 0.4f, 0.5f}, {255, 220, 100, 255});
@@ -2201,34 +2216,34 @@ void EntityManager::renderEnemy(const Entity &e) const {
     // beacon yaw animates so the base reads as "active" at distance,
     // and the central control tower gives a clear silhouette
     // collectors are visibly approaching.
-    Color pad = {90, 100, 110, 255};
-    Color tower = {120, 130, 150, 255};
-    Color top = {200, 220, 240, 255};
-    if (e.damageFlashTimer > 0.0f) pad = tower = top = {255, 255, 255, 255};
-
-    // Landing pad — wide square.
-    DrawCubeV({e.pos.x, e.pos.y + 0.2f, e.pos.z}, {9.0f, 0.6f, 9.0f},
-              pad);
-    // Edge lighting strips — small bright cubes at each corner.
-    Color light = {255, 220, 80, 255};
-    DrawCubeV({e.pos.x + 4.0f, e.pos.y + 0.6f, e.pos.z + 4.0f},
-              {0.5f, 0.5f, 0.5f}, light);
-    DrawCubeV({e.pos.x - 4.0f, e.pos.y + 0.6f, e.pos.z + 4.0f},
-              {0.5f, 0.5f, 0.5f}, light);
-    DrawCubeV({e.pos.x + 4.0f, e.pos.y + 0.6f, e.pos.z - 4.0f},
-              {0.5f, 0.5f, 0.5f}, light);
-    DrawCubeV({e.pos.x - 4.0f, e.pos.y + 0.6f, e.pos.z - 4.0f},
-              {0.5f, 0.5f, 0.5f}, light);
-
-    // Control tower offset from centre so collectors land on a
-    // clear part of the pad.
-    DrawCubeV({e.pos.x + 2.5f, e.pos.y + 2.2f, e.pos.z + 2.5f},
-              {2.0f, 4.0f, 2.0f}, tower);
-    DrawCubeV({e.pos.x + 2.5f, e.pos.y + 4.5f, e.pos.z + 2.5f},
-              {2.6f, 0.6f, 2.6f}, top);
-    // Turret cap on top of the tower — same yaw used by the fire
-    // logic. Cap is a small cube, barrel extrudes along yaw, bright
-    // tip pip so direction reads at distance.
+    if (registry && registry->has(EntityType::Base)) {
+      // Pad + lights + tower + tower-top from the OBJ. yaw=0 so the
+      // static structure stays world-aligned (the base never rotates
+      // as a whole); the rotating turret comes after.
+      registry->draw(EntityType::Base, e.pos, 0.0f, 1.0f, WHITE);
+    } else {
+      Color pad = {90, 100, 110, 255};
+      Color tower = {120, 130, 150, 255};
+      Color top = {200, 220, 240, 255};
+      if (e.damageFlashTimer > 0.0f) pad = tower = top = {255, 255, 255, 255};
+      DrawCubeV({e.pos.x, e.pos.y + 0.2f, e.pos.z}, {9.0f, 0.6f, 9.0f},
+                pad);
+      Color light = {255, 220, 80, 255};
+      DrawCubeV({e.pos.x + 4.0f, e.pos.y + 0.6f, e.pos.z + 4.0f},
+                {0.5f, 0.5f, 0.5f}, light);
+      DrawCubeV({e.pos.x - 4.0f, e.pos.y + 0.6f, e.pos.z + 4.0f},
+                {0.5f, 0.5f, 0.5f}, light);
+      DrawCubeV({e.pos.x + 4.0f, e.pos.y + 0.6f, e.pos.z - 4.0f},
+                {0.5f, 0.5f, 0.5f}, light);
+      DrawCubeV({e.pos.x - 4.0f, e.pos.y + 0.6f, e.pos.z - 4.0f},
+                {0.5f, 0.5f, 0.5f}, light);
+      DrawCubeV({e.pos.x + 2.5f, e.pos.y + 2.2f, e.pos.z + 2.5f},
+                {2.0f, 4.0f, 2.0f}, tower);
+      DrawCubeV({e.pos.x + 2.5f, e.pos.y + 4.5f, e.pos.z + 2.5f},
+                {2.6f, 0.6f, 2.6f}, top);
+    }
+    // Turret cap + barrel + tip — always procedural, rotates with
+    // e.yaw independently of the static structure.
     Color capCol = {180, 110, 90, 255};
     Color barrelCol = {220, 220, 220, 255};
     if (e.damageFlashTimer > 0.0f) capCol = barrelCol = {255, 255, 255, 255};

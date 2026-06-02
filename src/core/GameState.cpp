@@ -1183,7 +1183,7 @@ void GameState::render(float alpha) {
     m_planet.draw(m_camera.position);
     m_player.renderGroundShadow(m_planet);
     m_player.render(&m_meshRegistry);
-    m_em.render();
+    m_em.render(&m_meshRegistry);
     m_particles.render(m_camera);
     // Beam Laser — drawn before the shield bubble so the bubble
     // (translucent) blends over it correctly. Bright cyan core + a
@@ -1229,7 +1229,7 @@ void GameState::render(float alpha) {
     m_planet.draw(m_camera.position);
     m_player.renderGroundShadow(m_planet);
     m_player.render(&m_meshRegistry);
-    m_em.render();
+    m_em.render(&m_meshRegistry);
     m_particles.render(m_camera);
     // Shield bubble drawn AFTER everything else in 3D so its alpha
     // blends over the ship + enemies + particles correctly.
@@ -1263,7 +1263,7 @@ void GameState::render(float alpha) {
     m_planet.draw(m_camera.position);
     m_player.renderGroundShadow(m_planet);
     m_player.render(&m_meshRegistry); // wreck stays visible at the crash site
-    m_em.render();
+    m_em.render(&m_meshRegistry);
     m_particles.render(m_camera);
     EndMode3D();
 
