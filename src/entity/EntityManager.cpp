@@ -410,39 +410,49 @@ uint32_t EntityManager::shieldLaserRaycast(Vector3 origin, Vector3 dir,
   }
   Vector3 impact = Vector3Add(origin, Vector3Scale(dn, bestT));
   outHitPos = impact;
+  applyShieldHit(*bestE, shieldDmgThisTick, hullDmgThisTick, impact,
+                 particles);
+  return bestId;
+}
 
-  // Damage routing — independent shield + hull drain. The Beam path's
-  // shield-first-then-overflow routing is deliberately bypassed: the
-  // strategic point of Shield Laser is "fast shield strip with
-  // minimal hull bleed", so hull drains at hullDmgThisTick even while
-  // shields are up. timeSinceHit/sectorTimer reset to suppress regen
-  // (matches the Beam's Carrier-shield mechanic).
-  Entity &t = *bestE;
-  t.timeSinceHit = 0.0f;
-  t.damageFlashTimer = 0.12f;
+// Shield-priority damage routing — drains shields and hull independently
+// rather than running the shield-first-overflow path used by applyDamage.
+// Reused by Shield Laser (per-tick continuous fire) and Shield Missile
+// (single-impact warhead). The strategic point of both weapons is "strip
+// shields fast with minimal hull bleed", so hull drains at hullDmg even
+// while shields are up.
+void EntityManager::applyShieldHit(Entity &target, float shieldDmg,
+                                   float hullDmg, Vector3 hitPos,
+                                   ParticleSystem &particles) {
+  target.timeSinceHit = 0.0f;
+  target.damageFlashTimer = 0.12f;
 
-  // Shield drain — sectored vs scalar.
-  bool sectored = (t.sectorMax[0] > 0.0f || t.sectorMax[1] > 0.0f ||
-                   t.sectorMax[2] > 0.0f || t.sectorMax[3] > 0.0f);
+  // Shield drain — sectored vs scalar. Inline check rather than
+  // calling hasDirectionalShield() because that helper is defined
+  // further down the file and forward-declaring it for one caller
+  // adds more noise than the four-OR test it inlines to.
+  bool sectored = (target.sectorMax[0] > 0.0f ||
+                   target.sectorMax[1] > 0.0f ||
+                   target.sectorMax[2] > 0.0f ||
+                   target.sectorMax[3] > 0.0f);
   if (sectored) {
-    int s = damageSectorFromHit(t, impact);
-    t.sectorTimer[s] = 0.0f;
-    t.sectorHP[s] -= shieldDmgThisTick;
-    if (t.sectorHP[s] < 0.0f) t.sectorHP[s] = 0.0f;
-  } else if (t.shieldHP > 0.0f) {
-    t.shieldHP -= shieldDmgThisTick;
-    if (t.shieldHP < 0.0f) t.shieldHP = 0.0f;
+    int s = damageSectorFromHit(target, hitPos);
+    target.sectorTimer[s] = 0.0f;
+    target.sectorHP[s] -= shieldDmg;
+    if (target.sectorHP[s] < 0.0f) target.sectorHP[s] = 0.0f;
+  } else if (target.shieldHP > 0.0f) {
+    target.shieldHP -= shieldDmg;
+    if (target.shieldHP < 0.0f) target.shieldHP = 0.0f;
   }
 
   // Hull drain — always, even while shields are up.
-  t.hullHP -= hullDmgThisTick;
-  if (t.hullHP <= 0.0f) {
-    t.hullHP = 0.0f;
-    t.alive = false;
+  target.hullHP -= hullDmg;
+  if (target.hullHP <= 0.0f) {
+    target.hullHP = 0.0f;
+    target.alive = false;
     --m_liveEnemies;
-    emitKillExplosion(t.pos, particles);
+    emitKillExplosion(target.pos, particles);
   }
-  return bestId;
 }
 
 // EMP area stun — set stunTimer on every enemy within radius. Skips
@@ -1730,7 +1740,8 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
   // splits into 4 sub-missiles when within CLUSTER_SPLIT_DISTANCE.
   // The carrier deals no damage itself; the children carry the load.
   bool isGuided = (p.kind == ProjectileKind::Missile ||
-                   p.kind == ProjectileKind::ClusterParent) &&
+                   p.kind == ProjectileKind::ClusterParent ||
+                   p.kind == ProjectileKind::ShieldMissile) &&
                   p.turnRate > 0.0f;
   if (isGuided) {
     // Resolve current target by id.
@@ -1853,13 +1864,18 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
         return;
       }
 
-      // Proximity fuse — Missile only (ClusterParent has its own split
-      // logic above). If the missile has passed its closest approach
-      // to the locked target AND is now inside splash kill range,
+      // Proximity fuse — Missile + ShieldMissile (ClusterParent has its
+      // own split logic above). If the missile has passed its closest
+      // approach to the locked target AND is inside fuse range,
       // detonate now instead of trying to circle back. The
       // direction-blend steering below can't snap-180° tight enough
       // when the miss-distance exceeds turn radius (speed / turnRate),
       // so near-misses without the fuse spiral around the target.
+      //
+      // Standard Missile uses splashRadius for the fuse range and
+      // applies splash damage on detonation. Shield Missile has no
+      // splash — its fuse range is target-radius based and it applies
+      // its shield-priority damage to the locked target directly.
       if (p.kind == ProjectileKind::Missile && p.splashRadius > 0.0f &&
           dist > 0.001f) {
         float fuseRange =
@@ -1872,6 +1888,37 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
             emitHitBurst(p.pos, particles);
             if (p.owner == ProjectileOwner::Player) {
               applySplashDamage(p.pos, p.splashRadius, p.damage, particles);
+              emitKillExplosion(p.pos, particles);
+            }
+            p.alive = false;
+            --m_liveProjectiles;
+            return;
+          }
+        }
+      } else if (p.kind == ProjectileKind::ShieldMissile &&
+                 dist > 0.001f) {
+        // No splashRadius for Shield Missile — fuse range is just the
+        // target's hit radius + a small buffer so the warhead always
+        // lands on the locked target.
+        float fuseRange = target->radius + 1.5f;
+        if (dist < fuseRange) {
+          Vector3 toTargetN = Vector3Scale(toTarget, 1.0f / dist);
+          float closing = Vector3DotProduct(p.vel, toTargetN);
+          if (closing < 0.0f) {
+            // Past closest approach — detonate on the locked target.
+            emitHitBurst(target->pos, particles);
+            if (p.owner == ProjectileOwner::Player) {
+              // Find the mutable target — target is a const* because
+              // we found it in a const-iteration loop above.
+              for (Entity &e : m_entities) {
+                if (e.alive && e.id == p.seekTargetId) {
+                  applyShieldHit(e,
+                                 Config::SHIELD_MISSILE_SHIELD_DMG,
+                                 Config::SHIELD_MISSILE_HULL_DMG,
+                                 target->pos, particles);
+                  break;
+                }
+              }
               emitKillExplosion(p.pos, particles);
             }
             p.alive = false;
@@ -1986,14 +2033,23 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
       float d = Vector3Distance(p.pos, e.pos);
       if (d < (e.radius + p.radius)) {
         emitHitBurst(p.pos, particles);
-        // Direct-impact target takes the full damage.
-        applyDamage(e, p.damage, p.pos, particles);
-        // Splash weapons (Plasma, Missile) blast everyone else in
-        // radius for the same damage figure — simple model, can
-        // graduate to falloff later if it feels too generous.
-        if (p.splashRadius > 0.0f) {
-          applySplashDamage(p.pos, p.splashRadius, p.damage, particles);
+        // Damage routing branches on kind. Shield Missile uses the
+        // shield-priority split (heavy shield drain, token hull) and
+        // has no splash; everything else applies p.damage normally
+        // and splashes if splashRadius > 0.
+        if (p.kind == ProjectileKind::ShieldMissile) {
+          applyShieldHit(e, Config::SHIELD_MISSILE_SHIELD_DMG,
+                         Config::SHIELD_MISSILE_HULL_DMG, p.pos, particles);
           emitKillExplosion(p.pos, particles);
+        } else {
+          applyDamage(e, p.damage, p.pos, particles);
+          // Splash weapons (Plasma, Missile) blast everyone else in
+          // radius for the same damage figure — simple model, can
+          // graduate to falloff later if it feels too generous.
+          if (p.splashRadius > 0.0f) {
+            applySplashDamage(p.pos, p.splashRadius, p.damage, particles);
+            emitKillExplosion(p.pos, particles);
+          }
         }
         p.alive = false;
         --m_liveProjectiles;
@@ -2577,6 +2633,21 @@ void EntityManager::renderProjectile(const Entity &p) const {
       tip.z += dir.z * 0.8f / speed;
     }
     DrawCubeV(tip, {0.4f, 0.4f, 0.4f}, {240, 80, 60, 255});
+    break;
+  }
+  case ProjectileKind::ShieldMissile: {
+    // Same silhouette as a standard missile but with a blue body
+    // tint and blue tip so the player reads it as "shield-stripper"
+    // at chase distance.
+    DrawCubeV(p.pos, {0.7f, 0.7f, 1.6f}, {180, 210, 240, 255});
+    Vector3 tip = p.pos;
+    Vector3 dir = p.vel;
+    float speed = sqrtf(dir.x * dir.x + dir.z * dir.z);
+    if (speed > 0.01f) {
+      tip.x += dir.x * 0.8f / speed;
+      tip.z += dir.z * 0.8f / speed;
+    }
+    DrawCubeV(tip, {0.4f, 0.4f, 0.4f}, {80, 180, 255, 255});
     break;
   }
   case ProjectileKind::Cannon:

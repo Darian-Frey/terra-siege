@@ -113,6 +113,7 @@ public:
     Missile = 0,
     Cluster = 1,
     DepthCharge = 2,
+    Shield = 3, // Slice B.3 — shield-stripper missile
   };
   enum class SpecialWeapon : uint8_t { EMP = 0, ShieldBooster = 1 };
   PrimaryWeapon primaryWeapon() const { return m_primaryWeapon; }
@@ -133,6 +134,7 @@ public:
   int missileAmmo() const { return m_missileAmmo; }
   int clusterAmmo() const { return m_clusterAmmo; }
   int depthChargeAmmo() const { return m_depthChargeAmmo; }
+  int shieldMissileAmmo() const { return m_shieldMissileAmmo; }
   // Shared primary-weapon energy pool (Slice B.1). Drained by Beam /
   // Plasma / future Shield Laser; Cannon is free. HUD displays this
   // any time the active primary uses energy.
@@ -155,6 +157,10 @@ public:
   // 4 sub-missiles when it nears its lock target; split logic lives
   // in EntityManager::updateProjectile (ClusterParent kind).
   bool consumePendingCluster(Vector3 &outPos, Vector3 &outVel);
+  // Shield Missile (Slice B.3) — fires like a normal missile but the
+  // projectile's kind is ShieldMissile so impact routes to the
+  // shield/hull split via EntityManager::applyShieldHit.
+  bool consumePendingShieldMissile(Vector3 &outPos, Vector3 &outVel);
   bool consumePendingEMP(Vector3 &outPos); // pos only — instant area effect
   bool consumePendingShieldBoost();        // signal-only; effect applied internally
   // Beam firing this tick? GameState reads each frame; if true it should
@@ -228,15 +234,19 @@ private:
   int m_missileAmmo = Config::MISSILE_AMMO_MAX;
   int m_clusterAmmo = Config::CLUSTER_AMMO_MAX;
   int m_depthChargeAmmo = Config::DEPTH_CHARGE_MAX;
+  int m_shieldMissileAmmo = Config::SHIELD_MISSILE_AMMO_MAX;
   bool m_pendingMissile = false;
   bool m_pendingDepthCharge = false;
   bool m_pendingCluster = false;
+  bool m_pendingShieldMissile = false;
   Vector3 m_missilePos = {};
   Vector3 m_missileVel = {};
   Vector3 m_depthChargePos = {};
   Vector3 m_depthChargeVel = {};
   Vector3 m_clusterPos = {};
   Vector3 m_clusterVel = {};
+  Vector3 m_shieldMissilePos = {};
+  Vector3 m_shieldMissileVel = {};
 
   // Special slot. F activates whichever special is selected. EMP =
   // area stun, ShieldBooster = instant full sector refill. Each has

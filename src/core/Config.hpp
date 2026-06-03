@@ -213,6 +213,23 @@ constexpr float DEPTH_CHARGE_RADIUS = 14.0f;
 constexpr int DEPTH_CHARGE_MAX = 8;
 
 // ----------------------------------------------------------------
+// Shield Missile (Slice B.3). One-shot shield burst — fired and
+// guided like a standard missile (PN steering + proximity fuse from
+// the earlier missile fix), but damage routing is split on impact:
+// 80 to shields directly, 4 to hull. Useful for opening a Carrier
+// sector you can't sustain Shield Laser on, or stripping a swarm
+// of Fighters in a single pass. Slightly faster but less agile than
+// a standard missile.
+// ----------------------------------------------------------------
+constexpr float SHIELD_MISSILE_SPEED = 75.0f;
+constexpr float SHIELD_MISSILE_TURN_RATE = 3.0f; // rad/s
+constexpr float SHIELD_MISSILE_SHIELD_DMG = 80.0f;
+constexpr float SHIELD_MISSILE_HULL_DMG = 4.0f;
+constexpr float SHIELD_MISSILE_FIRE_RATE = 0.6f; // sec between launches
+constexpr float SHIELD_MISSILE_RANGE = 600.0f;
+constexpr int SHIELD_MISSILE_AMMO_MAX = 12;
+
+// ----------------------------------------------------------------
 // Weapons — special
 // ----------------------------------------------------------------
 constexpr float TURRET_RANGE = 60.0f;

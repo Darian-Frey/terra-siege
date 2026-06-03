@@ -31,6 +31,7 @@ void Player::init(Vector3 startPos, int flightAssistLevel) {
   m_missileAmmo = Config::MISSILE_AMMO_MAX;
   m_clusterAmmo = Config::CLUSTER_AMMO_MAX;
   m_depthChargeAmmo = Config::DEPTH_CHARGE_MAX;
+  m_shieldMissileAmmo = Config::SHIELD_MISSILE_AMMO_MAX;
   m_primaryEnergy = Config::PRIMARY_ENERGY_MAX;
   m_beamFiring = false;
   m_empCooldown = 0.0f;
@@ -298,10 +299,10 @@ void Player::handleInput(float dt) {
   // single-pulse on first frame for the others — fire rate gates rate).
   m_secondaryFireRequested = IsMouseButtonDown(MOUSE_BUTTON_RIGHT);
 
-  // ---- Secondary cycle — Z (Missile → Cluster → DepthCharge → ...).
+  // ---- Secondary cycle — Z (Missile → Cluster → DepthCharge → Shield → ...).
   bool zDown = IsKeyDown(KEY_Z);
   if (zDown && !m_zWasDown) {
-    int next = (static_cast<int>(m_secondaryWeapon) + 1) % 3;
+    int next = (static_cast<int>(m_secondaryWeapon) + 1) % 4;
     m_secondaryWeapon = static_cast<SecondaryWeapon>(next);
   }
   m_zWasDown = zDown;
@@ -613,6 +614,20 @@ void Player::update(float dt, const Planet &planet) {
         --m_depthChargeAmmo;
       }
       break;
+    case SecondaryWeapon::Shield:
+      if (m_shieldMissileAmmo > 0) {
+        // Same launch profile as a standard missile — forward kick
+        // + ship-velocity inheritance. Projectile kind is
+        // ShieldMissile so impact routes through applyShieldHit
+        // (shield-priority damage split).
+        m_shieldMissilePos = Vector3Add(m_pos, Vector3Scale(fwd, 3.0f));
+        m_shieldMissileVel = Vector3Add(
+            Vector3Scale(fwd, Config::SHIELD_MISSILE_SPEED), m_vel);
+        m_pendingShieldMissile = true;
+        m_secondaryTimer = Config::SHIELD_MISSILE_FIRE_RATE;
+        --m_shieldMissileAmmo;
+      }
+      break;
     }
   }
 
@@ -663,6 +678,7 @@ void Player::update(float dt, const Planet &planet) {
     m_missileAmmo = Config::MISSILE_AMMO_MAX;
     m_clusterAmmo = Config::CLUSTER_AMMO_MAX;
     m_depthChargeAmmo = Config::DEPTH_CHARGE_MAX;
+    m_shieldMissileAmmo = Config::SHIELD_MISSILE_AMMO_MAX;
     m_primaryEnergy = Config::PRIMARY_ENERGY_MAX;
     m_empCooldown = 0.0f;
     m_shieldBoosterCooldown = 0.0f;
@@ -700,6 +716,14 @@ bool Player::consumePendingCluster(Vector3 &outPos, Vector3 &outVel) {
   outPos = m_clusterPos;
   outVel = m_clusterVel;
   m_pendingCluster = false;
+  return true;
+}
+
+bool Player::consumePendingShieldMissile(Vector3 &outPos, Vector3 &outVel) {
+  if (!m_pendingShieldMissile) return false;
+  outPos = m_shieldMissilePos;
+  outVel = m_shieldMissileVel;
+  m_pendingShieldMissile = false;
   return true;
 }
 

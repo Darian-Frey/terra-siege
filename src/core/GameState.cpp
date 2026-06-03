@@ -988,6 +988,29 @@ void GameState::update(float dt) {
                              Config::DEPTH_CHARGE_RADIUS);
       }
 
+      // Shield Missile — PN-guided like a standard missile but on
+      // impact applies a shield-priority damage split (heavy shield
+      // drain, token hull damage). Uses ProjectileKind::ShieldMissile
+      // so updateProjectile's hit + fuse branches route to
+      // applyShieldHit. Stored damage = hull portion; the shield
+      // portion is read from Config at impact time.
+      Vector3 sm_pos, sm_vel;
+      if (m_player.consumePendingShieldMissile(sm_pos, sm_vel)) {
+        Vector3 fwd = m_player.forward();
+        uint32_t lockId =
+            m_em.acquireTarget(sm_pos, fwd, Config::MISSILE_LOCK_CONE,
+                               Config::SHIELD_MISSILE_RANGE);
+        m_em.spawnProjectile(sm_pos, sm_vel,
+                             Config::SHIELD_MISSILE_HULL_DMG,
+                             Config::SHIELD_MISSILE_RANGE,
+                             Config::SHIELD_MISSILE_SPEED,
+                             ProjectileOwner::Player,
+                             ProjectileKind::ShieldMissile,
+                             0.0f, // no splash
+                             lockId,
+                             Config::SHIELD_MISSILE_TURN_RATE);
+      }
+
       // Beam-class fire — continuous raycast while held. Player
       // flagged it firing this tick if energy was available. Beam and
       // Shield Laser branch internally for the damage routing: Beam
@@ -1563,6 +1586,11 @@ void GameState::drawHUD() const {
       secName = "DEPTHCHG";
       secAmmo = m_player.depthChargeAmmo();
       secMax = Config::DEPTH_CHARGE_MAX;
+      break;
+    case Player::SecondaryWeapon::Shield:
+      secName = "SHLD MSL";
+      secAmmo = m_player.shieldMissileAmmo();
+      secMax = Config::SHIELD_MISSILE_AMMO_MAX;
       break;
     default:
       break;
@@ -2571,11 +2599,11 @@ void GameState::drawLoadoutSelect() {
     if (hit >= 0)
       m_loadout.primary = static_cast<Player::PrimaryWeapon>(hit);
   }
-  // Secondary row — Missile / Cluster / Depth Charge.
+  // Secondary row — Missile / Cluster / Depth Charge / Shield Missile.
   {
-    const char *opts[3] = {"MISSILE", "CLUSTER", "DEPTHCHG"};
+    const char *opts[4] = {"MISSILE", "CLUSTER", "DEPTHCHG", "SHLD MSL"};
     int sel = static_cast<int>(m_loadout.secondary);
-    int hit = drawSlotRow(py + 130, "SECONDARY", opts, 3, sel);
+    int hit = drawSlotRow(py + 130, "SECONDARY", opts, 4, sel);
     if (hit >= 0)
       m_loadout.secondary = static_cast<Player::SecondaryWeapon>(hit);
   }

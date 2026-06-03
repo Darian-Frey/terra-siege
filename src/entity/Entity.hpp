@@ -58,6 +58,12 @@ enum class ProjectileKind : uint8_t {
   // reacquire individually. Does NOT damage anything itself; its
   // job is delivery.
   ClusterParent,
+  // Shield Missile (Slice B.3) — flies and steers like a normal
+  // Missile, but on impact applies a shield-priority damage split
+  // (heavy shield drain, token hull damage) via applyShieldHit
+  // instead of routing through applyDamage's shield-first-overflow
+  // path. No splash.
+  ShieldMissile,
 };
 
 // AI state machine — Drones and projectiles ignore this. The

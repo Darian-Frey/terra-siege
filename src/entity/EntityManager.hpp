@@ -220,6 +220,15 @@ private:
   void applyDamage(Entity &target, float damage, Vector3 hitPos,
                    ParticleSystem &particles);
 
+  // Shield-priority damage application (Slice B.2/B.3). Drains shields
+  // (sectored or scalar) by shieldDmg directly — NO overflow to hull.
+  // Drains hull by hullDmg always, even while shields are up. Reused
+  // by Shield Laser (per-tick continuous) and Shield Missile (single
+  // impact). Same kill / flash / regen-suppression bookkeeping as
+  // applyDamage.
+  void applyShieldHit(Entity &target, float shieldDmg, float hullDmg,
+                      Vector3 hitPos, ParticleSystem &particles);
+
   // Resolve which directional shield sector takes a hit, given the
   // world-space hit position and the target's pose. Returns a
   // ShieldSector enum cast to int (0..3). Exposed for unit tests /
