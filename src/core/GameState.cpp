@@ -1514,10 +1514,14 @@ void GameState::drawHUD() const {
     }
     drawHudText("PRI", wx, wy, 11, col);
     drawHudText(primaryName, wx + 32, wy, 13, primaryCol);
-    // Beam energy bar replaces the static name suffix when beam is
-    // selected — feedback on drain/recharge during fire.
-    if (m_player.primaryWeapon() == Player::PrimaryWeapon::Beam) {
-      float frac = m_player.beamEnergy() / m_player.beamEnergyMax();
+    // Shared primary-energy bar — visible whenever the active weapon
+    // costs energy (Plasma + Beam in B.1; Shield Laser later). Cannon
+    // is free so no bar shown for it.
+    bool primaryUsesEnergy =
+        m_player.primaryWeapon() == Player::PrimaryWeapon::Plasma ||
+        m_player.primaryWeapon() == Player::PrimaryWeapon::Beam;
+    if (primaryUsesEnergy) {
+      float frac = m_player.primaryEnergy() / m_player.primaryEnergyMax();
       if (frac < 0.0f) frac = 0.0f;
       if (frac > 1.0f) frac = 1.0f;
       int barW = 60, barH = 6;

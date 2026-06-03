@@ -128,9 +128,23 @@ constexpr int PLASMA_AMMO_MAX = 120;
 
 constexpr float BEAM_DAMAGE_PS = 45.0f; // damage per second
 constexpr float BEAM_RANGE = 160.0f;
-constexpr float BEAM_ENERGY_MAX = 100.0f;
-constexpr float BEAM_DRAIN_PS = 20.0f;
-constexpr float BEAM_RECHARGE_PS = 12.0f;
+
+// ----------------------------------------------------------------
+// Shared primary-weapon energy pool (Slice B.1).
+// Cannon = kinetic, no cost. Plasma / Beam / Shield Laser all draw
+// from this pool. Recharge runs only when no energy weapon is
+// firing this tick (Beam held = no recharge; Plasma between shots
+// recharges normally).
+//
+// Sustained Beam: drain 22/s, recharge suppressed → 120/22 ≈ 5.5s.
+// Sustained Plasma: 4 shots/s × 8 = 32/s burn vs 15/s recharge =
+//   net 17/s drain → 120/17 ≈ 7s of continuous fire.
+// Empty → full recharge: 120/15 = 8s.
+// ----------------------------------------------------------------
+constexpr float PRIMARY_ENERGY_MAX = 120.0f;
+constexpr float PRIMARY_ENERGY_RECHARGE = 15.0f; // units/sec when idle
+constexpr float BEAM_ENERGY_DRAIN_PS = 22.0f;    // sustained drain while firing
+constexpr float PLASMA_ENERGY_PER_SHOT = 8.0f;   // deducted on each plasma shot
 
 // ----------------------------------------------------------------
 // Weapons — secondary

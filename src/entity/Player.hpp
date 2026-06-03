@@ -128,8 +128,11 @@ public:
   int missileAmmo() const { return m_missileAmmo; }
   int clusterAmmo() const { return m_clusterAmmo; }
   int depthChargeAmmo() const { return m_depthChargeAmmo; }
-  float beamEnergy() const { return m_beamEnergy; }
-  float beamEnergyMax() const; // Config::BEAM_ENERGY_MAX
+  // Shared primary-weapon energy pool (Slice B.1). Drained by Beam /
+  // Plasma / future Shield Laser; Cannon is free. HUD displays this
+  // any time the active primary uses energy.
+  float primaryEnergy() const { return m_primaryEnergy; }
+  float primaryEnergyMax() const; // Config::PRIMARY_ENERGY_MAX
   bool beamFiring() const { return m_beamFiring; }
   float empCooldown() const { return m_empCooldown; }
   float empMaxCooldown() const; // for HUD ring readout
@@ -247,7 +250,7 @@ private:
   // GameState because it needs EntityManager access; Player just
   // tracks energy + reports whether we're currently firing.
   bool m_beamFiring = false;
-  float m_beamEnergy = Config::BEAM_ENERGY_MAX;
+  float m_primaryEnergy = Config::PRIMARY_ENERGY_MAX;
   Vector3 m_beamOrigin = {};
   Vector3 m_beamDir = {};
 

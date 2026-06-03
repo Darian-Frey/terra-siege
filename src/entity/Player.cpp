@@ -31,7 +31,7 @@ void Player::init(Vector3 startPos, int flightAssistLevel) {
   m_missileAmmo = Config::MISSILE_AMMO_MAX;
   m_clusterAmmo = Config::CLUSTER_AMMO_MAX;
   m_depthChargeAmmo = Config::DEPTH_CHARGE_MAX;
-  m_beamEnergy = Config::BEAM_ENERGY_MAX;
+  m_primaryEnergy = Config::PRIMARY_ENERGY_MAX;
   m_beamFiring = false;
   m_empCooldown = 0.0f;
   m_shieldBoosterCooldown = 0.0f;
@@ -515,30 +515,38 @@ void Player::update(float dt, const Planet &planet) {
   if (m_cannonTimer > 0.0f) m_cannonTimer -= dt;
   if (m_cannonTimer < 0.0f) m_cannonTimer = 0.0f;
 
-  // Beam energy regen runs whenever the beam isn't firing this tick.
-  // Drain happens inside the firing branch below so beamFiring
-  // accurately tracks "we drew power this tick".
+  // Shared primary energy pool (Slice B.1). Cannon is free; Plasma
+  // deducts a discrete cost per shot; Beam drains continuously while
+  // held. Recharge runs every tick the Beam isn't firing — Plasma's
+  // per-shot cost doesn't block recharge between discrete shots.
   bool wantBeam = (m_primaryWeapon == PrimaryWeapon::Beam &&
                    m_fireRequested && m_health > 0.0f &&
-                   m_beamEnergy > 0.0f);
+                   m_primaryEnergy > 0.0f);
   if (wantBeam) {
     Vector3 fwd = forward();
     m_beamOrigin = Vector3Add(m_pos, Vector3Scale(fwd, 2.4f));
     m_beamDir = fwd;
     m_beamFiring = true;
-    m_beamEnergy -= Config::BEAM_DRAIN_PS * dt;
-    if (m_beamEnergy < 0.0f) m_beamEnergy = 0.0f;
+    m_primaryEnergy -= Config::BEAM_ENERGY_DRAIN_PS * dt;
+    if (m_primaryEnergy < 0.0f) m_primaryEnergy = 0.0f;
   } else {
     m_beamFiring = false;
-    m_beamEnergy += Config::BEAM_RECHARGE_PS * dt;
-    if (m_beamEnergy > Config::BEAM_ENERGY_MAX)
-      m_beamEnergy = Config::BEAM_ENERGY_MAX;
+    m_primaryEnergy += Config::PRIMARY_ENERGY_RECHARGE * dt;
+    if (m_primaryEnergy > Config::PRIMARY_ENERGY_MAX)
+      m_primaryEnergy = Config::PRIMARY_ENERGY_MAX;
   }
 
   // Cannon / Plasma — discrete projectile firing on the shared timer.
+  // Plasma additionally requires PLASMA_ENERGY_PER_SHOT in the pool;
+  // if the player drained it on Beam they need to wait for recharge
+  // before Plasma will fire again.
   bool wantPrimary = m_fireRequested && m_cannonTimer <= 0.0f &&
                      m_health > 0.0f &&
                      m_primaryWeapon != PrimaryWeapon::Beam;
+  if (wantPrimary && m_primaryWeapon == PrimaryWeapon::Plasma &&
+      m_primaryEnergy < Config::PLASMA_ENERGY_PER_SHOT) {
+    wantPrimary = false;
+  }
   if (wantPrimary) {
     Vector3 fwd = forward();
     m_shotPos = Vector3Add(m_pos, Vector3Scale(fwd, 3.0f));
@@ -550,6 +558,10 @@ void Player::update(float dt, const Planet &planet) {
     m_cannonTimer = (m_primaryWeapon == PrimaryWeapon::Plasma)
                         ? Config::PLASMA_FIRE_RATE
                         : Config::CANNON_FIRE_RATE;
+    if (m_primaryWeapon == PrimaryWeapon::Plasma) {
+      m_primaryEnergy -= Config::PLASMA_ENERGY_PER_SHOT;
+      if (m_primaryEnergy < 0.0f) m_primaryEnergy = 0.0f;
+    }
   }
 
   // Secondary — branch by selected weapon. All three share the
@@ -647,7 +659,7 @@ void Player::update(float dt, const Planet &planet) {
     m_missileAmmo = Config::MISSILE_AMMO_MAX;
     m_clusterAmmo = Config::CLUSTER_AMMO_MAX;
     m_depthChargeAmmo = Config::DEPTH_CHARGE_MAX;
-    m_beamEnergy = Config::BEAM_ENERGY_MAX;
+    m_primaryEnergy = Config::PRIMARY_ENERGY_MAX;
     m_empCooldown = 0.0f;
     m_shieldBoosterCooldown = 0.0f;
   }
@@ -716,7 +728,7 @@ bool Player::consumePendingTurretShot(Vector3 &outPos, Vector3 &outVel) {
 }
 
 float Player::empMaxCooldown() const { return Config::EMP_COOLDOWN; }
-float Player::beamEnergyMax() const { return Config::BEAM_ENERGY_MAX; }
+float Player::primaryEnergyMax() const { return Config::PRIMARY_ENERGY_MAX; }
 float Player::shieldBoosterMaxCooldown() const { return 20.0f; }
 
 // ====================================================================
