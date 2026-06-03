@@ -218,6 +218,24 @@ constexpr float AI_EVADE_HEALTH = 0.25f; // fraction
 constexpr float SPATIAL_CELL_SIZE = 60.0f;
 
 // ----------------------------------------------------------------
+// Slice A — damage smoke + retreat AI
+// (see project-status/game_modes_and_features.md §9 + base_mode_v2.md)
+// In Slice A "home base" = the entity's recorded spawn position;
+// when Slice C lands this becomes a pointer to the enemy lander and
+// retreating ships heal on arrival.
+// ----------------------------------------------------------------
+constexpr float SMOKE_HP_THRESHOLD = 0.50f;  // emit smoke below this hull fraction
+constexpr float SMOKE_EMIT_RATE_MIN = 3.0f;  // particles/sec at the threshold
+constexpr float SMOKE_EMIT_RATE_MAX = 15.0f; // particles/sec at 0 hp
+constexpr float SMOKE_LIFETIME = 1.2f;       // seconds per particle
+constexpr float RETREAT_HP_THRESHOLD =
+    0.40f; // enter Retreating below this hull fraction
+constexpr float RETREAT_SPEED_FRAC =
+    0.7f; // top-speed multiplier while retreating (damaged engines)
+constexpr float RETREAT_DESPAWN_DIST =
+    12.0f; // despawn when within this distance of spawnPos
+
+// ----------------------------------------------------------------
 // Combat — TIME-TO-KILL BUDGET (combat_tuning.md authoritative)
 // HP values DERIVED from TTK targets. Adjust TTK first, never hull
 // directly. Cannon DPS = CANNON_DAMAGE / CANNON_FIRE_RATE = 100.

@@ -68,6 +68,12 @@ enum class AIState : uint8_t {
   Pursue,
   Attack,
   Evade,
+  // Retreating — Slice A. Triggered when hullHP / hullMax drops below
+  // RETREAT_HP_THRESHOLD on Fighter / Bomber / Seeder. Turns the ship
+  // toward its recorded spawnPos at RETREAT_SPEED_FRAC speed; despawns
+  // cleanly when within RETREAT_DESPAWN_DIST. In Slice C this evolves
+  // into "fly back to home base + heal on arrival".
+  Retreating,
   StrafeFriendly, // Bomber-only
   // Collector economy loop — runs out from base to a pickup site,
   // dwells, returns to base, dwells, scores a delivery, repeats.
@@ -151,4 +157,12 @@ struct Entity {
   // seekTargetId on Collectors holds the home Base entity id.
   Vector3 targetPos = {0, 0, 0};
   bool hasCargo = false;
+
+  // Slice A — retreat AI. spawnPos is recorded at spawn time and used
+  // as the destination when the ship transitions to AIState::Retreating
+  // (hullHP < RETREAT_HP_THRESHOLD). Independent from targetPos so
+  // Collectors don't collide. smokeTimer accumulates the damage-smoke
+  // emit cooldown so the rate scales smoothly with hull fraction.
+  Vector3 spawnPos = {0, 0, 0};
+  float smokeTimer = 0.0f;
 };

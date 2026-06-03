@@ -87,6 +87,10 @@ Entity *EntityManager::spawnEnemy(EntityType type, Vector3 pos) {
   e->id = m_nextId++;
   e->alive = true;
   e->pos = pos;
+  // Slice A: spawnPos is the retreat destination once hull < RETREAT_HP_THRESHOLD.
+  // Recorded for every type even though only Fighter/Bomber/Seeder retreat — keeps
+  // the spawn path uniform and lets Slice C re-bind this to a home-base pointer.
+  e->spawnPos = pos;
   e->aiState = AIState::Pursue;
 
   switch (type) {
@@ -346,6 +350,114 @@ void EntityManager::applyEMPStun(Vector3 pos, float radius, float duration) {
 }
 
 // ====================================================================
+// Slice A helpers — damage-smoke + retreat-to-spawn behaviour shared
+// across Fighter / Bomber / Seeder (and Carrier for smoke only).
+// ====================================================================
+void EntityManager::tickDamageSmoke(Entity &e, ParticleSystem &particles,
+                                    float dt) {
+  if (e.hullMax <= 0.0f) return;
+  float hpFrac = e.hullHP / e.hullMax;
+  if (hpFrac >= Config::SMOKE_HP_THRESHOLD) return;
+
+  // Linear emit-rate ramp from MIN at the threshold to MAX at zero HP.
+  float damageFrac = 1.0f - (hpFrac / Config::SMOKE_HP_THRESHOLD);
+  if (damageFrac < 0.0f) damageFrac = 0.0f;
+  if (damageFrac > 1.0f) damageFrac = 1.0f;
+  float emitRate =
+      Config::SMOKE_EMIT_RATE_MIN +
+      damageFrac * (Config::SMOKE_EMIT_RATE_MAX - Config::SMOKE_EMIT_RATE_MIN);
+
+  e.smokeTimer -= dt;
+  if (e.smokeTimer > 0.0f) return;
+  // Slight drift back along the ship's velocity + gentle upward rise.
+  Vector3 trailVel = Vector3Scale(e.vel, -0.3f);
+  trailVel.y += 1.5f;
+  // Dark brown smoke per design-doc §9.1, with the alpha edging up as
+  // the ship gets closer to dead.
+  unsigned char alpha = static_cast<unsigned char>(160.0f + 70.0f * damageFrac);
+  Color smoke = {120, 100, 80, alpha};
+  particles.emit(e.pos, trailVel, smoke, 0.45f, Config::SMOKE_LIFETIME,
+                 ParticleSystem::Shape::Cube, ParticleSystem::FLAG_GRAVITY);
+  e.smokeTimer = 1.0f / emitRate;
+}
+
+bool EntityManager::tickRetreat(Entity &e, float dt, const Planet &planet,
+                                float maxSpeed, float turnRate,
+                                float thrust) {
+  Vector3 toSpawn = Vector3Subtract(e.spawnPos, e.pos);
+  Vector3 toSpawnH = {toSpawn.x, 0.0f, toSpawn.z};
+  float distH = Vector3Length(toSpawnH);
+  float dist = Vector3Length(toSpawn);
+
+  // Despawn on arrival — Slice C will replace this with dock + heal at
+  // home base. We mark the entity dead and let the manager's alive=false
+  // path skip it next tick.
+  if (dist < Config::RETREAT_DESPAWN_DIST) {
+    e.alive = false;
+    return true;
+  }
+
+  // Engine-damage scaling: full retreat speed at the threshold (hp ==
+  // 40%), tapering toward 10% at zero HP so a near-dead ship visibly
+  // limps but doesn't freeze in place.
+  float hpFrac = (e.hullMax > 0.0f) ? (e.hullHP / e.hullMax) : 0.0f;
+  float band = hpFrac / Config::RETREAT_HP_THRESHOLD; // 1 at threshold, 0 at dead
+  if (band < 0.1f) band = 0.1f;
+  if (band > 1.0f) band = 1.0f;
+  float speedMul = Config::RETREAT_SPEED_FRAC * band;
+
+  // Turn yaw toward spawnPos.
+  if (distH > 0.001f) {
+    float desiredYaw = atan2f(toSpawnH.x, toSpawnH.z);
+    float yawErr = desiredYaw - e.yaw;
+    while (yawErr > 3.14159f) yawErr -= 6.28318f;
+    while (yawErr < -3.14159f) yawErr += 6.28318f;
+    float maxStep = turnRate * speedMul * dt;
+    if (yawErr > maxStep) yawErr = maxStep;
+    else if (yawErr < -maxStep) yawErr = -maxStep;
+    e.yaw += yawErr;
+  }
+
+  // Thrust forward along heading.
+  Vector3 fwd = {sinf(e.yaw), 0.0f, cosf(e.yaw)};
+  e.vel.x += fwd.x * thrust * speedMul * dt;
+  e.vel.z += fwd.z * thrust * speedMul * dt;
+
+  // Speed cap (horizontal) — damaged speed.
+  float spdH = sqrtf(e.vel.x * e.vel.x + e.vel.z * e.vel.z);
+  float capped = maxSpeed * speedMul;
+  if (spdH > capped && spdH > 0.001f) {
+    float k = capped / spdH;
+    e.vel.x *= k;
+    e.vel.z *= k;
+  }
+
+  // Drag.
+  float drag = 0.5f * dt;
+  if (drag > 1.0f) drag = 1.0f;
+  e.vel.x *= 1.0f - drag;
+  e.vel.z *= 1.0f - drag;
+
+  // Altitude pull toward the spawn altitude — natural for ships
+  // returning to their entry corridor. Gentle so the ship visibly
+  // climbs / sinks rather than snapping.
+  float altErr = e.spawnPos.y - e.pos.y;
+  e.vel.y += altErr * 0.4f * dt;
+  e.vel.y *= 1.0f - 1.0f * dt;
+
+  // Integrate.
+  e.pos = Vector3Add(e.pos, Vector3Scale(e.vel, dt));
+
+  // Don't sink into terrain (still possible at low altitude).
+  float floor = planet.heightAt(e.pos.x, e.pos.z) + 5.0f;
+  if (e.pos.y < floor) {
+    e.pos.y = floor;
+    if (e.vel.y < 0.0f) e.vel.y = 0.0f;
+  }
+  return false;
+}
+
+// ====================================================================
 // Update — drive enemies and tick projectiles
 // ====================================================================
 void EntityManager::update(float dt, const Planet &planet, Player &player,
@@ -386,6 +498,21 @@ void EntityManager::update(float dt, const Planet &planet, Player &player,
       e.stunTimer -= dt;
       e.vel = Vector3Scale(e.vel, 1.0f - 3.0f * dt); // ~95% damped per sec
       continue;
+    }
+
+    // Slice A — damage smoke for hull-wearing flying enemies. Drones
+    // and ground entities don't smoke (they're either 1-shot or don't
+    // visibly degrade). Smoke is decoupled from AI state so a wounded
+    // ship leaks even while still pursuing.
+    switch (e.type) {
+    case EntityType::Fighter:
+    case EntityType::Bomber:
+    case EntityType::Seeder:
+    case EntityType::Carrier:
+      tickDamageSmoke(e, particles, dt);
+      break;
+    default:
+      break;
     }
 
     switch (e.type) {
@@ -438,14 +565,30 @@ void EntityManager::update(float dt, const Planet &planet, Player &player,
 void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
                                   const Player &player,
                                   ParticleSystem &particles) {
+  (void)particles; // smoke is now centralised in tickDamageSmoke
   Vector3 toPlayer = Vector3Subtract(player.position(), e.pos);
   Vector3 toPlayerH = {toPlayer.x, 0.0f, toPlayer.z};
   float distH = Vector3Length(toPlayerH);
   float dist = Vector3Length(toPlayer);
 
+  // Slice A — retreat preempts everything else once hull drops below
+  // RETREAT_HP_THRESHOLD. Triggers before EVADE (which is 25%); the
+  // ship will despawn at spawnPos before EVADE could ever take over.
+  if (e.hullMax > 0.0f &&
+      (e.hullHP / e.hullMax) < Config::RETREAT_HP_THRESHOLD) {
+    e.aiState = AIState::Retreating;
+  }
+  if (e.aiState == AIState::Retreating) {
+    tickRetreat(e, dt, planet, Config::FIGHTER_MAX_SPEED,
+                Config::FIGHTER_TURN_RATE, Config::FIGHTER_THRUST);
+    return;
+  }
+
   // EVADE state — fighter peels AWAY from the player when its hull
   // drops below AI_EVADE_HEALTH (default 25%). Exit when it has put
-  // enough distance between itself and the player to recover.
+  // enough distance between itself and the player to recover. Now
+  // effectively dead code (Retreating preempts at 40%), kept as a
+  // fallback if RETREAT_HP_THRESHOLD ever moves below AI_EVADE_HEALTH.
   bool wantEvade = (e.hullMax > 0.0f) &&
                    ((e.hullHP / e.hullMax) < Config::AI_EVADE_HEALTH);
   if (wantEvade && dist < Config::AI_PURSUE_RANGE * 1.5f) {
@@ -499,26 +642,6 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
   thrustScale *= evadeScale;
   e.vel.x += fwd.x * Config::FIGHTER_THRUST * thrustScale * dt;
   e.vel.z += fwd.z * Config::FIGHTER_THRUST * thrustScale * dt;
-
-  // Damaged engine smoke — small dark sputtering trail when in EVADE.
-  // Stochastic emission so we don't overwhelm the particle pool with
-  // multiple damaged fighters running at once.
-  if (e.aiState == AIState::Evade) {
-    e.fireTimer -= dt; // re-using fireTimer as the smoke-emit cooldown
-    if (e.fireTimer <= 0.0f) {
-      // ~40% drift back along ship velocity + small lateral jitter.
-      Vector3 trailVel = Vector3Scale(e.vel, -0.3f);
-      trailVel.y += 1.5f; // gentle upward drift like real smoke
-      // Mostly grey/dark with a hint of orange — engine sputter look.
-      Color smoke = {110, 90, 80, 220};
-      // Smaller, gravity-affected; bounce off so it lingers near the
-      // crash trajectory.
-      particles.emit(e.pos, trailVel, smoke, 0.45f, 0.55f,
-                     ParticleSystem::Shape::Cube,
-                     ParticleSystem::FLAG_GRAVITY);
-      e.fireTimer = 0.06f; // ~16 puffs/sec while damaged
-    }
-  }
 
   // Altitude hold — try to stay at FIGHTER_PREFERRED_ALT above terrain
   float ground = planet.heightAt(e.pos.x, e.pos.z);
@@ -597,6 +720,20 @@ void EntityManager::fireFighterShot(Entity &e, const Player &player) {
 void EntityManager::updateBomber(Entity &e, float dt, const Planet &planet,
                                  const Player &player,
                                  ParticleSystem &particles) {
+  (void)particles; // smoke is now centralised in tickDamageSmoke
+
+  // Slice A — retreat preempts target selection. Wounded bombers limp
+  // back to spawn rather than continuing a strafe run.
+  if (e.hullMax > 0.0f &&
+      (e.hullHP / e.hullMax) < Config::RETREAT_HP_THRESHOLD) {
+    e.aiState = AIState::Retreating;
+  }
+  if (e.aiState == AIState::Retreating) {
+    tickRetreat(e, dt, planet, Config::BOMBER_MAX_SPEED,
+                Config::BOMBER_TURN_RATE, Config::BOMBER_THRUST);
+    return;
+  }
+
   // Bombers prefer friendlies as targets — the "strafe run" pattern
   // from the design doc. If the nearest friendly is closer than
   // BOMBER_FRIENDLY_PRIORITY × dist-to-player, the bomber targets
@@ -675,21 +812,6 @@ void EntityManager::updateBomber(Entity &e, float dt, const Planet &planet,
   thrustScale *= evadeScale;
   e.vel.x += fwd.x * Config::BOMBER_THRUST * thrustScale * dt;
   e.vel.z += fwd.z * Config::BOMBER_THRUST * thrustScale * dt;
-
-  // Damaged engine smoke — same emission as Fighter when in EVADE so
-  // the player gets consistent "limping" feedback across enemy types.
-  if (e.aiState == AIState::Evade) {
-    e.fireTimer -= dt; // re-using fireTimer as smoke-emit cooldown in EVADE
-    if (e.fireTimer <= 0.0f) {
-      Vector3 trailVel = Vector3Scale(e.vel, -0.3f);
-      trailVel.y += 1.5f;
-      Color smoke = {110, 90, 80, 220};
-      particles.emit(e.pos, trailVel, smoke, 0.45f, 0.55f,
-                     ParticleSystem::Shape::Cube,
-                     ParticleSystem::FLAG_GRAVITY);
-      e.fireTimer = 0.06f;
-    }
-  }
 
   // Altitude hold (lower than Fighter — bomber lumbers near the deck).
   float ground = planet.heightAt(e.pos.x, e.pos.z);
@@ -887,6 +1009,19 @@ void EntityManager::updateDrone(Entity &e, float dt, const Planet &planet,
 // ====================================================================
 void EntityManager::updateSeeder(Entity &e, float dt, const Planet &planet,
                                  const Player &player) {
+  // Slice A — retreat. Seeders are fragile (50 HP) so the band between
+  // RETREAT_HP_THRESHOLD and zero is narrow, but a wounded seeder
+  // visibly peels off rather than continuing to drift in orbit.
+  if (e.hullMax > 0.0f &&
+      (e.hullHP / e.hullMax) < Config::RETREAT_HP_THRESHOLD) {
+    e.aiState = AIState::Retreating;
+  }
+  if (e.aiState == AIState::Retreating) {
+    tickRetreat(e, dt, planet, Config::SEEDER_MAX_SPEED, 1.5f,
+                Config::SEEDER_THRUST);
+    return;
+  }
+
   Vector3 toPlayer = Vector3Subtract(player.position(), e.pos);
   Vector3 toPlayerH = {toPlayer.x, 0.0f, toPlayer.z};
   float distH = Vector3Length(toPlayerH);

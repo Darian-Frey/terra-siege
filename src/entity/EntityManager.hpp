@@ -134,6 +134,22 @@ private:
                      const Player &player, ParticleSystem &particles);
   void fireFighterShot(Entity &e, const Player &player);
 
+  // Slice A — emit damage smoke when an enemy's hull HP drops below
+  // SMOKE_HP_THRESHOLD. Emit rate scales linearly with damage so a
+  // lightly-wounded ship wisps and a near-dead one trails heavy smoke.
+  // Called from update() before per-type dispatch for the enemy types
+  // that have meaningful hull damage (Fighter, Bomber, Seeder, Carrier).
+  void tickDamageSmoke(Entity &e, ParticleSystem &particles, float dt);
+
+  // Slice A — common retreat tick. Turns the ship toward spawnPos and
+  // flies it there at RETREAT_SPEED_FRAC of its normal max speed.
+  // Despawns cleanly once within RETREAT_DESPAWN_DIST. Returns true if
+  // the entity has despawned this tick (caller should bail out of the
+  // rest of its per-type update). `maxSpeed` and `turnRate` are the
+  // entity's normal values so the helper applies the retreat penalty.
+  bool tickRetreat(Entity &e, float dt, const Planet &planet,
+                   float maxSpeed, float turnRate, float thrust);
+
   // Drone — boids flocking + pursuit + kamikaze contact damage.
   void updateDrone(Entity &e, float dt, const Planet &planet,
                    Player &player, ParticleSystem &particles);
