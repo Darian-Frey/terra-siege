@@ -147,6 +147,22 @@ constexpr float BEAM_ENERGY_DRAIN_PS = 22.0f;    // sustained drain while firing
 constexpr float PLASMA_ENERGY_PER_SHOT = 8.0f;   // deducted on each plasma shot
 
 // ----------------------------------------------------------------
+// Shield Laser — 4th primary (Slice B.2). Continuous beam tuned to
+// strip shields fast with minimal hull bleed. Pairs with Plasma /
+// Missile for the kill phase: strip-with-laser then switch to a
+// hull-damaging weapon. At 18/s drain vs PRIMARY_ENERGY_RECHARGE
+// 15/s, you can't sustain Shield Laser AND Beam in parallel.
+//
+// 120 / 18 ≈ 6.7s of continuous fire from full pool.
+// Strips a Carrier sector (250 HP) in 250/60 ≈ 4.2s. Enough sustain
+// to drop one sector per burst but not two.
+// ----------------------------------------------------------------
+constexpr float SHIELD_LASER_ENERGY_PS = 18.0f;        // pool drain while firing
+constexpr float SHIELD_LASER_SHIELD_DRAIN_PS = 60.0f;  // shield damage per second
+constexpr float SHIELD_LASER_HULL_DRAIN_PS = 3.0f;     // hull bleed while firing
+constexpr float SHIELD_LASER_RANGE = 160.0f;           // same reach as Beam
+
+// ----------------------------------------------------------------
 // Weapons — secondary
 // ----------------------------------------------------------------
 constexpr float MISSILE_FIRE_RATE = 0.6f;

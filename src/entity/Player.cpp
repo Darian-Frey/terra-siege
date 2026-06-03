@@ -283,12 +283,12 @@ void Player::handleInput(float dt) {
   m_fireRequested =
       IsMouseButtonDown(MOUSE_BUTTON_LEFT) || IsKeyDown(KEY_SPACE);
 
-  // ---- Primary cycle — Tab (Cannon → Plasma → Beam → Cannon) ----
+  // ---- Primary cycle — Tab (Cannon → Plasma → Beam → ShieldLaser → Cannon) ----
   bool tabDown = IsKeyDown(KEY_TAB);
   if (tabDown && !m_tabWasDown) {
-    int next = (static_cast<int>(m_primaryWeapon) + 1) % 3;
+    int next = (static_cast<int>(m_primaryWeapon) + 1) % 4;
     m_primaryWeapon = static_cast<PrimaryWeapon>(next);
-    // Switching off the Beam mid-fire kills the visual + damage
+    // Switching off a beam mid-fire kills the visual + damage
     // immediately on the next tick; flag flips false in update.
     m_beamFiring = false;
   }
@@ -515,19 +515,23 @@ void Player::update(float dt, const Planet &planet) {
   if (m_cannonTimer > 0.0f) m_cannonTimer -= dt;
   if (m_cannonTimer < 0.0f) m_cannonTimer = 0.0f;
 
-  // Shared primary energy pool (Slice B.1). Cannon is free; Plasma
-  // deducts a discrete cost per shot; Beam drains continuously while
-  // held. Recharge runs every tick the Beam isn't firing — Plasma's
-  // per-shot cost doesn't block recharge between discrete shots.
-  bool wantBeam = (m_primaryWeapon == PrimaryWeapon::Beam &&
-                   m_fireRequested && m_health > 0.0f &&
-                   m_primaryEnergy > 0.0f);
+  // Shared primary energy pool (Slice B.1/B.2). Cannon is free;
+  // Plasma deducts a discrete cost per shot; Beam and Shield Laser
+  // drain continuously while held at their own rates. Recharge runs
+  // every tick neither continuous-beam weapon is firing.
+  bool isBeamLike = (m_primaryWeapon == PrimaryWeapon::Beam ||
+                     m_primaryWeapon == PrimaryWeapon::ShieldLaser);
+  bool wantBeam = isBeamLike && m_fireRequested && m_health > 0.0f &&
+                  m_primaryEnergy > 0.0f;
   if (wantBeam) {
     Vector3 fwd = forward();
     m_beamOrigin = Vector3Add(m_pos, Vector3Scale(fwd, 2.4f));
     m_beamDir = fwd;
     m_beamFiring = true;
-    m_primaryEnergy -= Config::BEAM_ENERGY_DRAIN_PS * dt;
+    float drain = (m_primaryWeapon == PrimaryWeapon::ShieldLaser)
+                      ? Config::SHIELD_LASER_ENERGY_PS
+                      : Config::BEAM_ENERGY_DRAIN_PS;
+    m_primaryEnergy -= drain * dt;
     if (m_primaryEnergy < 0.0f) m_primaryEnergy = 0.0f;
   } else {
     m_beamFiring = false;
@@ -538,11 +542,11 @@ void Player::update(float dt, const Planet &planet) {
 
   // Cannon / Plasma — discrete projectile firing on the shared timer.
   // Plasma additionally requires PLASMA_ENERGY_PER_SHOT in the pool;
-  // if the player drained it on Beam they need to wait for recharge
-  // before Plasma will fire again.
+  // if the player drained it on a beam they need to wait for recharge
+  // before Plasma will fire again. Beam-class weapons (Beam,
+  // ShieldLaser) handle their own firing above.
   bool wantPrimary = m_fireRequested && m_cannonTimer <= 0.0f &&
-                     m_health > 0.0f &&
-                     m_primaryWeapon != PrimaryWeapon::Beam;
+                     m_health > 0.0f && !isBeamLike;
   if (wantPrimary && m_primaryWeapon == PrimaryWeapon::Plasma &&
       m_primaryEnergy < Config::PLASMA_ENERGY_PER_SHOT) {
     wantPrimary = false;

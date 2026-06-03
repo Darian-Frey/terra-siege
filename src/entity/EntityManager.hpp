@@ -72,6 +72,19 @@ public:
                        float damageThisTick, ParticleSystem &particles,
                        Vector3 &outHitPos);
 
+  // Shield Laser hit resolution (Slice B.2). Same raycast as the Beam
+  // path but applies two independent damage values per tick: shieldDmg
+  // drains shields (sectored or scalar) directly without overflow to
+  // hull; hullDmg drains hull always, even while shields are up. The
+  // shield-first overflow path used by applyDamage is bypassed — this
+  // is the tactical point of the weapon (strip without committing to
+  // a kill phase).
+  uint32_t shieldLaserRaycast(Vector3 origin, Vector3 dir, float maxRange,
+                              float shieldDmgThisTick,
+                              float hullDmgThisTick,
+                              ParticleSystem &particles,
+                              Vector3 &outHitPos);
+
   void update(float dt, const Planet &planet, Player &player,
               ParticleSystem &particles);
   // Render every alive enemy + projectile. If a non-null registry is

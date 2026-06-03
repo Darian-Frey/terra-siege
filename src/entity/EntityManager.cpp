@@ -363,6 +363,88 @@ uint32_t EntityManager::beamRaycast(Vector3 origin, Vector3 dir,
   return 0;
 }
 
+uint32_t EntityManager::shieldLaserRaycast(Vector3 origin, Vector3 dir,
+                                           float maxRange,
+                                           float shieldDmgThisTick,
+                                           float hullDmgThisTick,
+                                           ParticleSystem &particles,
+                                           Vector3 &outHitPos) {
+  // Same sphere-intersection sweep as beamRaycast — duplicated rather
+  // than refactored because the damage routing diverges below and a
+  // single ray helper would need a callback parameter that adds more
+  // noise than it removes.
+  uint32_t bestId = 0;
+  float bestT = maxRange;
+  Entity *bestE = nullptr;
+  float dl = sqrtf(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
+  if (dl < 0.001f) {
+    outHitPos = origin;
+    return 0;
+  }
+  Vector3 dn = {dir.x / dl, dir.y / dl, dir.z / dl};
+  for (Entity &e : m_entities) {
+    if (!e.alive) continue;
+    if (e.type == EntityType::Projectile) continue;
+    if (e.type == EntityType::Collector ||
+        e.type == EntityType::RepairStation ||
+        e.type == EntityType::RadarBooster ||
+        e.type == EntityType::Base)
+      continue;
+    Vector3 oc = Vector3Subtract(e.pos, origin);
+    float tCentre = Vector3DotProduct(oc, dn);
+    if (tCentre < 0.0f || tCentre > bestT) continue;
+    float perp2 = Vector3DotProduct(oc, oc) - tCentre * tCentre;
+    float r = e.radius;
+    if (perp2 > r * r) continue;
+    float tHit = tCentre - sqrtf(r * r - perp2);
+    if (tHit < 0.0f) tHit = 0.0f;
+    if (tHit < bestT) {
+      bestT = tHit;
+      bestId = e.id;
+      bestE = &e;
+    }
+  }
+  if (!bestE) {
+    outHitPos = Vector3Add(origin, Vector3Scale(dn, maxRange));
+    return 0;
+  }
+  Vector3 impact = Vector3Add(origin, Vector3Scale(dn, bestT));
+  outHitPos = impact;
+
+  // Damage routing — independent shield + hull drain. The Beam path's
+  // shield-first-then-overflow routing is deliberately bypassed: the
+  // strategic point of Shield Laser is "fast shield strip with
+  // minimal hull bleed", so hull drains at hullDmgThisTick even while
+  // shields are up. timeSinceHit/sectorTimer reset to suppress regen
+  // (matches the Beam's Carrier-shield mechanic).
+  Entity &t = *bestE;
+  t.timeSinceHit = 0.0f;
+  t.damageFlashTimer = 0.12f;
+
+  // Shield drain — sectored vs scalar.
+  bool sectored = (t.sectorMax[0] > 0.0f || t.sectorMax[1] > 0.0f ||
+                   t.sectorMax[2] > 0.0f || t.sectorMax[3] > 0.0f);
+  if (sectored) {
+    int s = damageSectorFromHit(t, impact);
+    t.sectorTimer[s] = 0.0f;
+    t.sectorHP[s] -= shieldDmgThisTick;
+    if (t.sectorHP[s] < 0.0f) t.sectorHP[s] = 0.0f;
+  } else if (t.shieldHP > 0.0f) {
+    t.shieldHP -= shieldDmgThisTick;
+    if (t.shieldHP < 0.0f) t.shieldHP = 0.0f;
+  }
+
+  // Hull drain — always, even while shields are up.
+  t.hullHP -= hullDmgThisTick;
+  if (t.hullHP <= 0.0f) {
+    t.hullHP = 0.0f;
+    t.alive = false;
+    --m_liveEnemies;
+    emitKillExplosion(t.pos, particles);
+  }
+  return bestId;
+}
+
 // EMP area stun — set stunTimer on every enemy within radius. Skips
 // friendlies and projectiles. The stunned enemies' update bodies will
 // see stunTimer > 0 and short-circuit out of AI logic.

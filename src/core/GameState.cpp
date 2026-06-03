@@ -988,15 +988,27 @@ void GameState::update(float dt) {
                              Config::DEPTH_CHARGE_RADIUS);
       }
 
-      // Beam Laser — continuous raycast while held. Player flagged
-      // it firing this tick if energy was available. damageThisTick
-      // = BEAM_DAMAGE_PS * dt so the meter integrates correctly.
+      // Beam-class fire — continuous raycast while held. Player
+      // flagged it firing this tick if energy was available. Beam and
+      // Shield Laser branch internally for the damage routing: Beam
+      // does shield-first-overflow via applyDamage, Shield Laser
+      // drains shields + hull independently via shieldLaserRaycast.
       Vector3 borigin, bdir;
       if (m_player.beamIsFiringThisTick(borigin, bdir)) {
         Vector3 hitPos;
-        uint32_t hitId =
-            m_em.beamRaycast(borigin, bdir, Config::BEAM_RANGE,
-                             Config::BEAM_DAMAGE_PS * dt, m_particles, hitPos);
+        uint32_t hitId = 0;
+        if (m_player.primaryWeapon() ==
+            Player::PrimaryWeapon::ShieldLaser) {
+          hitId = m_em.shieldLaserRaycast(
+              borigin, bdir, Config::SHIELD_LASER_RANGE,
+              Config::SHIELD_LASER_SHIELD_DRAIN_PS * dt,
+              Config::SHIELD_LASER_HULL_DRAIN_PS * dt, m_particles,
+              hitPos);
+        } else {
+          hitId = m_em.beamRaycast(borigin, bdir, Config::BEAM_RANGE,
+                                   Config::BEAM_DAMAGE_PS * dt,
+                                   m_particles, hitPos);
+        }
         // Stash for the render path — drawn after the 3D world.
         m_beamActive = true;
         m_beamLineFrom = borigin;
@@ -1509,17 +1521,22 @@ void GameState::drawHUD() const {
       primaryName = "BEAM";
       primaryCol = {120, 220, 255, 255};
       break;
+    case Player::PrimaryWeapon::ShieldLaser:
+      primaryName = "SHLD LASER";
+      primaryCol = {80, 180, 255, 255};
+      break;
     default:
       break;
     }
     drawHudText("PRI", wx, wy, 11, col);
     drawHudText(primaryName, wx + 32, wy, 13, primaryCol);
     // Shared primary-energy bar — visible whenever the active weapon
-    // costs energy (Plasma + Beam in B.1; Shield Laser later). Cannon
-    // is free so no bar shown for it.
+    // costs energy (Plasma / Beam / ShieldLaser). Cannon is free so
+    // no bar shown for it.
     bool primaryUsesEnergy =
         m_player.primaryWeapon() == Player::PrimaryWeapon::Plasma ||
-        m_player.primaryWeapon() == Player::PrimaryWeapon::Beam;
+        m_player.primaryWeapon() == Player::PrimaryWeapon::Beam ||
+        m_player.primaryWeapon() == Player::PrimaryWeapon::ShieldLaser;
     if (primaryUsesEnergy) {
       float frac = m_player.primaryEnergy() / m_player.primaryEnergyMax();
       if (frac < 0.0f) frac = 0.0f;
@@ -2546,11 +2563,11 @@ void GameState::drawLoadoutSelect() {
     return hit;
   };
 
-  // Primary row — Cannon / Plasma / Beam.
+  // Primary row — Cannon / Plasma / Beam / Shield Laser.
   {
-    const char *opts[3] = {"CANNON", "PLASMA", "BEAM"};
+    const char *opts[4] = {"CANNON", "PLASMA", "BEAM", "SHLD LASER"};
     int sel = static_cast<int>(m_loadout.primary);
-    int hit = drawSlotRow(py + 78, "PRIMARY", opts, 3, sel);
+    int hit = drawSlotRow(py + 78, "PRIMARY", opts, 4, sel);
     if (hit >= 0)
       m_loadout.primary = static_cast<Player::PrimaryWeapon>(hit);
   }

@@ -103,7 +103,12 @@ public:
 
   // Weapon slot enums — three slots (Primary / Secondary / Special)
   // plus an independent Auto Turret toggle. Cycled with Tab / Z / X.
-  enum class PrimaryWeapon : uint8_t { Cannon = 0, Plasma = 1, Beam = 2 };
+  enum class PrimaryWeapon : uint8_t {
+    Cannon = 0,
+    Plasma = 1,
+    Beam = 2,
+    ShieldLaser = 3, // Slice B.2 — 4th primary, strips shields
+  };
   enum class SecondaryWeapon : uint8_t {
     Missile = 0,
     Cluster = 1,
