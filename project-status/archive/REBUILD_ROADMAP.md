@@ -1,5 +1,8 @@
 # terra-siege — Rebuild Roadmap
 
+> **⚠ Archived 2026-06-03.** Historical reference — May rebuild execution plan. Original path: `terra_rebuild/REBUILD_ROADMAP.md`.
+> Active replacement: [`/ROADMAP.md`](../../ROADMAP.md). Four of the five rebuild specs shipped (flight, camera, combat, radar). The terrain rebuild ([`terrain_rebuild.md`](terrain_rebuild.md)) has NOT been implemented — current code is still Diamond-Square.
+
 This document is the **execution plan** for the five rebuild design specs in this
 folder. The specs (`flight_mode_rebuild.md`, `terrain_rebuild.md`, `camera_system.md`,
 `combat_tuning.md`, `radar_system.md`) describe the target systems. This file

@@ -1,5 +1,8 @@
 # CLAUDE.md — terra-siege Project Context
 
+> **⚠ Archived 2026-06-03.** Historical reference — rebuild-era (May). Original path: `terra_rebuild/CLAUDE.md`.
+> Active replacement: [`/CLAUDE.md`](../../CLAUDE.md). Most of the rebuild specs it points at are now shipped; the exception is the sine-wave terrain rebuild ([`terrain_rebuild.md`](terrain_rebuild.md)).
+
 ## Read This First
 
 Before making any changes, read these documents in this order:

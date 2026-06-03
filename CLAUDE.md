@@ -1,26 +1,16 @@
-# CLAUDE.md — terra-siege Project Handoff
+# CLAUDE.md — terra-siege Project Context
 
-This document is the complete project context for Claude Code. Read it fully before
-making any changes. It covers what the project is, all architectural decisions made,
-what has been built, what still needs building, and how we intend to build it.
+This is the primary AI-assistant context document. Read it fully before making changes. For user-facing documentation see [README.md](README.md); for plan-of-work see [ROADMAP.md](ROADMAP.md). Detailed design docs in [project-status/](project-status/) and [project-status/archive/](project-status/archive/) capture rationale; this file covers architecture rules, invariants, and gotchas.
 
 ---
 
 ## What Is terra-siege?
 
-terra-siege is a modern C++17 / raylib reimagining of **Virus** (Argonaut Software /
-Firebird, 1988) for Linux (Windows later). The original Virus was a landmark 1988 game
-by Jez San that rendered a real-time filled 3D polygon landscape on home computers — the
-same techniques led directly to the Super FX chip and Star Fox on SNES.
+A modern C++17 / raylib reimagining of **Virus** (Argonaut Software / Firebird, 1988) for Linux (Windows later). Defend a planet against alien attackers from the cockpit of a hovercraft. Preserves the original's flat-shaded low-poly polygon aesthetic; modernises with directional shields, weapon upgrades, auto-turret, homing missiles, tactical radar, OBJ-based authoring pipeline.
 
-terra-siege is an independent fan project. It keeps the original's core loop:
-defend your planet against waves of alien attackers from the cockpit of a hovercraft.
-It modernises the feature set with a larger view distance, directional shields,
-weapon upgrades, an auto-turret, homing missiles, and a full radar system, while
-deliberately preserving the flat-shaded low-poly polygon aesthetic.
-
-**GitHub:** https://github.com/Darian-Frey/terra-siege
-**Developer:** Solo developer, Linux Mint, building in Antigravity IDE with Claude Code.
+**GitHub:** <https://github.com/Darian-Frey/terra-siege>
+**Developer:** Solo, Linux Mint, Antigravity IDE + Claude Code
+**Origin:** Jez San, Argonaut Software — same techniques later led to the Super FX chip and Star Fox (SNES)
 
 ---
 
@@ -28,374 +18,217 @@ deliberately preserving the flat-shaded low-poly polygon aesthetic.
 
 | Component | Choice | Reason |
 |-----------|--------|--------|
-| Language | C++17 | `std::variant`, `std::optional`, structured bindings |
-| Renderer / window / audio | raylib 5.0 | Native 3D API, flat-shading friendly, cross-platform |
-| Build system | CMake 3.16+ with FetchContent | Fetches raylib automatically, no submodules |
-| Math | raymath.h (bundled with raylib) | Vector3, Matrix, Quaternion ops |
+| Language | C++17 | `std::variant`, `std::optional`, structured bindings, filesystem |
+| Renderer / window / audio | raylib 5.0 (FetchContent) | Native 3D, flat-shading friendly, miniaudio backend |
+| Math | raymath.h (bundled with raylib) | `Vector3`, `Matrix`, `Quaternion` ops |
+| Build | CMake 3.16+ | Single `CMakeLists.txt`; no submodules |
+| Test harness | doctest (FetchContent, header-only) | ~10× faster compile than Catch2; chosen for mesh subsystem tests |
 | RNG | xorshift32 (hand-rolled) | Deterministic, seedable terrain generation |
 
-**Critical naming note:** raylib defines `CameraMode` as a typedef. Our internal enum
-was renamed to `CamMode` to avoid the collision. Watch for this when adding new types.
-
 **Build commands:**
+
 ```bash
-# Standard debug build
+# Standard debug
 cmake -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j$(nproc)
-./build/terra-siege
+./build/terra-siege               # game
+./build/terra-siege-inspect <obj> # mesh inspector
 
-# Dev mode (enables debug overlay, F1/F2 keys, future cheat features)
+# Dev mode — F-key dev hotkeys + debug overlays
 cmake -B build -DCMAKE_BUILD_TYPE=Debug -DDEV_MODE=ON
 cmake --build build -j$(nproc)
 ./build/terra-siege
+
+# Tests
+cd build && ctest --output-on-failure
 ```
+
+A single build produces two executables (`terra-siege` and `terra-siege-inspect`) linking a shared `terra_siege_mesh` static lib (`ObjLoader`, `MeshRegistry`, `Palette`). See [README.md — Building](README.md#building).
+
+---
+
+## Critical Naming Collisions
+
+| Name | Problem / Status | Correct Usage |
+|------|------------------|--------------|
+| `CameraMode` | raylib typedef — compile error if redeclared | Never define a type with this name |
+| `CamMode` | Internal enum for Follow / FreeRoam dev camera toggle | Use only for that |
+| `CameraView` | Five player views (Chase / Velocity / Tactical / ThreatLock / Classic) | Use for view switching |
+| `FlightMode` | **Removed** in the flight rebuild (single Newtonian model) | Do not re-add |
+| `CraftType` | **Removed** in the flight rebuild (one hovercraft mesh) | Do not re-add |
+| `smooth()` (Heightmap) | Pending removal — sine-wave terrain rebuild is the only rebuild spec not yet shipped | Live in current code; do not assume removed |
+| `applyRadialFalloff()` (Heightmap) | Same as `smooth()` — planned removal pending sine-wave rebuild | Live in current code |
 
 ---
 
 ## Project Structure
 
-```
+```text
 terra-siege/
-├── CMakeLists.txt              # FetchContent raylib, DEV_MODE flag, asset copy
-├── CLAUDE.md                   # This file
-├── README.md                   # User-facing documentation
+├── CMakeLists.txt                # Game + inspector + tests + shared mesh static lib
+├── CLAUDE.md                     # This file
+├── README.md                     # User-facing docs (build, controls, current status)
+├── ROADMAP.md                    # Three-track plan (engine + features + tooling)
+├── base_mode_v2.md               # Active Slice C design — asymmetric Base Mode
+├── terra_siege_inspect_roadmap.md# Inspector roadmap (phases A–G, F.1–F.6)
+├── project-status/               # Active reference + historical archive
+│   ├── game_modes_and_features.md# v1 design — §§4-9 still apply (Part 2 superseded)
+│   └── archive/                  # Superseded docs (see archive/README.md)
 ├── assets/
-│   └── shaders/                # GLSL shaders (terrain_flat, shield_pulse, exhaust_trail)
-│                               # Shader files exist but are empty stubs for now
+│   ├── meshes/                   # Entity OBJ files + 32-colour palette
+│   └── shaders/                  # GLSL stubs — not yet wired in
+├── tests/                        # doctest-based tests (mesh subsystem)
 └── src/
-    ├── main.cpp                # Entry point: window init, fixed-timestep loop
+    ├── main.cpp                  # Fixed-timestep loop, DisableCursor()
     ├── core/
-    │   ├── Clock.hpp           # Fixed-timestep accumulator (120 Hz physics)
-    │   ├── Config.hpp          # ALL tuning constants — no magic numbers elsewhere
-    │   ├── GameState.hpp       # Top-level state machine declaration
-    │   └── GameState.cpp       # State machine implementation
+    │   ├── Clock.hpp             # Fixed-timestep accumulator (120 Hz)
+    │   ├── Config.hpp            # ALL tuning constants — single source of truth
+    │   ├── GameState.hpp/cpp     # State machine + menu overlays + CamMode enum
+    │   ├── Particles.hpp/cpp     # 2000-slot pool, gravity + bounce flags
+    │   └── Settings.hpp/cpp      # Persistent settings (~/.config/terra-siege)
     ├── world/
-    │   ├── Heightmap.hpp/cpp   # Diamond-Square + smoothing + rivers + lakes
-    │   ├── TerrainChunk.hpp/cpp# Flat-shaded mesh builder, WaterType colouring
-    │   └── Planet.hpp/cpp      # Chunk orchestration, heightAt() query
+    │   ├── Heightmap.hpp/cpp     # Diamond-Square + smoothing + rivers + lakes
+    │   ├── TerrainChunk.hpp/cpp  # Flat-shaded mesh builder, WaterType colouring
+    │   ├── Planet.hpp/cpp        # Chunk orchestration, heightAt() query
+    │   └── SkyDome.hpp/cpp       # Stub
     ├── entity/
-    │   ├── Entity.hpp          # Base struct (stub — not yet used)
-    │   ├── Player.hpp/cpp      # Hovercraft mesh, physics, input, flight assist
-    │   ├── Enemy.hpp/cpp       # Stub
-    │   ├── Friendly.hpp/cpp    # Stub
-    │   ├── Projectile.hpp/cpp  # Stub
-    │   └── EntityManager.hpp/cpp # Stub
-    ├── weapon/                 # All stubs
-    ├── shield/                 # All stubs
-    ├── ai/                     # All stubs
-    ├── renderer/               # All stubs
-    ├── hud/                    # All stubs
-    ├── audio/                  # All stubs
-    └── wave/                   # All stubs
+    │   ├── Entity.hpp            # Type-tagged struct (single pool layout)
+    │   ├── Player.hpp/cpp        # Hovercraft Newtonian physics, input, assist
+    │   ├── Enemy.hpp/cpp         # Drone / Fighter / Seeder / Bomber / Carrier / Tank / Turret
+    │   ├── Friendly.hpp/cpp      # Collector / Repair Station / Radar Booster / Base
+    │   ├── Projectile.hpp/cpp    # Cannon / Plasma / Beam / Missile / Cluster
+    │   └── EntityManager.hpp/cpp # Flat pools + spatial grid + AI dispatch
+    ├── mesh/                     # Shared (game + inspector + tests) → terra_siege_mesh
+    │   ├── ObjLoader.hpp/cpp     # Text-format OBJ load + round-trip-safe save
+    │   ├── MeshRegistry.hpp/cpp  # Startup-loaded Models keyed by EntityType
+    │   └── Palette.hpp           # 32-colour palette + material-name lookup
+    ├── inspector/                # terra-siege-inspect binary
+    │   ├── main.cpp              # CLI parsing + window setup
+    │   ├── Inspector.hpp/cpp     # Mesh/camera/model owner + orbit camera + tool registry
+    │   ├── Tool.hpp              # Pluggable tool interface (TAB cycles)
+    │   └── VertexTool.hpp/cpp    # Vertex pick + drag + axis lock (first tool)
+    ├── weapon/                   # Plasma, Beam, Missiles, Auto Turret, EMP, Shield Booster
+    ├── shield/                   # Player directional shields (Phase 4)
+    ├── ai/                       # AIController, EnemyAI, SpatialGrid
+    ├── renderer/                 # SceneRenderer, ParticleSystem, PostFX (PostFX stub)
+    ├── hud/                      # HUD, Radar (tier 1/2/3), WeaponDisplay, ShieldDisplay
+    ├── audio/                    # AudioManager (Phase 5 — positional audio)
+    └── wave/                     # WaveManager, WaveDef
 ```
 
 ---
 
-## Architecture Decisions (Do Not Change Without Good Reason)
+## Architecture Rules — Do Not Change Without Good Reason
 
-### Fixed-Timestep Loop (Clock.hpp)
-Physics runs at exactly 120 Hz decoupled from render rate. The pattern:
-```
-accumulator += frameTime
+### Fixed-Timestep Loop (120 Hz)
+
+Physics runs at exactly 120 Hz decoupled from render rate. Lives in `main.cpp`. Never put frame-rate-dependent logic in `update()`.
+
+```text
+accumulator += frameTime (capped at MAX_FRAME_TIME = 0.05s)
 while accumulator >= FIXED_DT (1/120s):
     game.update(FIXED_DT)
     accumulator -= FIXED_DT
-render(alpha = accumulator / FIXED_DT)   // interpolation factor
+render(alpha = accumulator / FIXED_DT)
 ```
-This lives in `main.cpp`. Never put frame-rate-dependent logic in `update()`.
 
-### Config.hpp — Single Source of Truth
-Every gameplay constant lives in `Config.hpp` as `constexpr`. No magic numbers
-anywhere else in the codebase. When tuning, change Config.hpp only.
+### Config.hpp — Single Source of Truth (transitional)
+
+Every gameplay constant lives in `Config.hpp` as `constexpr`. No magic numbers in logic code.
+
+**Transitional note:** as the entity-profile sidecar system lands ([inspector roadmap Phase F](terra_siege_inspect_roadmap.md#phase-f--terra-siege-entity-sidecar)), per-entity-type constants (`FIGHTER_HP`, `BOMBER_SPEED`, weapon stats, AI thresholds, etc.) will migrate out of `Config.hpp` into per-mesh `*.meta.json` sidecars. Physics, world-scale, and engine-config constants stay in `Config.hpp`. See the inspector roadmap for migration ordering.
 
 ### Entity System — Flat Pools, Not ECS
-The game will have < 500 live entities. A full ECS is unnecessary overhead.
-Use flat `std::vector<EntityType>` pools per entity type in `EntityManager`.
-Do not introduce a heavy ECS framework.
+
+The game has < 500 live entities. A full ECS is unnecessary overhead. Use `std::vector<Entity>` flat pools per type in `EntityManager`. Do not introduce a heavy ECS framework.
 
 ### No Heap Allocation in Hot Path
-Entity pools, particle pools, and projectile pools must be pre-allocated at startup.
-No `new`/`malloc` inside `update()` or `render()`.
+
+Entity pools, particle pools (2000 slots), projectile pools, and the radar ghost-blip pool (32 slots) are all pre-allocated at startup. No `new` / `malloc` inside `update()` or `render()`.
 
 ### Separation of Update and Render
-Nothing in the physics tick (update) touches raylib draw calls.
-Nothing in render mutates game state.
 
-### Procedural Geometry — No Model Files
-All 3D assets (player ship, terrain objects, enemies) are built as raylib `Mesh`
-structs filled with vertices in C++ code. No `.obj`, `.glb`, or other model files.
-This keeps the flat-shaded aesthetic consistent and eliminates an asset pipeline.
+Nothing in the physics tick (`update`) touches raylib draw calls. Nothing in `render()` mutates game state.
 
-### Terrain Architecture
-```
-Heightmap (1025×1025 floats + WaterType map)
-    → Diamond-Square generation
-    → 12-pass box-blur smoothing
-    → Radial falloff (continent shape)
-    → Normalise [0,1]
-    → Ocean classification (below SEA_LEVEL)
-    → River carving (downhill flow from high sources)
-    → Lake flooding (flood-fill local minima)
-    ↓
-Planet (16×16 grid of TerrainChunk)
-    → Each chunk: 64×64 quads, ~8192 triangles
-    → Total: ~2.1M triangles for full terrain
-    ↓
-TerrainChunk
-    → Flat-shaded: vertices duplicated per triangle (no shared normals)
-    → Per-face colour by height band + WaterType
-    → Directional lighting: sun at (0.57, 0.74, 0.36), ambient 0.45
-    → Sea-level clamp: anything below SEA_LEVEL snapped to flat ocean surface
-```
+### OBJ Mesh Pipeline
+
+Entity meshes live in `assets/meshes/*.obj` and load at startup into a `MeshRegistry` keyed by `EntityType`. Materials use a 32-colour palette via material names (`c00`..`c31`) — files stay text-editable in Blender and round-trip cleanly through `terra-siege-inspect`. Procedural geometry is still used for terrain, particles, dynamic shield panels, and any per-frame procedural overlays.
+
+`DrawModelEx` (not `rlPushMatrix`) is used for yaw-rotated entity rendering. Damage flash (tinting `WHITE`) does not override per-vertex baked colours — accepted tradeoff, defer to shader-based fix later.
+
+### Sidecar Entity Profiles (in progress)
+
+Per-mesh `*.meta.json` files carry identity, hull, shields, weapons, hardpoints, AI profile, FX, and resources. **Sidecar by default, registry override later** — one `*.meta.json` per OBJ. Game-side reader is `EntityProfileRegistry`. Migration is incremental, gated by the inspector roadmap's Phase F.* sub-phases.
 
 ### Coordinate System
-- **+Z = North (forward)**  
-- **+X = East (right)**  
-- **+Y = Up**  
-- Player yaw=0 faces +Z. Yaw increases clockwise (turning right).
-- World origin (0,0,0) is the heightmap corner.
-- Terrain centre is at (worldSize/2, ?, worldSize/2) where worldSize = 1024 * TERRAIN_SCALE = 4096 units.
 
-### Camera System
-Two modes (toggled with F1 in DEV_MODE):
-- **Follow** (default, gameplay): smooth lerp behind/above player, terrain-clamped
-  so it never goes underground. Banks slightly with player roll.
-- **FreeRoam** (dev only): WASD + mouse look, full freedom.
+- **+Z = North (forward)**
+- **+X = East (right)**
+- **+Y = Up**
+- Player yaw=0 faces +Z. Yaw increases clockwise (right turn).
+- World origin at heightmap corner (0,0,0). World centre at `(worldSize/2, ?, worldSize/2)`.
 
-Camera desired position is **always clamped above terrain** before lerping:
+### Camera System — Five Views
+
+| Key | View | Behaviour |
+|-----|------|-----------|
+| 1 | Chase | Follows ship nose — default combat |
+| 2 | Velocity | Follows velocity vector — terrain avoidance |
+| 3 | Tactical | Fixed overhead, north up — battlefield awareness. **`camera.up = {0, 0, 1}` — NOT `{0, 1, 0}`** |
+| 4 | Threat-lock | Rotates to keep nearest enemy in frame |
+| 5 | Classic | Fixed diagonal-down — original Virus feel |
+
+`CameraView` enum is distinct from `CamMode` (Follow / FreeRoam dev toggle). F1 in DEV_MODE toggles `CamMode`.
+
+### Camera Terrain Clamping — Do Not Remove
+
+The follow camera must always query terrain height before lerping to desired position. Without this the camera clips underground when turning toward hills:
+
 ```cpp
 float camGroundH = m_planet.heightAt(desiredPos.x, desiredPos.z);
-desiredPos.y = max(desiredPos.y, camGroundH + 3.5f);
-desiredPos.y = max(desiredPos.y, playerPos.y + 2.0f);
+desiredPos.y = std::max(desiredPos.y, camGroundH + 3.5f);
+desiredPos.y = std::max(desiredPos.y, playerPos.y + 2.0f);
 ```
-Do not remove this — without it the camera clips underground when turning toward hills.
+
+This applies to all five views.
+
+### Far Clip Plane — rlFrustum Override
+
+`GameState::render()` extends the far clip to 3000 via manual `rlFrustum` override. Do not remove — raylib's default 1000-unit far plane clips the world.
 
 ---
 
-## What Has Been Built (Phases 1, 1.5, 2 partial)
+## Current State (Summary)
 
-### Phase 1 ✅
-- CMakeLists.txt with FetchContent raylib 5.0, DEV_MODE compile flag
-- main.cpp with fixed-timestep loop, DisableCursor()
-- Clock.hpp accumulator
-- Config.hpp with all constants
-- GameState state machine (Playing / Paused / MainMenu / GameOver / Victory)
-- Planet, TerrainChunk, Heightmap — terrain generates and renders
+For the live phase table see [README.md — Status](README.md#status). High level:
 
-### Phase 1.5 ✅
-- Heightmap resolution bumped to 1025×1025 (~2.1M terrain triangles)
-- Diamond-Square + 12-pass smoothing → proper rolling hills, not spike-fields
-- Radial falloff → continent sits in ocean, not edge-to-edge land
-- River carving: downhill flow simulation from high-altitude sources
-- Lake flooding: flood-fill at local terrain minima (inland only, margined away from edges)
-- WaterType map (None / Ocean / Lake / River) — distinct colours per water type
-- Debug HUD panel (top-right): X, Z, Alt, AGL, Speed, Heading+compass, Flight Assist level
-- Hull health bar (bottom-left)
+- **Phases 1, 1.5, 2** ✅ — terrain (Diamond-Square + rivers + lakes), Newtonian flight, ship + five-view camera, ground shadow, exhaust particles, settings persistence
+- **Phase 3** ✅ through **5h** — enemy roster (Drone, Fighter, Seeder, Ground Turret, Bomber, Carrier, Tank), full weapon roster (Cannon, Plasma, Beam, Missile, Cluster, Depth Charge, Auto Turret, EMP, Shield Booster), wave manager with pre-flight loadout, friendly units (Collector, Repair Station, Radar Booster, Base), bomber strafe AI, collector economy loop, ground tank + base auto-turret + friendly-fire filter
+- **Phase 4 (partial)** — player directional shields + pie HUD; radar tier 1 / 2 / 3
+- **OBJ pipeline + terra-siege-inspect** — full migration of entity meshes; inspector with `Tool` registry, orbit camera, vertex pick/drag
+- **Phase 5 / 6** — not started
 
-### Phase 2 (partial) ✅
-- Player.hpp/cpp: procedural hovercraft mesh (hull, engine pods, cockpit, red stripe, nozzles)
-- Player physics: thrust, drag (frame-rate independent via `powf`), speed cap
-- Terrain altitude clamping (downward heightAt query each tick)
-- Flight assist system: 4 levels (Raw/Minimal/Standard/Full) — coefficients in Config
-- Visual banking (roll) driven by turn input
-- Visual pitch (nose dips slightly when thrusting)
-- Level 3 assist: predictive terrain look-ahead raycast
-- Follow camera with terrain clamping
-- GameState wired up: player init, update, render
-- F1: camera mode toggle (dev mode)
-- F2: flight assist level cycle (dev mode)
-
-### Known Issues / Things Still Needing Attention
-- Ship mesh component positions may still need minor tuning (cockpit, stripe, pods)
-  after the last coordinate fix — verify visually
-- Forward direction key is W (thrust) and A/D (turn). Arrow keys also work.
-  Q/E = altitude. Shift = boost. This matches the original Virus feel.
-- The `drawHUD()` in GameState.cpp currently uses `m_player` coordinates.
-  Once enemies are added, it will need extending.
+What's next is tracked in [ROADMAP.md](ROADMAP.md): three parallel tracks (Engine remaining phases / Features A→B→C slicing / Tooling Phase A → F.*).
 
 ---
 
-## What Needs Building (Phases 2 completion → 6)
+## Enemy Roster (TTK-derived HP)
 
-### Phase 2 — Complete the player craft
-These items still need implementing:
+HP values are arithmetic from TTK (time-to-kill) targets × Cannon DPS (100 DPS reference). Change TTK, not HP, when rebalancing.
 
-**2a. Gamepad support**
-raylib handles gamepads transparently. Add to `Player::handleInput()`:
-```cpp
-if (IsGamepadAvailable(0)) {
-    float stickX = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_X);
-    float stickY = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_Y);
-    // map to turn and thrust
-}
-```
+| Enemy | Hull HP | Shield HP | Shield Type | TTK (cannon) |
+|-------|---------|-----------|-------------|-------------|
+| Swarm Drone | 8 | 0 | None | 0.08s (1 shot) |
+| Seeder | 50 | 0 | None | 0.5s |
+| Fighter | 160 | 40 | Omnidirectional | 2.0s |
+| Bomber | 350 | 150 | Omnidirectional | 5.0s |
+| Carrier | 1500 | 250×4 | Four-sector directional | 25.0s |
+| Ground Turret | 400 | 0 | None | 4.0s |
+| Ground Tank | (5h roster) | 0 | None | TUNE |
 
-**2b. Engine exhaust particles**
-A simple CPU particle emitter at the rear of each engine pod.
-Particles: orange/yellow, billboard quads, 0.3s lifetime, velocity = -forward * speed.
-Particle pool is pre-allocated (Config::PARTICLE_POOL_SIZE = 2000).
+AI states: `IDLE → PURSUE → ATTACK → EVADE` (Bomber adds `STRAFE_FRIENDLY`). Swarm Drones: flocking (separation / alignment / cohesion). Spatial grid cell size = `Config::SPATIAL_CELL_SIZE` (60 units), rebuilt each tick.
 
-**2c. Ship shadow**
-A dark transparent ellipse projected onto the terrain below the ship.
-Simple darkening quad at `heightAt(pos.x, pos.z)` world position.
-
----
-
-### Phase 3 — Enemies, Combat, Wave Manager
-
-**Enemy types to implement (in priority order):**
-
-| Type | Behaviour | Threat Target |
-|------|-----------|---------------|
-| Fighter | Pursue → strafe → evade state machine | Player |
-| Bomber | Low-altitude run toward friendly units | Friendly units |
-| Swarm Drone | Flocking (separation/alignment/cohesion) toward player | Player |
-| Carrier | Hovers at altitude, spawns drones | Spawn source |
-| Ground Turret | Stationary, rotates to track player | Player |
-
-**Enemy AI architecture:**
-- Base class `AIController` with virtual `update(dt)` and state enum
-- States: IDLE → PURSUE → ATTACK → EVADE
-- Bomber adds: STRAFE_FRIENDLY state
-- Swarm drones use three-rule flocking, no explicit state machine
-- `SpatialGrid` (2D grid, cell size = Config::SPATIAL_CELL_SIZE = 60) for O(1) nearest-entity queries
-
-**Friendly units:**
-
-| Type | Purpose |
-|------|---------|
-| Collector | Moves between waypoints, scores points when it reaches base |
-| Repair Station | Restores player hull HP on proximity |
-| Radar Booster | Extends radar range while alive |
-
-Destroying ALL friendly units = game over.
-
-**Wave manager:**
-- Data-driven `WaveDef` structs (waveNumber, enemyCount, types[], spawnInterval, hasCarrier, aggressionMultiplier)
-- Grace period between waves for shield recharge
-- Boss wave every N waves: Carrier + full fighter escort
-- `WaveManager::update(dt)` drives spawn scheduling
-
-**Weapon system (Phase 3 alongside enemies):**
-
-Three weapon slots: Primary, Secondary, Special.
-
-```cpp
-enum class WeaponType {
-    // Primary
-    Cannon,         // rapid-fire, unlimited, low damage
-    PlasmaCannon,   // slower, splash, limited ammo
-    BeamLaser,      // continuous, energy drain
-    // Secondary  
-    Missile,        // single homing, proportional navigation
-    ClusterMissile, // splits into 4 on proximity
-    DepthCharge,    // drops down, area effect vs ground
-    // Special
-    AutoTurret,     // parented to ship, independent targeting AI
-    ShieldBooster,  // temporary absorb
-    EMP,            // area stun, stops enemy weapons
-};
-```
-
-**Missile guidance — Proportional Navigation:**
-```cpp
-// N ≈ 4 (Config::MISSILE_NAV_N)
-closing_velocity = dot(relative_velocity, LOS_unit_vector)
-LOS_rate = cross(relative_pos, relative_vel) / |relative_pos|²
-acceleration = N * closing_velocity * LOS_rate
-```
-
-**Auto-turret** runs as an independent update separate from player firing:
-```
-find nearest enemy within Config::TURRET_RANGE
-rotate toward target at Config::TURRET_ROT_SPEED
-if angle_to_target < Config::TURRET_FIRE_CONE: fire
-```
-
----
-
-### Phase 3.5 — Terrain Objects
-
-All terrain objects are procedural geometry (no model files). Placement is data-driven
-via a rules table (min/max height, terrain band, min spacing between instances).
-
-Functional objects (needed for gameplay):
-- Military Base — spawn point for friendly units, 40×40 footprint
-- Launch Pad — octagonal platform, corner light posts
-- Radar Dish — parabolic fan triangles + rotating support arm
-- Gun Tower — cylinder base + rotating turret box (enemy ground turret visual)
-
-Atmospheric objects (Phase 5 polish):
-- Tree clusters — 2-3 stacked cones
-- Rock formations — irregular low boxes
-- Radio towers — tapered box + cross-braces
-- Antenna arrays — thin vertical cylinders
-- Crash sites — flattened ellipse + debris triangles
-
-**Placement algorithm:**
-After heightmap generation, scan the heightmap with the rules table.
-Use a seeded RNG (same seed as terrain) for deterministic placement.
-Store placed objects in `std::vector<TerrainObject>` on `Planet`.
-
----
-
-### Phase 4 — Directional Shields, HUD, Radar
-
-**Shield system:**
-Four independent quadrant HP pools: Front, Rear, Left, Right.
-```cpp
-struct ShieldSystem {
-    float sectorHP[4];        // Config::SHIELD_HP_MAX each
-    float timeSinceHit[4];    // per-sector, recharge delays independently
-    float rechargeRate;       // Config::SHIELD_RECHARGE_RATE HP/s
-    float rechargeDelay;      // Config::SHIELD_RECHARGE_DELAY seconds
-};
-```
-Hit direction (relative to player forward) determines which sector takes damage.
-Depleted sector passes overflow damage to hull HP.
-Visual: translucent hemisphere shader around ship, UV-animated pulse on hit.
-
-**Radar:**
-- Circular minimap, ego-centric (player always at centre, heading = up)
-- Range: Config::RADAR_BASE_RANGE, extendable by Radar Booster friendly
-- Blips: green (friendly), red (enemy), yellow (projectile)
-- Blink rate proportional to proximity (faster = closer)
-- Altitude strip on radar edge: shows targets above/below player altitude
-
-**Full HUD layout:**
-- Top-right: debug panel (already implemented, will expand)
-- Bottom-left: hull health bar (already implemented)
-- Bottom-right: radar circle + altitude strip
-- Bottom-centre: weapon slot display (3 slots, active ammo/energy/cooldown)
-- Top-centre (thin bar): wave number and enemy count remaining
-- Directional shield display: small pie/sector diagram, colour = HP level
-
----
-
-### Phase 5 — Polish
-
-- **Particle system:** Pre-allocated pool (2000 particles). Emitters for engine exhaust,
-  weapon muzzle flash, explosion burst, shield impact sparks, missile smoke trail.
-  Billboard quads, sorted back-to-front for translucency.
-- **Audio:** raylib miniaudio backend. Positional audio via manual pan/volume
-  calculation (raylib doesn't do 3D audio natively). 4 concurrent weapon-fire channels.
-  Distinct sound per weapon type.
-- **Day/night cycle:** Sun direction animates over time. Sky colour lerps from dawn to
-  noon to dusk to night. Terrain ambient/diffuse adjusts accordingly.
-- **Weather:** Wind vector affects handling (drift). Storm = reduced visibility (fog
-  near/far shrink). Visual: particle snow/rain overlay.
-- **Post-FX (optional):** Scanline vignette, mild bloom on engine nozzles/explosions.
-  raylib custom shader pass.
-
----
-
-### Phase 6 — Extended Features
-
-- Leaderboard / scoring persistence (simple binary file or JSON)
-- Cockpit camera mode (inside the ship, looking forward, no external model visible)
-- Replay recording (deterministic at 120 Hz — record inputs, replay inputs)
-- New weapon types open for expansion (gravity well bomb, chain lightning, tractor beam)
-- New enemy types open for expansion (cloaking drone, kamikaze, artillery)
+Friendly units: Collector, Repair Station, Radar Booster, Base. All friendly units destroyed = game over.
 
 ---
 
@@ -403,120 +236,150 @@ Visual: translucent hemisphere shader around ship, UV-animated pulse on hit.
 
 Four presets, selected at game start:
 
-| Preset | Flight Assist | Enemy Aggression | Shield Recharge | Pickup Rate |
-|--------|---------------|------------------|-----------------|-------------|
+| Preset | Flight Assist | Aggression | Shield Recharge | Pickups |
+|--------|---------------|------------|-----------------|---------|
 | Veteran | Raw (0) | 1.3× | 0.6× | 0.5× |
 | Pilot | Minimal (1) | 1.0× | 1.0× | 1.0× |
 | Recruit | Standard (2) | 0.8× | 1.4× | 1.5× |
 | Commander | Full (3) | 0.6× | 2.0× | 2.0× |
 
-Flight assist coefficients (Config::ASSIST_LEVEL_COEFFS[4] = {0.0, 0.18, 0.42, 0.75}):
+Flight assist coefficients: `Config::ASSIST_LEVEL_COEFFS[4] = {0.0, 0.18, 0.42, 0.75}`.
+
 - Level 0 (Raw): No correction. Pure momentum physics.
 - Level 1 (Minimal): Auto-levelling roll only.
 - Level 2 (Standard): Auto-level + lateral velocity dampening.
-- Level 3 (Full): Auto-level + dampen + predictive terrain avoidance look-ahead.
+- Level 3 (Full): Auto-level + dampen + predictive terrain look-ahead raycast.
 
 ---
 
-## Key Constants Reference (Config.hpp)
+## DEV_MODE Features
+
+Compile with `-DDEV_MODE=ON`. All dev features are `#ifdef DEV_MODE` guarded and produce zero overhead in release builds.
+
+| Key | Action |
+|-----|--------|
+| F1 | Toggle Follow/FreeRoam camera (`CamMode`, separate from `CameraView`) |
+| F2 | Cycle flight assist level (0–3) |
+| F3 | God mode — infinite thrust + invincible + infinite weapons |
+| F4 | Toggle flight recorder (120 Hz CSV to `tests/logs/`) |
+| F5 | Reroll terrain seed |
+| F6 | Dump heightmap to `tests/logs/heightmap-<unixtime>.{png,txt}` |
+| F7 | Skip wave (silently kill all enemies + flush pending spawns) |
+| `[` / `]` / `\` | Step in / out / reset (debug stepper) |
+
+Removed: F5 (craft cycle) and F6 (flight mode toggle) — gone with the flight rebuild that collapsed dual physics into single Newtonian.
+
+---
+
+## Key Config Constants
 
 ```cpp
 // Timing
-FIXED_DT            = 1/120s    // physics tick rate
-MAX_FRAME_TIME      = 0.05s     // spiral-of-death guard
+FIXED_DT             = 1/120s   // physics tick rate
+MAX_FRAME_TIME       = 0.05s    // spiral-of-death guard
 
-// Terrain
-HEIGHTMAP_SIZE      = 1025      // must be 2^n+1
-CHUNK_COUNT         = 16        // 16×16 chunk grid
-TERRAIN_SCALE       = 4.0f      // world units per heightmap cell
-TERRAIN_HEIGHT_MAX  = 55.0f     // max mountain height in world units
-TERRAIN_ROUGHNESS   = 0.55f     // diamond-square roughness
-SEA_LEVEL           = 0.20f     // fraction of HEIGHT_MAX
-RIVER_COUNT         = 6
-LAKE_COUNT          = 12
+// World — current Diamond-Square parameters
+HEIGHTMAP_SIZE       = 1025     // (sine-wave rebuild planned: see archive/terrain_rebuild.md)
+CHUNK_COUNT          = 16
+TERRAIN_SCALE        = 4.0f
+TERRAIN_HEIGHT_MAX   = 55.0f
+SEA_LEVEL            = 0.20f
+RIVER_COUNT          = 6
+LAKE_COUNT           = 12
 
-// Player
-PLAYER_THRUST       = 28.0f
-PLAYER_DRAG         = 0.92f     // per-tick multiplier (applied as powf per dt)
-PLAYER_MAX_SPEED    = 40.0f
-PLAYER_TURN_RATE    = 1.8f      // rad/s
-PLAYER_MIN_ALTITUDE = 2.5f      // AGL minimum
-PLAYER_BANK_RATE    = 3.5f
+// Flight (Newtonian, post-rebuild)
+NEWTON_GRAVITY        = 9.8f
+NEWTON_THRUST         = 24.0f
+NEWTON_DRAG           = 0.02f
+NEWTON_PITCH_MAX      = 1.30f
+NEWTON_FUEL_MAX       = 100.0f
+NEWTON_FUEL_BURN_RATE = 3.5f
 
 // Camera
-CAM_HEIGHT          = 6.0f      // units above player
-CAM_DISTANCE        = 14.0f     // units behind player
-CAM_FOV             = 70.0f
-CAM_FOLLOW_SPEED    = 6.0f
+CAM_DISTANCE         = 18.0f
+CAM_HEIGHT           = 8.0f
+CAM_FOV              = 75.0f
+CAM_LERP             = 8.0f
 
-// Weapons
-TURRET_RANGE        = 60.0f
-MISSILE_NAV_N       = 4.0f      // proportional navigation constant
-CANNON_FIRE_RATE    = 0.08s
-
-// Shields
-SHIELD_HP_MAX       = 100.0f
-SHIELD_RECHARGE_RATE= 8.0f HP/s
-SHIELD_RECHARGE_DELAY=3.0s
+// Combat (TTK-derived)
+TTK_FIGHTER          = 2.0s
+TTK_BOMBER           = 5.0s
+TTK_CARRIER          = 25.0s
 
 // Radar
-RADAR_BASE_RANGE    = 300.0f
+RADAR_BASE_RANGE      = 300.0f
+RADAR_BOOST_RANGE     = 500.0f
+RADAR_ALT_STRIP_RANGE = 150.0f
 ```
+
+Values may drift — `Config.hpp` is ground truth.
 
 ---
 
 ## Coding Standards
 
-- **No magic numbers** — add to Config.hpp
-- **No heap allocation in hot path** — use pre-allocated pools
-- **No raylib draw calls in update()** — strict separation
-- **Header guards** — `#pragma once` on all headers
-- **Naming** — PascalCase classes, camelCase methods, m_ prefix for members,
-  ALL_CAPS for Config constants
-- **Comments** — explain *why*, not *what*
-- **No exceptions in hot paths** — use return codes or optional
-- **Platform paths** — use `std::filesystem::path` not string literals
-
----
-
-## Next Immediate Tasks
-
-The project was in the middle of Phase 2 when this handoff was created.
-The player craft is flying and the camera is working. Start here:
-
-1. **Verify the ship mesh looks correct** — engine pods should be flush against
-   the hull wings, cockpit should sit on the hull surface (not float), red stripe
-   should be a thin painted-on band not a floating plank.
-   The last coordinate fix was: pods at ±[1.80, 2.60], cockpit at Y=[0.25, 0.58],
-   stripe at Y=[0.24, 0.28].
-
-2. **Complete Phase 2:**
-   - Add gamepad support to `Player::handleInput()`
-   - Add engine exhaust particle emitter
-   - Add ship ground shadow
-
-3. **Move to Phase 3** once Phase 2 feels solid:
-   - `Entity.hpp` base struct (position, velocity, health, type, id, alive)
-   - `EntityManager` with flat pools per type and spatial grid
-   - First enemy type: Fighter (pursuit → attack → evade state machine)
-   - `WeaponSystem` with Cannon as first weapon (player can fire)
-   - Collision detection between projectiles and enemies
-   - Wave manager (simple: spawn fighters, clear wave, repeat)
-
-Do not skip ahead to HUD or shields until basic combat (player can shoot enemies,
-enemies can shoot player, waves spawn) is working and feels good.
+- **No magic numbers** — add to `Config.hpp` (or sidecar once migrated)
+- **No heap allocation in hot path** — pre-allocated pools only
+- **No raylib draw calls in `update()`** — strict separation
+- **`#pragma once`** on all headers
+- **Naming** — PascalCase classes, camelCase methods, `m_` prefix for members, ALL_CAPS for Config constants
+- **Comments** — explain *why*, not *what*; default to none
+- **No exceptions in hot paths** — return codes or `std::optional`
+- **Paths** — `std::filesystem::path`, never raw string literals
+- **Never name anything `CameraMode`** — raylib already defines it
 
 ---
 
 ## Aesthetic Guidelines
 
-The visual target is "modernised but stylistically similar" to the 1988 original:
-- Flat-shaded polygons with no texture mapping
-- Visible polygon faces — low poly is a feature, not a bug
-- One directional sun light, ambient ~0.45, no specular
-- Colour by height/type bands (no gradients within a face)
-- Fog that matches sky colour at max draw distance
-- Simple particle effects — no complex shaders until Phase 5
+Visual target: "modernised but stylistically similar" to the 1988 original.
 
-The game should look like it could have run in 1992 on very powerful hardware,
-not like a modern game with a retro filter applied.
+- Flat-shaded polygons, no texture mapping
+- Visible polygon faces — low-poly is a feature, not a bug
+- One directional sun, ambient ~0.45, no specular
+- Colour by height/type bands or 32-colour palette, no gradients within a face
+- Fog matches sky colour at max draw distance
+- Simple particles only — no complex shaders before Phase 5
+
+"Looks like it could have run in 1992 on very powerful hardware — not a modern game with a retro filter applied."
+
+---
+
+## Critical Implementation Notes (Traps)
+
+These have bitten development before — preserve unless you understand why:
+
+- **`Planet::heightAt()` will need modular (wrapped) coordinates** after the planned toroidal-wrap terrain rebuild. Current code uses unwrapped; revisit when sine-wave terrain lands.
+- **`rlFrustum` far-plane override at 3000** in `GameState::render()`. Do not remove — raylib's default 1000-unit far plane clips the world.
+- **Loading-screen `ProgressCb`** in `Planet::generate()` must be preserved across any terrain regen — startup time is non-trivial.
+- **Ghost-blip pool (Radar)** — pre-allocated at 32 slots. No heap allocation.
+- **Cluster missile 120° submunition search cone** must not be widened to full-sphere — it is what makes the weapon spread across a swarm rather than all targeting one.
+- **Beam Laser sets `timeSinceHit = 0` each tick while on target** — this suppresses Carrier shield regeneration. Do not omit; it's the Carrier fight mechanic.
+- **Tactical view (camera 3) uses `camera.up = {0, 0, 1}`** — not `{0, 1, 0}`. The world's vertical axis swaps to Z so north stays "up" on screen.
+- **OBJ load recomputes face normals at load time** — original file `vn` lines are ignored. Source-of-truth stays in geometry, not in baked normals.
+- **`saveObjVertices` (round-trip)** — only `v` lines are rewritten; comments, materials, faces, `vn`, `vt` are preserved byte-exact. An edit-marker comment is appended (deduped on re-save). T-06 + T-07 in `tests/test_obj_save.cpp` verify this.
+- **`RAYMATH_IMPLEMENTATION`** is defined on each executable target (`terra-siege`, `terra-siege-inspect`), not on the shared `terra_siege_mesh` static lib.
+
+---
+
+## Related Documents
+
+**Active (root):**
+
+- [README.md](README.md) — user-facing description, build/run, controls, status table
+- [ROADMAP.md](ROADMAP.md) — three-track plan (engine / features / tooling)
+- [base_mode_v2.md](base_mode_v2.md) — active Slice C design (asymmetric Base Mode)
+- [terra_siege_inspect_roadmap.md](terra_siege_inspect_roadmap.md) — inspector spec
+
+**Active design reference (project-status/):**
+
+- [project-status/game_modes_and_features.md](project-status/game_modes_and_features.md) — §§4-9 still active (resources, weapons, helicopter, smoke); Part 2 superseded by `base_mode_v2.md`
+
+**Historical** ([project-status/archive/](project-status/archive/)):
+
+- Earlier CLAUDE.md variants (phase-2-era and rebuild-era)
+- `VIRUS_REMAKE_ARCHITECTURE.md` — original architectural rationale
+- `project-roadmap.md` — Phase 2 flight-modes design (shipped)
+- Rebuild specs: `flight_mode_rebuild.md` (shipped), `terrain_rebuild.md` (NOT shipped — Diamond-Square still in code), `camera_system.md` (shipped), `combat_tuning.md` (shipped), `radar_system.md` (shipped), `REBUILD_ROADMAP.md`, `readme_rebuild.md`
+
+The terrain rebuild (sine-wave Fourier synthesis) is the one rebuild spec that has *not* been implemented — current code is still Diamond-Square. Revisit when there's appetite to land it.

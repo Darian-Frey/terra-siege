@@ -1,5 +1,8 @@
 # terra-siege — Radar System Design
 
+> **⚠ Archived 2026-06-03 — SHIPPED.** Historical reference — three-tier radar (baseline disc, threat vectors + warnings, ghost blips + jamming). Original path: `terra_rebuild/radar_system.md`.
+> See [`/CLAUDE.md`](../../CLAUDE.md) for the current summary. Ghost-blip pre-allocated pool (32 slots) and `worldToRadar()` heading-up rotation are preserved as critical traps.
+
 ## Overview
 
 The radar is the player's primary situational awareness tool. It must communicate

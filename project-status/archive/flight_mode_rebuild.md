@@ -1,5 +1,8 @@
 # terra-siege — Flight Mode Rebuild
 
+> **⚠ Archived 2026-06-03 — SHIPPED.** Historical reference — the rebuild that collapsed dual Classic+Arcade physics and five craft into a single Newtonian model. Original path: `terra_rebuild/flight_mode_rebuild.md`.
+> Current flight model is documented in [`/CLAUDE.md`](../../CLAUDE.md). Config constants are `NEWTON_*` per the spec below.
+
 ## Overview
 
 The current Player system has two physics models (Classic and Arcade), five craft

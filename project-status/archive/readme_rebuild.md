@@ -1,5 +1,8 @@
 # terra-siege — Rebuild Design Documents Guide
 
+> **⚠ Archived 2026-06-03.** Historical reference — index of the May rebuild spec set. Original path: `terra_rebuild/readme_rebuild.md`.
+> Active replacement: [`README.md`](README.md) in this archive directory.
+
 ## Purpose of This File
 
 This document explains what each design document in the repo root is, what it

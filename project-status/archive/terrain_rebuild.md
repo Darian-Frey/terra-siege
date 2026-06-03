@@ -1,5 +1,8 @@
 # terra-siege — Terrain Rebuild
 
+> **⚠ Archived 2026-06-03 — NOT YET SHIPPED.** This is the one rebuild spec that has not been implemented. Current code is still Diamond-Square + smoothing + radial falloff. Original path: `terra_rebuild/terrain_rebuild.md`.
+> Revisit when there's appetite to land sine-wave terrain. The toroidal-wrap implications (`Planet::heightAt` modular coords, `Player::wrapPosition` at end of physics) are noted in [`/CLAUDE.md`](../../CLAUDE.md) as pending.
+
 ## Overview
 
 Replace the Diamond-Square heightmap generator with a Fourier synthesis approach
