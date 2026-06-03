@@ -153,12 +153,30 @@ constexpr int CLUSTER_AMMO_MAX = 10;
 // loose swarm and reacquire individually rather than all converging
 // on the same target the carrier was locked on.
 constexpr float CLUSTER_SPLIT_DISTANCE = 45.0f;
+// Each sub-missile carries this fraction of MISSILE_DAMAGE — 0.25 ×
+// 4 children = exactly one missile's worth of total damage. The
+// cluster's advantage is spread (4 targets) rather than raw output.
+constexpr float CLUSTER_CHILD_DAMAGE_FRAC = 0.25f;
+// Sub-missiles are more agile than normal missiles — smaller frame,
+// less mass, less inertia. Tighter turn radius (70 / 7 ≈ 10m vs
+// 70 / 4.5 ≈ 15.5m for the parent) lets them re-engage targets the
+// parent would have whiffed.
+constexpr float CLUSTER_CHILD_TURN_RATE = 7.0f;
 // Sub-missile reacquisition: when a child missile's target dies, it
 // scans every alive enemy within REACQUIRE_RANGE for a new lock. If
 // nothing's in range, it goes ballistic — fly straight with a small
 // downward acceleration so it eventually lands somewhere.
 constexpr float MISSILE_REACQUIRE_RANGE = 300.0f;
 constexpr float MISSILE_BALLISTIC_DIP = 6.0f; // m/s² downward when ballistic
+
+// Proximity fuse — detonate once a guided missile has passed its
+// closest approach to the locked target AND is still inside
+// (target.radius + splashRadius * MISSILE_FUSE_FRAC). Without this,
+// near-misses cause the missile to overshoot and orbit the target
+// because the direction-blend steering can't snap-180° back tight
+// enough to re-engage. The detonation point is inside splash range so
+// target damage is preserved.
+constexpr float MISSILE_FUSE_FRAC = 0.65f;
 
 constexpr float DEPTH_CHARGE_DAMAGE = 80.0f;
 constexpr float DEPTH_CHARGE_RADIUS = 14.0f;

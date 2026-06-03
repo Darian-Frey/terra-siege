@@ -7,6 +7,41 @@
 #include "world/Planet.hpp"
 #include <cmath>
 
+namespace {
+
+// Draw a billboarded HP / shield bar. The bar always lies flat in the
+// world XZ plane but is oriented perpendicular to the horizontal vector
+// from entity to camera, so it reads at full width regardless of the
+// ship's yaw or the player's approach angle. `yOffset` raises the bar
+// above the entity centre; `width` is the full bar length at 100%;
+// `t` is the fill fraction in [0,1].
+inline void drawHpBar(Vector3 pos, float yOffset, float width, float t,
+                      Color col, Vector3 camPos) {
+  if (t < 0.0f) t = 0.0f;
+  if (t > 1.0f) t = 1.0f;
+  float dx = camPos.x - pos.x;
+  float dz = camPos.z - pos.z;
+  float len = sqrtf(dx * dx + dz * dz);
+  Vector3 right;
+  if (len < 0.001f) {
+    // Camera directly above — pick a stable world axis so the bar
+    // doesn't flip orientation tick-to-tick at the singularity.
+    right = {1.0f, 0.0f, 0.0f};
+  } else {
+    // Rotate the horizontal entity→camera vector by 90° CCW in XZ to
+    // get the bar's "right" direction. Horizontal so the bar stays
+    // flat across the player's view regardless of altitude differences.
+    right = {-dz / len, 0.0f, dx / len};
+  }
+  Vector3 start = {pos.x - right.x * (width * 0.5f), pos.y + yOffset,
+                   pos.z - right.z * (width * 0.5f)};
+  Vector3 end = {start.x + right.x * width * t, start.y,
+                 start.z + right.z * width * t};
+  DrawLine3D(start, end, col);
+}
+
+} // namespace
+
 // ====================================================================
 // Lifecycle / clear
 // ====================================================================
@@ -1652,13 +1687,25 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
       Vector3 toTarget = Vector3Subtract(target->pos, p.pos);
       float dist = Vector3Length(toTarget);
 
-      // ClusterParent split check — if we're inside the split radius,
-      // detonate the carrier and spawn 4 sub-missiles. Each child
-      // inherits the carrier's speed + a 4-way perpendicular spread,
-      // gets a fresh local target lock so they spread out across
-      // adjacent enemies.
-      if (p.kind == ProjectileKind::ClusterParent &&
-          dist < Config::CLUSTER_SPLIT_DISTANCE) {
+      // ClusterParent split check — split if either (a) we're inside
+      // the nominal split radius, OR (b) we've passed our closest
+      // approach to the target and are still inside an extended split
+      // window. Without (b) the parent would loop back the way normal
+      // missiles used to before the proximity fuse — circling the
+      // target instead of releasing its payload. Splitting on (b)
+      // hands the engagement to the more-agile children.
+      bool shouldSplit = false;
+      if (p.kind == ProjectileKind::ClusterParent) {
+        if (dist < Config::CLUSTER_SPLIT_DISTANCE) {
+          shouldSplit = true;
+        } else if (dist < Config::CLUSTER_SPLIT_DISTANCE * 1.5f &&
+                   dist > 0.001f) {
+          Vector3 toTargetN = Vector3Scale(toTarget, 1.0f / dist);
+          float closing = Vector3DotProduct(p.vel, toTargetN);
+          if (closing < 0.0f) shouldSplit = true;
+        }
+      }
+      if (shouldSplit) {
         float speed = Vector3Length(p.vel);
         if (speed < 1.0f) speed = Config::MISSILE_SPEED;
         Vector3 fwd = Vector3Scale(p.vel, 1.0f / speed);
@@ -1701,23 +1748,55 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
           }
           Vector3 childPos = Vector3Add(p.pos, Vector3Scale(dir, 0.8f));
           Vector3 childVel = Vector3Scale(dir, speed);
-          // Each child reacquires individually next tick (id=0).
-          // Damage: each sub-missile carries 45% of MISSILE_DAMAGE so
-          // a single carrier overlapping 4 enemies delivers ~1.8x
-          // single-missile damage in total.
+          // Each child reacquires individually next tick (id=0). Damage:
+          // each sub-missile carries CLUSTER_CHILD_DAMAGE_FRAC × MISSILE_DAMAGE,
+          // so 4 children = exactly one missile's worth of total damage —
+          // cluster's advantage is spread across targets, not raw output.
+          // Turn rate is higher (CLUSTER_CHILD_TURN_RATE) so the children
+          // are more agile than the parent and can reacquire targets the
+          // parent would have whiffed.
           spawnProjectile(childPos, childVel,
-                          Config::MISSILE_DAMAGE * 0.45f,
+                          Config::MISSILE_DAMAGE *
+                              Config::CLUSTER_CHILD_DAMAGE_FRAC,
                           Config::MISSILE_RANGE, Config::MISSILE_SPEED,
                           ProjectileOwner::Player,
                           ProjectileKind::Missile, Config::PLASMA_SPLASH,
                           0 /* no lock — children reacquire next tick */,
-                          Config::MISSILE_TURN_RATE);
+                          Config::CLUSTER_CHILD_TURN_RATE);
         }
         // Carrier vanishes silently (no kill burst — it's a carrier,
         // not a warhead).
         p.alive = false;
         --m_liveProjectiles;
         return;
+      }
+
+      // Proximity fuse — Missile only (ClusterParent has its own split
+      // logic above). If the missile has passed its closest approach
+      // to the locked target AND is now inside splash kill range,
+      // detonate now instead of trying to circle back. The
+      // direction-blend steering below can't snap-180° tight enough
+      // when the miss-distance exceeds turn radius (speed / turnRate),
+      // so near-misses without the fuse spiral around the target.
+      if (p.kind == ProjectileKind::Missile && p.splashRadius > 0.0f &&
+          dist > 0.001f) {
+        float fuseRange =
+            target->radius + p.splashRadius * Config::MISSILE_FUSE_FRAC;
+        if (dist < fuseRange) {
+          Vector3 toTargetN = Vector3Scale(toTarget, 1.0f / dist);
+          float closing = Vector3DotProduct(p.vel, toTargetN);
+          if (closing < 0.0f) {
+            // Past closest approach inside splash range — detonate.
+            emitHitBurst(p.pos, particles);
+            if (p.owner == ProjectileOwner::Player) {
+              applySplashDamage(p.pos, p.splashRadius, p.damage, particles);
+              emitKillExplosion(p.pos, particles);
+            }
+            p.alive = false;
+            --m_liveProjectiles;
+            return;
+          }
+        }
       }
 
       // Standard proportional-nav steering toward target.
@@ -1765,11 +1844,12 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
             dir.z /= dl;
           }
           spawnProjectile(p.pos, Vector3Scale(dir, speed),
-                          Config::MISSILE_DAMAGE * 0.45f,
+                          Config::MISSILE_DAMAGE *
+                              Config::CLUSTER_CHILD_DAMAGE_FRAC,
                           Config::MISSILE_RANGE, Config::MISSILE_SPEED,
                           ProjectileOwner::Player,
                           ProjectileKind::Missile, Config::PLASMA_SPLASH,
-                          0, Config::MISSILE_TURN_RATE);
+                          0, Config::CLUSTER_CHILD_TURN_RATE);
         }
         p.alive = false;
         --m_liveProjectiles;
@@ -2007,10 +2087,11 @@ void EntityManager::emitKillExplosion(Vector3 pos,
 // Render — placeholder primitive geometry. Replace with procedural
 // flat-shaded meshes when each enemy type lands its own visual pass.
 // ====================================================================
-void EntityManager::render(const tsmesh::MeshRegistry *registry) const {
+void EntityManager::render(Camera3D camera,
+                           const tsmesh::MeshRegistry *registry) const {
   for (const auto &e : m_entities) {
     if (!e.alive) continue;
-    renderEnemy(e, registry);
+    renderEnemy(e, camera, registry);
   }
   for (const auto &p : m_projectiles) {
     if (!p.alive) continue;
@@ -2018,8 +2099,9 @@ void EntityManager::render(const tsmesh::MeshRegistry *registry) const {
   }
 }
 
-void EntityManager::renderEnemy(const Entity &e,
+void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
                                 const tsmesh::MeshRegistry *registry) const {
+  const Vector3 camPos = camera.position;
   switch (e.type) {
   case EntityType::Fighter: {
     if (registry && registry->has(EntityType::Fighter)) {
@@ -2039,17 +2121,12 @@ void EntityManager::renderEnemy(const Entity &e,
     }
     // HP + shield bars (always rendered, mesh or procedural).
     if (e.hullMax > 0.0f) {
-      float t = e.hullHP / e.hullMax;
-      if (t < 0.0f) t = 0.0f;
-      Vector3 a = {e.pos.x - 2.0f, e.pos.y + 2.5f, e.pos.z};
-      Vector3 b = {e.pos.x - 2.0f + 4.0f * t, e.pos.y + 2.5f, e.pos.z};
-      DrawLine3D(a, b, {80, 220, 100, 220});
+      drawHpBar(e.pos, 2.5f, 4.0f, e.hullHP / e.hullMax,
+                {80, 220, 100, 220}, camPos);
     }
     if (e.shieldMax > 0.0f && e.shieldHP > 0.0f) {
-      float t = e.shieldHP / e.shieldMax;
-      Vector3 a = {e.pos.x - 2.0f, e.pos.y + 2.9f, e.pos.z};
-      Vector3 b = {e.pos.x - 2.0f + 4.0f * t, e.pos.y + 2.9f, e.pos.z};
-      DrawLine3D(a, b, {120, 180, 255, 220});
+      drawHpBar(e.pos, 2.9f, 4.0f, e.shieldHP / e.shieldMax,
+                {120, 180, 255, 220}, camPos);
     }
     break;
   }
@@ -2094,17 +2171,12 @@ void EntityManager::renderEnemy(const Entity &e,
 
     // Hull + shield bars — same convention as Fighter.
     if (e.hullMax > 0.0f) {
-      float t = e.hullHP / e.hullMax;
-      if (t < 0.0f) t = 0.0f;
-      Vector3 a = {e.pos.x - 2.5f, e.pos.y + 2.4f, e.pos.z};
-      Vector3 b = {e.pos.x - 2.5f + 5.0f * t, e.pos.y + 2.4f, e.pos.z};
-      DrawLine3D(a, b, {80, 220, 100, 220});
+      drawHpBar(e.pos, 2.4f, 5.0f, e.hullHP / e.hullMax,
+                {80, 220, 100, 220}, camPos);
     }
     if (e.shieldMax > 0.0f && e.shieldHP > 0.0f) {
-      float t = e.shieldHP / e.shieldMax;
-      Vector3 a = {e.pos.x - 2.5f, e.pos.y + 2.8f, e.pos.z};
-      Vector3 b = {e.pos.x - 2.5f + 5.0f * t, e.pos.y + 2.8f, e.pos.z};
-      DrawLine3D(a, b, {120, 180, 255, 220});
+      drawHpBar(e.pos, 2.8f, 5.0f, e.shieldHP / e.shieldMax,
+                {120, 180, 255, 220}, camPos);
     }
     break;
   }
@@ -2127,11 +2199,8 @@ void EntityManager::renderEnemy(const Entity &e,
     // Hull bar — same convention as Fighter so the player can read
     // damage at a glance.
     if (e.hullMax > 0.0f) {
-      float t = e.hullHP / e.hullMax;
-      if (t < 0.0f) t = 0.0f;
-      Vector3 a = {e.pos.x - 3.0f, e.pos.y + 1.6f, e.pos.z};
-      Vector3 b = {e.pos.x - 3.0f + 6.0f * t, e.pos.y + 1.6f, e.pos.z};
-      DrawLine3D(a, b, {80, 220, 100, 220});
+      drawHpBar(e.pos, 1.6f, 6.0f, e.hullHP / e.hullMax,
+                {80, 220, 100, 220}, camPos);
     }
     break;
   }
@@ -2192,15 +2261,12 @@ void EntityManager::renderEnemy(const Entity &e,
     }
     rlPopMatrix();
 
-    // Hull bar — drawn in world space (above the carrier centre)
-    // because the bar is a UI cue, not a physical fixture; should
-    // read identically from any angle.
+    // Hull bar — billboarded toward the camera so it reads at full
+    // width from any approach angle (the carrier rotates with yaw,
+    // which would otherwise show the bar edge-on at certain headings).
     if (e.hullMax > 0.0f) {
-      float t = e.hullHP / e.hullMax;
-      if (t < 0.0f) t = 0.0f;
-      Vector3 a = {e.pos.x - 4.0f, e.pos.y + 3.5f, e.pos.z};
-      Vector3 b = {e.pos.x - 4.0f + 8.0f * t, e.pos.y + 3.5f, e.pos.z};
-      DrawLine3D(a, b, {80, 220, 100, 220});
+      drawHpBar(e.pos, 3.5f, 8.0f, e.hullHP / e.hullMax,
+                {80, 220, 100, 220}, camPos);
     }
     break;
   }
@@ -2235,13 +2301,8 @@ void EntityManager::renderEnemy(const Entity &e,
 
     // Hull bar above the cap.
     if (e.hullMax > 0.0f) {
-      float t = e.hullHP / e.hullMax;
-      if (t < 0.0f) t = 0.0f;
-      Vector3 a = {e.pos.x - 2.0f,
-                   e.pos.y + Config::TURRET_BARREL_HEIGHT + 1.5f, e.pos.z};
-      Vector3 b = {e.pos.x - 2.0f + 4.0f * t,
-                   e.pos.y + Config::TURRET_BARREL_HEIGHT + 1.5f, e.pos.z};
-      DrawLine3D(a, b, {80, 220, 100, 220});
+      drawHpBar(e.pos, Config::TURRET_BARREL_HEIGHT + 1.5f, 4.0f,
+                e.hullHP / e.hullMax, {80, 220, 100, 220}, camPos);
     }
     break;
   }
@@ -2271,11 +2332,8 @@ void EntityManager::renderEnemy(const Entity &e,
               cab);
 
     if (e.hullMax > 0.0f) {
-      float t = e.hullHP / e.hullMax;
-      if (t < 0.0f) t = 0.0f;
-      Vector3 a = {e.pos.x - 1.8f, e.pos.y + 1.6f, e.pos.z};
-      Vector3 b = {e.pos.x - 1.8f + 3.6f * t, e.pos.y + 1.6f, e.pos.z};
-      DrawLine3D(a, b, {80, 220, 100, 220});
+      drawHpBar(e.pos, 1.6f, 3.6f, e.hullHP / e.hullMax,
+                {80, 220, 100, 220}, camPos);
     }
     break;
   }
@@ -2302,11 +2360,8 @@ void EntityManager::renderEnemy(const Entity &e,
     }
 
     if (e.hullMax > 0.0f) {
-      float t = e.hullHP / e.hullMax;
-      if (t < 0.0f) t = 0.0f;
-      Vector3 a = {e.pos.x - 2.0f, e.pos.y + 1.4f, e.pos.z};
-      Vector3 b = {e.pos.x - 2.0f + 4.0f * t, e.pos.y + 1.4f, e.pos.z};
-      DrawLine3D(a, b, {80, 220, 100, 220});
+      drawHpBar(e.pos, 1.4f, 4.0f, e.hullHP / e.hullMax,
+                {80, 220, 100, 220}, camPos);
     }
     break;
   }
@@ -2338,11 +2393,8 @@ void EntityManager::renderEnemy(const Entity &e,
     DrawCubeV(tip, {0.5f, 0.4f, 0.5f}, {255, 220, 100, 255});
 
     if (e.hullMax > 0.0f) {
-      float t = e.hullHP / e.hullMax;
-      if (t < 0.0f) t = 0.0f;
-      Vector3 a = {e.pos.x - 2.0f, e.pos.y + 4.4f, e.pos.z};
-      Vector3 b = {e.pos.x - 2.0f + 4.0f * t, e.pos.y + 4.4f, e.pos.z};
-      DrawLine3D(a, b, {80, 220, 100, 220});
+      drawHpBar(e.pos, 4.4f, 4.0f, e.hullHP / e.hullMax,
+                {80, 220, 100, 220}, camPos);
     }
     break;
   }
@@ -2394,11 +2446,8 @@ void EntityManager::renderEnemy(const Entity &e,
 
     // Hull bar above the tower so killing the base is visible.
     if (e.hullMax > 0.0f) {
-      float t = e.hullHP / e.hullMax;
-      if (t < 0.0f) t = 0.0f;
-      Vector3 a = {e.pos.x - 4.0f, e.pos.y + 6.0f, e.pos.z};
-      Vector3 b = {e.pos.x - 4.0f + 8.0f * t, e.pos.y + 6.0f, e.pos.z};
-      DrawLine3D(a, b, {80, 220, 100, 220});
+      drawHpBar(e.pos, 6.0f, 8.0f, e.hullHP / e.hullMax,
+                {80, 220, 100, 220}, camPos);
     }
     break;
   }

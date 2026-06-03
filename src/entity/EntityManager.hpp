@@ -79,8 +79,10 @@ public:
   // loaded; otherwise the per-type procedural geometry is used.
   // Dynamic per-entity overlays (HP bars, Carrier shield panels,
   // RadarBooster rotating dish, Base turret, Collector cabin pip) are
-  // rendered after the body in either path.
-  void render(const tsmesh::MeshRegistry *registry = nullptr) const;
+  // rendered after the body in either path. The camera is needed so
+  // the HP bars can billboard toward the player.
+  void render(Camera3D camera,
+              const tsmesh::MeshRegistry *registry = nullptr) const;
 
   // Debug / HUD
   int liveEnemyCount() const { return m_liveEnemies; }
@@ -216,7 +218,7 @@ private:
   Entity *allocProjectile();
 
   // Render helpers
-  void renderEnemy(const Entity &e,
+  void renderEnemy(const Entity &e, Camera3D camera,
                    const tsmesh::MeshRegistry *registry) const;
   void renderProjectile(const Entity &p) const;
 };
