@@ -4,23 +4,20 @@
 #include "raymath.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 
 namespace tsmesh {
 
 namespace {
 
-// Start at a sensible orbit distance keyed off the bounding sphere.
-Camera3D defaultCamera(float boundsRadius) {
-  Camera3D c{};
-  float d = boundsRadius * 3.5f;
-  c.position = {d * 0.7f, d * 0.5f, d * 0.7f};
-  c.target = {0, 0, 0};
-  c.up = {0, 1, 0};
-  c.fovy = 45.0f;
-  c.projection = CAMERA_PERSPECTIVE;
-  return c;
-}
+// Mouse sensitivity for the orbit camera. Tuned by feel — feels
+// natural at 1080p; users with very high-DPI mice may want lower.
+constexpr float ORBIT_RAD_PER_PX = 0.005f;
+constexpr float PAN_FRAC_PER_PX = 0.0015f; // scaled by distance
+constexpr float ZOOM_IN_FACTOR = 0.85f;
+constexpr float ZOOM_OUT_FACTOR = 1.18f;
+constexpr float PITCH_LIMIT = 1.55334f; // ~89° — keep off the poles
 
 } // anonymous namespace
 
@@ -41,9 +38,33 @@ bool Inspector::load(const std::filesystem::path &path) {
   m_mesh = std::move(lr.mesh);
   computeBoundingSphere();
   m_vertSphereR = std::max(0.05f, m_boundsR * 0.012f);
-  m_camera = defaultCamera(m_boundsR);
+  resetCamera();
   for (auto &t : m_tools) t->onReload(*this);
   return true;
+}
+
+void Inspector::resetCamera() {
+  m_camera.up = {0, 1, 0};
+  m_camera.fovy = 45.0f;
+  m_camera.projection = CAMERA_PERSPECTIVE;
+  m_camTarget = {0, 0, 0};
+  m_camYaw = PI * 0.25f;       // 45° around Y
+  m_camPitch = PI * 0.18f;     // ~32° above XZ plane
+  m_camDistance = m_boundsR * 3.5f;
+  updateCameraTransform();
+}
+
+void Inspector::updateCameraTransform() {
+  float cp = cosf(m_camPitch);
+  float sp = sinf(m_camPitch);
+  float cy = cosf(m_camYaw);
+  float sy = sinf(m_camYaw);
+  m_camera.position = {
+      m_camTarget.x + m_camDistance * cp * sy,
+      m_camTarget.y + m_camDistance * sp,
+      m_camTarget.z + m_camDistance * cp * cy,
+  };
+  m_camera.target = m_camTarget;
 }
 
 void Inspector::computeBoundingSphere() {
@@ -117,11 +138,52 @@ void Inspector::handleInput() {
   if (IsKeyPressed(KEY_S)) doSave();
   if (IsKeyPressed(KEY_R)) doReload();
   if (IsKeyPressed(KEY_TAB)) switchTool(m_currentTool + 1);
+  if (IsKeyPressed(KEY_F)) resetCamera(); // Blender-style "frame view"
 
   if (m_currentTool < m_tools.size())
     m_tools[m_currentTool]->handleInput(*this);
 
-  UpdateCamera(&m_camera, CAMERA_THIRD_PERSON);
+  // Orbit camera — only moves while RMB is held. No raylib
+  // UpdateCamera() because it reads mouse delta unconditionally and
+  // would orbit on every stray cursor motion.
+  Vector2 md = GetMouseDelta();
+  bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+  bool dirty = false;
+
+  if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT) &&
+      (md.x != 0.0f || md.y != 0.0f)) {
+    if (shift) {
+      // Pan: slide the orbit target on the camera's view plane.
+      Vector3 fwd = Vector3Normalize(
+          Vector3Subtract(m_camTarget, m_camera.position));
+      Vector3 right = Vector3Normalize(
+          Vector3CrossProduct(fwd, Vector3{0, 1, 0}));
+      Vector3 up = Vector3CrossProduct(right, fwd);
+      float scale = m_camDistance * PAN_FRAC_PER_PX;
+      m_camTarget = Vector3Add(
+          m_camTarget,
+          Vector3Add(Vector3Scale(right, -md.x * scale),
+                     Vector3Scale(up, md.y * scale)));
+    } else {
+      m_camYaw -= md.x * ORBIT_RAD_PER_PX;
+      m_camPitch -= md.y * ORBIT_RAD_PER_PX;
+      if (m_camPitch > PITCH_LIMIT) m_camPitch = PITCH_LIMIT;
+      if (m_camPitch < -PITCH_LIMIT) m_camPitch = -PITCH_LIMIT;
+    }
+    dirty = true;
+  }
+
+  float wheel = GetMouseWheelMove();
+  if (wheel != 0.0f) {
+    m_camDistance *= (wheel > 0.0f) ? ZOOM_IN_FACTOR : ZOOM_OUT_FACTOR;
+    float minD = m_boundsR * 0.5f;
+    float maxD = m_boundsR * 30.0f;
+    if (m_camDistance < minD) m_camDistance = minD;
+    if (m_camDistance > maxD) m_camDistance = maxD;
+    dirty = true;
+  }
+
+  if (dirty) updateCameraTransform();
 }
 
 void Inspector::render() {
@@ -166,8 +228,8 @@ void Inspector::renderHud() {
     m_tools[m_currentTool]->renderHud(*this, yCursor);
 
   int sh = GetScreenHeight();
-  DrawText("RMB+mouse: orbit  |  wheel: zoom  |  TAB: tool  |  "
-           "S: save  |  R: reload  |  Q: quit",
+  DrawText("RMB drag: orbit  |  Shift+RMB: pan  |  wheel: zoom  |  "
+           "F: frame view  |  TAB: tool  |  S: save  |  R: reload  |  Q: quit",
            10, sh - 22, 12, {180, 200, 220, 200});
 }
 

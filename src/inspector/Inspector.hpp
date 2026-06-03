@@ -53,13 +53,24 @@ private:
   void switchTool(size_t idx);
   void doSave();
   void doReload();
+  void resetCamera();
+  void updateCameraTransform();
 
   std::filesystem::path m_path;
   Mesh3D m_mesh{};
   Model m_model{};
   bool m_modelOwned = false;
 
+  // Orbit-camera state. m_camera is derived from these each tick via
+  // updateCameraTransform(); we don't use raylib's UpdateCamera() so
+  // the view only moves while RMB is held (Blender-style), not on
+  // every stray mouse motion.
   Camera3D m_camera{};
+  Vector3 m_camTarget{0, 0, 0};
+  float m_camYaw = 0.0f;
+  float m_camPitch = 0.0f;
+  float m_camDistance = 1.0f;
+
   float m_vertSphereR = 0.1f;
   float m_boundsR = 1.0f;
 

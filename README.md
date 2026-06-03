@@ -180,12 +180,16 @@ It opens its own window with an orbit camera, the loaded mesh, and clickable ver
 | LMB on a vertex sphere | Select + start drag |
 | LMB drag | Translate vertex along the camera-aligned plane through its start position |
 | Hold X / Y / Z while dragging | Lock the drag to a world axis |
-| RMB + mouse | Orbit camera |
-| Mouse wheel | Zoom |
+| RMB drag | Orbit camera around the model |
+| Shift + RMB drag | Pan the orbit target |
+| Mouse wheel | Zoom in / out |
+| F | Frame view (reset camera to default orbit) |
 | TAB | Cycle inspector tools |
 | S | Save edits back to the OBJ |
 | R | Reload from disk (discards unsaved edits) |
 | Q | Quit |
+
+The camera only moves while RMB is held — Blender-style. Stray mouse motion never disturbs the view.
 
 #### Tool registry
 
