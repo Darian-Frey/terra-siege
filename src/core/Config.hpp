@@ -230,6 +230,24 @@ constexpr float SHIELD_MISSILE_RANGE = 600.0f;
 constexpr int SHIELD_MISSILE_AMMO_MAX = 12;
 
 // ----------------------------------------------------------------
+// Infection (Slice B.4). State machine for flipping a shielded enemy
+// ship's faction. Triggered by Infectious Missile (B.5) when the
+// target's shields are at zero. Three-second reboot during which
+// the entity holds position and flickers visually; after the reboot
+// it's permanently flipped and attacks its former allies at 80% of
+// its normal top speed (engines partly fried from the strip + flip).
+// Once flipped, canBeInfected is set false — entities can be infected
+// at most once.
+//
+// Slice B.4 infects Fighter + Bomber only. Seeder + Carrier defer to
+// a follow-up — their orbit-and-drop AI doesn't map cleanly to the
+// "attack former allies" pattern. Drones / Turrets / Tanks are
+// explicitly excluded (kamikaze / stationary).
+// ----------------------------------------------------------------
+constexpr float INFECT_REBOOT_DURATION = 3.0f; // sec freeze before flip
+constexpr float INFECT_SPEED_PENALTY = 0.80f;  // max-speed multiplier post-flip
+
+// ----------------------------------------------------------------
 // Weapons — special
 // ----------------------------------------------------------------
 constexpr float TURRET_RANGE = 60.0f;

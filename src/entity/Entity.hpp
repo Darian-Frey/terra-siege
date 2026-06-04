@@ -80,6 +80,17 @@ enum class AIState : uint8_t {
   // cleanly when within RETREAT_DESPAWN_DIST. In Slice C this evolves
   // into "fly back to home base + heal on arrival".
   Retreating,
+  // Infecting — Slice B.4 transitional state. INFECT_REBOOT_DURATION
+  // seconds of held-position freeze while the faction flip resolves.
+  // Entity doesn't move, doesn't fire, but is still hittable (the
+  // design's "immune during reboot" rule is too restrictive for
+  // gameplay — you'd be surprised when your Cluster missile doesn't
+  // damage the ship you just infected. Revisit if it feels off).
+  Infecting,
+  // Infected — permanent post-flip state. Targets nearest enemy
+  // (was: player), fires player-owned projectiles, capped at
+  // INFECT_SPEED_PENALTY × max-speed. Cannot revert.
+  Infected,
   StrafeFriendly, // Bomber-only
   // Collector economy loop — runs out from base to a pickup site,
   // dwells, returns to base, dwells, scores a delivery, repeats.
@@ -171,4 +182,14 @@ struct Entity {
   // emit cooldown so the rate scales smoothly with hull fraction.
   Vector3 spawnPos = {0, 0, 0};
   float smokeTimer = 0.0f;
+
+  // Slice B.4 — infection state. canBeInfected is set at spawn by
+  // entity type (Fighter / Bomber = true; Drone / Turret / Tank /
+  // friendly = false). Once an entity has been infected, this flag
+  // flips false permanently per the design's "no re-infection"
+  // rule. infectionTimer counts down from INFECT_REBOOT_DURATION
+  // during AIState::Infecting; on hitting 0 the entity transitions
+  // to AIState::Infected.
+  bool canBeInfected = false;
+  float infectionTimer = 0.0f;
 };

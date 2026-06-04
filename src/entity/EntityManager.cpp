@@ -9,6 +9,26 @@
 
 namespace {
 
+// Tint colour for infected / infecting entities (Slice B.4). Infected
+// ships lean greenish so the player can spot former allies at a
+// glance. Infecting ships flicker red↔green during the reboot. Returns
+// the base colour unchanged for normal entities. For OBJ-rendered
+// entities the returned colour multiplies against the baked per-vertex
+// colours, so the green tint is partial; for procedural cubes the
+// colour replaces the body outright.
+inline Color infectionTint(Color base, AIState state, float infectionTimer) {
+  if (state == AIState::Infected) {
+    return Color{120, 255, 140, base.a};
+  }
+  if (state == AIState::Infecting) {
+    // Flicker between green and base — about 5 transitions / second.
+    float phase = sinf(infectionTimer * 32.0f);
+    if (phase > 0.0f) return Color{120, 255, 140, base.a};
+    return base;
+  }
+  return base;
+}
+
 // Draw a billboarded HP / shield bar. The bar always lies flat in the
 // world XZ plane but is oriented perpendicular to the horizontal vector
 // from entity to camera, so it reads at full width regardless of the
@@ -137,6 +157,7 @@ Entity *EntityManager::spawnEnemy(EntityType type, Vector3 pos) {
     e->shieldDelay = Config::SHIELD_DELAY_FIGHTER;
     e->shieldRate = Config::SHIELD_RATE_FIGHTER;
     e->radius = Config::HIT_RADIUS_FIGHTER;
+    e->canBeInfected = true; // Slice B.4
     break;
   case EntityType::Drone:
     // Kamikaze swarm — 1-shot kill, no shield, contact damage only.
@@ -156,6 +177,7 @@ Entity *EntityManager::spawnEnemy(EntityType type, Vector3 pos) {
     e->shieldDelay = Config::SHIELD_DELAY_BOMBER;
     e->shieldRate = Config::SHIELD_RATE_BOMBER;
     e->radius = Config::HIT_RADIUS_BOMBER;
+    e->canBeInfected = true; // Slice B.4
     break;
   case EntityType::Seeder:
     // Slow flying drone-dispenser. Fragile, no shield. fireTimer is
@@ -455,6 +477,63 @@ void EntityManager::applyShieldHit(Entity &target, float shieldDmg,
   }
 }
 
+// Try to flip an entity's faction (Slice B.4). Requires canBeInfected
+// and depleted shields (scalar + every sector). On success, transitions
+// to AIState::Infecting and starts the reboot countdown; canBeInfected
+// is set false so this is a one-way flip. Caller (B.5 Infectious
+// Missile) ignores the return for now — Slice B.4 ships the state
+// machine but nothing triggers it yet.
+bool EntityManager::tryInfect(Entity &target) {
+  if (!target.canBeInfected) return false;
+  if (!target.alive) return false;
+  // Scalar shield must be zero.
+  if (target.shieldHP > 0.0f) return false;
+  // Every directional sector must be zero.
+  for (int i = 0; i < 4; ++i) {
+    if (target.sectorHP[i] > 0.0f) return false;
+  }
+  target.aiState = AIState::Infecting;
+  target.infectionTimer = Config::INFECT_REBOOT_DURATION;
+  target.canBeInfected = false;
+  // Freeze velocity so the reboot freeze reads as a real pause.
+  target.vel = {0.0f, 0.0f, 0.0f};
+  return true;
+}
+
+// Nearest live enemy to origin, excluding excludeId and filtered by
+// infection state. Used by infected ship AI to find a target — pass
+// `wantInfected = false` to find un-flipped enemies. Skips
+// friendlies, projectiles, ground turrets/tanks (they shouldn't be
+// the primary target of a re-targeting AI — too easy / not what the
+// "attack former allies" pattern means).
+const Entity *EntityManager::nearestEnemyTo(Vector3 origin,
+                                            uint32_t excludeId,
+                                            bool wantInfected) const {
+  const Entity *best = nullptr;
+  float bestD2 = 1e18f;
+  for (const Entity &e : m_entities) {
+    if (!e.alive) continue;
+    if (e.id == excludeId) continue;
+    if (e.type == EntityType::Projectile) continue;
+    if (e.type == EntityType::Collector ||
+        e.type == EntityType::RepairStation ||
+        e.type == EntityType::RadarBooster ||
+        e.type == EntityType::Base)
+      continue;
+    if (e.type == EntityType::GroundTurret) continue;
+    bool eIsInfected = (e.aiState == AIState::Infected ||
+                        e.aiState == AIState::Infecting);
+    if (eIsInfected != wantInfected) continue;
+    Vector3 d = Vector3Subtract(e.pos, origin);
+    float d2 = d.x * d.x + d.y * d.y + d.z * d.z;
+    if (d2 < bestD2) {
+      bestD2 = d2;
+      best = &e;
+    }
+  }
+  return best;
+}
+
 // EMP area stun — set stunTimer on every enemy within radius. Skips
 // friendlies and projectiles. The stunned enemies' update bodies will
 // see stunTimer > 0 and short-circuit out of AI logic.
@@ -627,6 +706,22 @@ void EntityManager::update(float dt, const Planet &planet, Player &player,
       continue;
     }
 
+    // Infection reboot — Slice B.4. While Infecting, the entity is
+    // held in place and skips its AI update. When the timer expires
+    // it transitions to Infected and the next tick runs the per-type
+    // AI with the infected-targeting branch.
+    if (e.aiState == AIState::Infecting) {
+      e.infectionTimer -= dt;
+      e.vel = Vector3Scale(e.vel, 1.0f - 6.0f * dt); // strong damp — freeze
+      if (e.infectionTimer <= 0.0f) {
+        e.aiState = AIState::Infected;
+        e.infectionTimer = 0.0f;
+        // Shields stay at zero (they were already drained — that's
+        // the precondition for tryInfect).
+      }
+      continue;
+    }
+
     // Slice A — damage smoke for hull-wearing flying enemies. Drones
     // and ground entities don't smoke (they're either 1-shot or don't
     // visibly degrade). Smoke is decoupled from AI state so a wounded
@@ -693,7 +788,20 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
                                   const Player &player,
                                   ParticleSystem &particles) {
   (void)particles; // smoke is now centralised in tickDamageSmoke
-  Vector3 toPlayer = Vector3Subtract(player.position(), e.pos);
+
+  // Slice B.4 — infected fighters target the nearest un-flipped enemy
+  // instead of the player. If no enemies remain, fall back to player
+  // position (the infected ship will idle approximately where it is —
+  // there's nothing left to hunt and we don't want it to chase the
+  // player it's now aligned with).
+  bool isInfected = (e.aiState == AIState::Infected);
+  Vector3 targetPos = player.position();
+  if (isInfected) {
+    const Entity *prey = nearestEnemyTo(e.pos, e.id, false);
+    if (prey) targetPos = prey->pos;
+  }
+
+  Vector3 toPlayer = Vector3Subtract(targetPos, e.pos);
   Vector3 toPlayerH = {toPlayer.x, 0.0f, toPlayer.z};
   float distH = Vector3Length(toPlayerH);
   float dist = Vector3Length(toPlayer);
@@ -701,7 +809,9 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
   // Slice A — retreat preempts everything else once hull drops below
   // RETREAT_HP_THRESHOLD. Triggers before EVADE (which is 25%); the
   // ship will despawn at spawnPos before EVADE could ever take over.
-  if (e.hullMax > 0.0f &&
+  // Infected ships skip retreat — design §5.3 says they fight where
+  // they are until destroyed and aren't replaced.
+  if (!isInfected && e.hullMax > 0.0f &&
       (e.hullHP / e.hullMax) < Config::RETREAT_HP_THRESHOLD) {
     e.aiState = AIState::Retreating;
   }
@@ -710,6 +820,11 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
                 Config::FIGHTER_TURN_RATE, Config::FIGHTER_THRUST);
     return;
   }
+
+  // Infection speed penalty — applies as a multiplier on max speed.
+  // Combines with evadeScale below (multiplicatively) so a wounded
+  // infected ship is even slower.
+  float infectMul = isInfected ? Config::INFECT_SPEED_PENALTY : 1.0f;
 
   // EVADE state — fighter peels AWAY from the player when its hull
   // drops below AI_EVADE_HEALTH (default 25%). Exit when it has put
@@ -754,19 +869,26 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
     e.yaw += yawErr;
   }
 
-  // State transition: ATTACK when in range and nose roughly aligned
+  // State transition: ATTACK when in range and nose roughly aligned.
+  // Infected ships use the same Pursue/Attack pattern — they're just
+  // pointing at a different target.
   Vector3 fwd = {sinf(e.yaw), 0.0f, cosf(e.yaw)};
-  if (e.aiState != AIState::Evade) {
+  if (e.aiState != AIState::Evade && !isInfected) {
     if (dist < Config::AI_ATTACK_RANGE) {
       e.aiState = AIState::Attack;
     } else if (dist < Config::AI_PURSUE_RANGE) {
       e.aiState = AIState::Pursue;
     }
   }
+  // Infected ships keep AIState::Infected but use the Attack-style
+  // firing condition below — handled by the willFire flag.
+  bool willFire = (e.aiState == AIState::Attack) ||
+                  (isInfected && dist < Config::AI_ATTACK_RANGE);
 
-  // Thrust — composed: eased on ATTACK; further reduced by evadeScale.
-  float thrustScale = (e.aiState == AIState::Attack) ? 0.4f : 1.0f;
-  thrustScale *= evadeScale;
+  // Thrust — composed: eased on ATTACK; further reduced by evadeScale
+  // and infection penalty.
+  float thrustScale = willFire ? 0.4f : 1.0f;
+  thrustScale *= evadeScale * infectMul;
   e.vel.x += fwd.x * Config::FIGHTER_THRUST * thrustScale * dt;
   e.vel.z += fwd.z * Config::FIGHTER_THRUST * thrustScale * dt;
 
@@ -777,10 +899,10 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
   e.vel.y += altErr * 0.5f * dt; // gentle restoring force
   e.vel.y *= 1.0f - 1.0f * dt;   // damping so it doesn't oscillate
 
-  // Speed cap — also scaled by evadeScale so damaged fighters
-  // can't sprint away at full speed once their engines are wrecked.
+  // Speed cap — scaled by evadeScale + infection penalty so a damaged
+  // and / or infected fighter can't sprint at full speed.
   float spd = Vector3Length(e.vel);
-  float maxSpeed = Config::FIGHTER_MAX_SPEED * evadeScale;
+  float maxSpeed = Config::FIGHTER_MAX_SPEED * evadeScale * infectMul;
   if (spd > maxSpeed) {
     e.vel = Vector3Scale(e.vel, maxSpeed / spd);
   }
@@ -801,33 +923,41 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
     if (e.vel.y < 0.0f) e.vel.y = 0.0f;
   }
 
-  // Fire when in attack range and nose aligned within ~15°
-  if (e.aiState == AIState::Attack && e.fireTimer <= 0.0f) {
-    Vector3 toPlayerN =
-        Vector3Normalize(Vector3Subtract(player.position(), e.pos));
+  // Fire when in attack range and nose aligned within ~15°. For
+  // infected fighters, the target is the nearest enemy (computed up
+  // top); projectile owner flips to Player so the shot damages the
+  // former allies instead of bouncing off them.
+  if (willFire && e.fireTimer <= 0.0f) {
+    Vector3 toTargetN =
+        Vector3Normalize(Vector3Subtract(targetPos, e.pos));
     Vector3 fwd3 = {sinf(e.yaw), 0.0f, cosf(e.yaw)};
-    float dot = Vector3DotProduct(fwd3, toPlayerN);
+    float dot = Vector3DotProduct(fwd3, toTargetN);
     if (dot > 0.96f) { // ~16° cone
-      fireFighterShot(e, player);
+      fireFighterShot(e, targetPos, isInfected);
       e.fireTimer = Config::FIGHTER_FIRE_RATE;
     }
   }
 }
 
-void EntityManager::fireFighterShot(Entity &e, const Player &player) {
-  // Lead-less aim — fire straight at current player position. Player
-  // can dodge by moving sideways. Lead-aim comes when AI gets smarter.
-  Vector3 toPlayer =
-      Vector3Subtract(player.position(), e.pos);
-  float d = Vector3Length(toPlayer);
+void EntityManager::fireFighterShot(Entity &e, Vector3 targetPos,
+                                    bool infected) {
+  // Lead-less aim — fire straight at the target's current position.
+  // Player can dodge by moving sideways. Lead-aim comes when AI gets
+  // smarter.
+  Vector3 toTarget = Vector3Subtract(targetPos, e.pos);
+  float d = Vector3Length(toTarget);
   if (d < 0.001f) return;
-  Vector3 dir = Vector3Scale(toPlayer, 1.0f / d);
+  Vector3 dir = Vector3Scale(toTarget, 1.0f / d);
   Vector3 vel = Vector3Scale(dir, Config::FIGHTER_PROJ_SPEED);
   // Spawn just in front of the fighter
   Vector3 spawn = Vector3Add(e.pos, Vector3Scale(dir, 1.5f));
+  // Infected fighter's shots are routed as player-owned so they
+  // damage other enemies (and skip the player + friendlies).
+  ProjectileOwner owner =
+      infected ? ProjectileOwner::Player : ProjectileOwner::Enemy;
   spawnProjectile(spawn, vel, Config::FIGHTER_FIRE_DAMAGE,
                   Config::FIGHTER_PROJ_RANGE,
-                  Config::FIGHTER_PROJ_SPEED, ProjectileOwner::Enemy);
+                  Config::FIGHTER_PROJ_SPEED, owner);
 }
 
 // ====================================================================
@@ -851,7 +981,12 @@ void EntityManager::updateBomber(Entity &e, float dt, const Planet &planet,
 
   // Slice A — retreat preempts target selection. Wounded bombers limp
   // back to spawn rather than continuing a strafe run.
-  if (e.hullMax > 0.0f &&
+  // Slice B.4 — infected bombers attack the nearest un-flipped enemy
+  // instead of player + friendlies. Skip the standard target-selection
+  // path entirely in that case.
+  bool isInfected = (e.aiState == AIState::Infected);
+
+  if (!isInfected && e.hullMax > 0.0f &&
       (e.hullHP / e.hullMax) < Config::RETREAT_HP_THRESHOLD) {
     e.aiState = AIState::Retreating;
   }
@@ -861,26 +996,32 @@ void EntityManager::updateBomber(Entity &e, float dt, const Planet &planet,
     return;
   }
 
-  // Bombers prefer friendlies as targets — the "strafe run" pattern
-  // from the design doc. If the nearest friendly is closer than
-  // BOMBER_FRIENDLY_PRIORITY × dist-to-player, the bomber targets
-  // it instead. Falls back to the player when no friendlies are alive.
-  Vector3 friendlyPos;
-  uint32_t friendlyId = nearestFriendly(e.pos, friendlyPos);
-  Vector3 playerPos = player.position();
-  float distPlayer = Vector3Distance(playerPos, e.pos);
+  // Target acquisition. Standard bombers prefer friendlies (strafe-run
+  // pattern); infected bombers target the nearest un-flipped enemy.
+  Vector3 targetPos;
+  if (isInfected) {
+    const Entity *prey = nearestEnemyTo(e.pos, e.id, false);
+    targetPos = prey ? prey->pos : player.position();
+  } else {
+    Vector3 friendlyPos;
+    uint32_t friendlyId = nearestFriendly(e.pos, friendlyPos);
+    Vector3 playerPos = player.position();
+    float distPlayer = Vector3Distance(playerPos, e.pos);
 
-  Vector3 targetPos = playerPos;
-  bool targetingFriendly = false;
-  if (friendlyId != 0) {
-    float distFriendly = Vector3Distance(friendlyPos, e.pos);
-    if (distFriendly <
-        distPlayer * Config::BOMBER_FRIENDLY_PRIORITY) {
-      targetPos = friendlyPos;
-      targetingFriendly = true;
-      e.aiState = AIState::StrafeFriendly;
+    targetPos = playerPos;
+    bool targetingFriendly = false;
+    if (friendlyId != 0) {
+      float distFriendly = Vector3Distance(friendlyPos, e.pos);
+      if (distFriendly <
+          distPlayer * Config::BOMBER_FRIENDLY_PRIORITY) {
+        targetPos = friendlyPos;
+        targetingFriendly = true;
+        e.aiState = AIState::StrafeFriendly;
+      }
     }
+    (void)targetingFriendly; // reserved for future strafe-specific tuning
   }
+  float infectMul = isInfected ? Config::INFECT_SPEED_PENALTY : 1.0f;
 
   Vector3 toPlayer = Vector3Subtract(targetPos, e.pos);
   Vector3 toPlayerH = {toPlayer.x, 0.0f, toPlayer.z};
@@ -888,17 +1029,16 @@ void EntityManager::updateBomber(Entity &e, float dt, const Planet &planet,
   float dist = Vector3Length(toPlayer);
 
   // EVADE entry/exit — same fraction threshold as Fighter so all
-  // shielded fliers behave consistently when wounded. EVADE
-  // overrides StrafeFriendly so a damaged bomber peels off.
-  bool wantEvade = (e.hullMax > 0.0f) &&
+  // shielded fliers behave consistently when wounded. Skipped for
+  // infected bombers (their AIState is locked to Infected — they
+  // commit to the new fight per design §5.3).
+  bool wantEvade = !isInfected && (e.hullMax > 0.0f) &&
                    ((e.hullHP / e.hullMax) < Config::AI_EVADE_HEALTH);
   if (wantEvade && dist < Config::AI_PURSUE_RANGE * 1.5f) {
     e.aiState = AIState::Evade;
-    targetingFriendly = false; // peel away, doesn't matter from whom
   } else if (e.aiState == AIState::Evade && !wantEvade) {
     e.aiState = AIState::Pursue;
   }
-  (void)targetingFriendly; // reserved for future strafe-specific tuning
 
   float evadeScale = 1.0f;
   if (e.aiState == AIState::Evade && e.hullMax > 0.0f) {
@@ -924,19 +1064,24 @@ void EntityManager::updateBomber(Entity &e, float dt, const Planet &planet,
     e.yaw += yawErr;
   }
 
+  // Pursue / Attack transitions — infected bombers keep AIState::
+  // Infected and use the willFire flag below for firing condition.
   Vector3 fwd = {sinf(e.yaw), 0.0f, cosf(e.yaw)};
-  if (e.aiState != AIState::Evade) {
+  if (e.aiState != AIState::Evade && !isInfected) {
     if (dist < Config::AI_ATTACK_RANGE) {
       e.aiState = AIState::Attack;
     } else if (dist < Config::AI_PURSUE_RANGE) {
       e.aiState = AIState::Pursue;
     }
   }
+  bool willFire = (e.aiState == AIState::Attack) ||
+                  (isInfected && dist < Config::AI_ATTACK_RANGE);
 
   // Bombers ease the throttle in ATTACK so the slow projectiles get
   // a stable firing platform; full thrust during PURSUE to close.
-  float thrustScale = (e.aiState == AIState::Attack) ? 0.35f : 1.0f;
-  thrustScale *= evadeScale;
+  // Infection penalty applied multiplicatively on top of evadeScale.
+  float thrustScale = willFire ? 0.35f : 1.0f;
+  thrustScale *= evadeScale * infectMul;
   e.vel.x += fwd.x * Config::BOMBER_THRUST * thrustScale * dt;
   e.vel.z += fwd.z * Config::BOMBER_THRUST * thrustScale * dt;
 
@@ -947,9 +1092,9 @@ void EntityManager::updateBomber(Entity &e, float dt, const Planet &planet,
   e.vel.y += altErr * 0.4f * dt;
   e.vel.y *= 1.0f - 1.0f * dt;
 
-  // Speed cap (also scaled by evadeScale).
+  // Speed cap (scaled by evadeScale and infection penalty).
   float spd = Vector3Length(e.vel);
-  float maxSpeed = Config::BOMBER_MAX_SPEED * evadeScale;
+  float maxSpeed = Config::BOMBER_MAX_SPEED * evadeScale * infectMul;
   if (spd > maxSpeed) {
     e.vel = Vector3Scale(e.vel, maxSpeed / spd);
   }
@@ -970,33 +1115,33 @@ void EntityManager::updateBomber(Entity &e, float dt, const Planet &planet,
     if (e.vel.y < 0.0f) e.vel.y = 0.0f;
   }
 
-  // Fire — only outside EVADE, only when in attack range and aligned.
-  // Wider cone than Fighter (~25°) because bombers turn so slowly that
-  // a tight cone makes them effectively non-threatening. Aim direction
-  // uses the same targetPos that drove movement, so a bomber on a
-  // strafe run fires at the friendly, not the player.
-  if (e.aiState == AIState::Attack && e.fireTimer <= 0.0f) {
+  // Fire when nose aligned within the wider Bomber cone (~25°).
+  // Infected bombers fire player-owned shots at their new target.
+  if (willFire && e.fireTimer <= 0.0f) {
     Vector3 toTargetN =
         Vector3Normalize(Vector3Subtract(targetPos, e.pos));
     Vector3 fwd3 = {sinf(e.yaw), 0.0f, cosf(e.yaw)};
     float dot = Vector3DotProduct(fwd3, toTargetN);
     if (dot > 0.90f) { // ~25° cone
-      fireBomberShot(e, targetPos);
+      fireBomberShot(e, targetPos, isInfected);
       e.fireTimer = Config::BOMBER_FIRE_RATE;
     }
   }
 }
 
-void EntityManager::fireBomberShot(Entity &e, Vector3 targetPos) {
+void EntityManager::fireBomberShot(Entity &e, Vector3 targetPos,
+                                   bool infected) {
   Vector3 toTarget = Vector3Subtract(targetPos, e.pos);
   float d = Vector3Length(toTarget);
   if (d < 0.001f) return;
   Vector3 dir = Vector3Scale(toTarget, 1.0f / d);
   Vector3 vel = Vector3Scale(dir, Config::BOMBER_PROJ_SPEED);
   Vector3 spawn = Vector3Add(e.pos, Vector3Scale(dir, 2.5f));
+  ProjectileOwner owner =
+      infected ? ProjectileOwner::Player : ProjectileOwner::Enemy;
   spawnProjectile(spawn, vel, Config::BOMBER_FIRE_DAMAGE,
                   Config::BOMBER_PROJ_RANGE, Config::BOMBER_PROJ_SPEED,
-                  ProjectileOwner::Enemy);
+                  owner);
 }
 
 // ====================================================================
@@ -2242,12 +2387,15 @@ void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
   const Vector3 camPos = camera.position;
   switch (e.type) {
   case EntityType::Fighter: {
+    Color modelTint = infectionTint(WHITE, e.aiState, e.infectionTimer);
     if (registry && registry->has(EntityType::Fighter)) {
-      registry->draw(EntityType::Fighter, e.pos, e.yaw, 1.0f, WHITE);
+      registry->draw(EntityType::Fighter, e.pos, e.yaw, 1.0f, modelTint);
     } else {
       // Procedural fallback — kept for when the OBJ fails to load.
-      Color body = {200, 50, 50, 255};
-      Color tip = {240, 200, 80, 255};
+      Color body = infectionTint(Color{200, 50, 50, 255}, e.aiState,
+                                 e.infectionTimer);
+      Color tip = infectionTint(Color{240, 200, 80, 255}, e.aiState,
+                                e.infectionTimer);
       if (e.damageFlashTimer > 0.0f) {
         body = {255, 255, 255, 255};
         tip = {255, 255, 255, 255};
@@ -2283,12 +2431,16 @@ void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
   case EntityType::Bomber: {
     // Heavy blocky fuselage in dark olive — visually obvious it's
     // the slow target. Twin underwing pods + nose tip cue facing.
+    Color modelTint = infectionTint(WHITE, e.aiState, e.infectionTimer);
     if (registry && registry->has(EntityType::Bomber)) {
-      registry->draw(EntityType::Bomber, e.pos, e.yaw, 1.0f, WHITE);
+      registry->draw(EntityType::Bomber, e.pos, e.yaw, 1.0f, modelTint);
     } else {
-      Color body = {120, 130, 80, 255};
-      Color pod = {90, 100, 60, 255};
-      Color nose = {220, 180, 90, 255};
+      Color body =
+          infectionTint(Color{120, 130, 80, 255}, e.aiState, e.infectionTimer);
+      Color pod =
+          infectionTint(Color{90, 100, 60, 255}, e.aiState, e.infectionTimer);
+      Color nose =
+          infectionTint(Color{220, 180, 90, 255}, e.aiState, e.infectionTimer);
       if (e.damageFlashTimer > 0.0f) {
         body = pod = nose = {255, 255, 255, 255};
       }

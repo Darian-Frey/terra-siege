@@ -147,7 +147,7 @@ private:
   // Per-entity update bodies
   void updateFighter(Entity &e, float dt, const Planet &planet,
                      const Player &player, ParticleSystem &particles);
-  void fireFighterShot(Entity &e, const Player &player);
+  void fireFighterShot(Entity &e, Vector3 targetPos, bool infected);
 
   // Slice A — emit damage smoke when an enemy's hull HP drops below
   // SMOKE_HP_THRESHOLD. Emit rate scales linearly with damage so a
@@ -173,7 +173,7 @@ private:
   // different fire rhythm + handling.
   void updateBomber(Entity &e, float dt, const Planet &planet,
                     const Player &player, ParticleSystem &particles);
-  void fireBomberShot(Entity &e, Vector3 targetPos);
+  void fireBomberShot(Entity &e, Vector3 targetPos, bool infected);
 
   // Seeder — slow drift + periodic drone deployment.
   void updateSeeder(Entity &e, float dt, const Planet &planet,
@@ -228,6 +228,24 @@ private:
   // applyDamage.
   void applyShieldHit(Entity &target, float shieldDmg, float hullDmg,
                       Vector3 hitPos, ParticleSystem &particles);
+
+  // Try to infect `target` (Slice B.4). Requires:
+  //   - target.canBeInfected is true
+  //   - target's shields are at zero (scalar zero AND every sector zero)
+  // On success: transitions target to AIState::Infecting, starts the
+  // INFECT_REBOOT_DURATION countdown, and flips canBeInfected to false
+  // so this is the entity's only flip. Returns true on success, false
+  // if the preconditions weren't met. B.5's Infectious Missile is the
+  // primary caller; in B.4 nothing calls this yet (state machine only).
+  bool tryInfect(Entity &target);
+
+  // Nearest live enemy entity to `origin`, excluding `excludeId` and
+  // any entity whose `infected` state matches `wantInfected`. Used by
+  // infected ship AI to find a target (wantInfected = false → look for
+  // un-flipped enemies). Returns nullptr if none found. Position
+  // available via the returned pointer's `pos` field.
+  const Entity *nearestEnemyTo(Vector3 origin, uint32_t excludeId,
+                               bool wantInfected) const;
 
   // Resolve which directional shield sector takes a hit, given the
   // world-space hit position and the target's pose. Returns a
