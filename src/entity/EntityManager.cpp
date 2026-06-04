@@ -9,6 +9,28 @@
 
 namespace {
 
+// Auto-aim target predicate (Slice B.5 follow-up). Shared by the
+// player auto-turret, missile lock, missile reacquire, and friendly
+// base turret — any system that picks its own target without player
+// input. Skips dead, projectiles, true friendlies, and infected /
+// infecting entities (they're aligned with the player after the
+// flip). Manual-aim weapons (Cannon, Plasma, Beam, Shield Laser)
+// don't use this; the player can still hit infected ships if they
+// deliberately aim at them.
+inline bool isAutoAimTarget(const Entity &e) {
+  if (!e.alive) return false;
+  if (e.type == EntityType::Projectile) return false;
+  if (e.type == EntityType::Collector ||
+      e.type == EntityType::RepairStation ||
+      e.type == EntityType::RadarBooster ||
+      e.type == EntityType::Base)
+    return false;
+  if (e.aiState == AIState::Infected ||
+      e.aiState == AIState::Infecting)
+    return false;
+  return true;
+}
+
 // Tint colour for infected / infecting entities (Slice B.4). Infected
 // ships lean greenish so the player can spot former allies at a
 // glance. Infecting ships flicker red↔green during the reboot. Returns
@@ -306,13 +328,7 @@ uint32_t EntityManager::acquireTarget(Vector3 origin, Vector3 forward,
   uint32_t best = 0;
   float bestDist = maxRange;
   for (const Entity &e : m_entities) {
-    if (!e.alive) continue;
-    if (e.type == EntityType::Projectile) continue;
-    if (e.type == EntityType::Collector ||
-        e.type == EntityType::RepairStation ||
-        e.type == EntityType::RadarBooster ||
-        e.type == EntityType::Base)
-      continue; // never target friendlies
+    if (!isAutoAimTarget(e)) continue;
     Vector3 d = Vector3Subtract(e.pos, origin);
     float dist = Vector3Length(d);
     if (dist < 0.01f || dist > maxRange) continue;
@@ -502,10 +518,10 @@ bool EntityManager::tryInfect(Entity &target) {
 
 // Nearest live enemy to origin, excluding excludeId and filtered by
 // infection state. Used by infected ship AI to find a target — pass
-// `wantInfected = false` to find un-flipped enemies. Skips
-// friendlies, projectiles, ground turrets/tanks (they shouldn't be
-// the primary target of a re-targeting AI — too easy / not what the
-// "attack former allies" pattern means).
+// `wantInfected = false` to find un-flipped enemies. Skips friendlies
+// and projectiles; ground turrets and tanks are valid targets (the
+// "attack former allies" pattern is more satisfying when every red
+// blip on the radar is fair game).
 const Entity *EntityManager::nearestEnemyTo(Vector3 origin,
                                             uint32_t excludeId,
                                             bool wantInfected) const {
@@ -520,7 +536,6 @@ const Entity *EntityManager::nearestEnemyTo(Vector3 origin,
         e.type == EntityType::RadarBooster ||
         e.type == EntityType::Base)
       continue;
-    if (e.type == EntityType::GroundTurret) continue;
     bool eIsInfected = (e.aiState == AIState::Infected ||
                         e.aiState == AIState::Infecting);
     if (eIsInfected != wantInfected) continue;
@@ -722,6 +737,24 @@ void EntityManager::update(float dt, const Planet &planet, Player &player,
       continue;
     }
 
+    // Infected HP bleed — Slice B.5 follow-up. The virus consumes the
+    // ship's systems; hull drops at INFECT_BLEED_HP_FRAC_PS × hullMax
+    // per second, eventually killing it. Uses fraction-of-max so all
+    // infectable types take the same wall-clock time to die from the
+    // bleed (~100s at 0.01/s). Normal kill path: emitKillExplosion on
+    // hullHP hitting zero, mark dead, decrement liveEnemies, skip the
+    // rest of the AI tick.
+    if (e.aiState == AIState::Infected && e.hullMax > 0.0f) {
+      e.hullHP -= e.hullMax * Config::INFECT_BLEED_HP_FRAC_PS * dt;
+      if (e.hullHP <= 0.0f) {
+        e.hullHP = 0.0f;
+        e.alive = false;
+        --m_liveEnemies;
+        emitKillExplosion(e.pos, particles);
+        continue;
+      }
+    }
+
     // Slice A — damage smoke for hull-wearing flying enemies. Drones
     // and ground entities don't smoke (they're either 1-shot or don't
     // visibly degrade). Smoke is decoupled from AI state so a wounded
@@ -790,15 +823,19 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
   (void)particles; // smoke is now centralised in tickDamageSmoke
 
   // Slice B.4 — infected fighters target the nearest un-flipped enemy
-  // instead of the player. If no enemies remain, fall back to player
-  // position (the infected ship will idle approximately where it is —
-  // there's nothing left to hunt and we don't want it to chase the
-  // player it's now aligned with).
+  // instead of the player. If no enemies remain, the infected ship
+  // has no valid target — we don't want it firing at the player it's
+  // now aligned with, so hasTarget gates firing below. Movement still
+  // uses player position as a fallback so the ship doesn't lock up.
   bool isInfected = (e.aiState == AIState::Infected);
   Vector3 targetPos = player.position();
+  bool hasTarget = !isInfected;
   if (isInfected) {
     const Entity *prey = nearestEnemyTo(e.pos, e.id, false);
-    if (prey) targetPos = prey->pos;
+    if (prey) {
+      targetPos = prey->pos;
+      hasTarget = true;
+    }
   }
 
   Vector3 toPlayer = Vector3Subtract(targetPos, e.pos);
@@ -831,7 +868,9 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
   // enough distance between itself and the player to recover. Now
   // effectively dead code (Retreating preempts at 40%), kept as a
   // fallback if RETREAT_HP_THRESHOLD ever moves below AI_EVADE_HEALTH.
-  bool wantEvade = (e.hullMax > 0.0f) &&
+  // Suppressed for infected ships so the Infected aiState isn't
+  // overwritten when the bleed drops HP into the EVADE band.
+  bool wantEvade = !isInfected && (e.hullMax > 0.0f) &&
                    ((e.hullHP / e.hullMax) < Config::AI_EVADE_HEALTH);
   if (wantEvade && dist < Config::AI_PURSUE_RANGE * 1.5f) {
     e.aiState = AIState::Evade;
@@ -881,9 +920,13 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
     }
   }
   // Infected ships keep AIState::Infected but use the Attack-style
-  // firing condition below — handled by the willFire flag.
+  // firing condition below — handled by the willFire flag. Gated on
+  // hasTarget so an infected ship with no live enemy doesn't waste
+  // shots at the player position (its projectiles wouldn't damage
+  // the player anyway, but the visual would read wrong).
   bool willFire = (e.aiState == AIState::Attack) ||
-                  (isInfected && dist < Config::AI_ATTACK_RANGE);
+                  (isInfected && hasTarget &&
+                   dist < Config::AI_ATTACK_RANGE);
 
   // Thrust — composed: eased on ATTACK; further reduced by evadeScale
   // and infection penalty.
@@ -998,10 +1041,19 @@ void EntityManager::updateBomber(Entity &e, float dt, const Planet &planet,
 
   // Target acquisition. Standard bombers prefer friendlies (strafe-run
   // pattern); infected bombers target the nearest un-flipped enemy.
+  // hasTarget gates firing below for infected bombers — same as
+  // Fighter, an infected ship with no live enemy shouldn't waste
+  // shots at the player.
   Vector3 targetPos;
+  bool hasTarget = !isInfected;
   if (isInfected) {
     const Entity *prey = nearestEnemyTo(e.pos, e.id, false);
-    targetPos = prey ? prey->pos : player.position();
+    if (prey) {
+      targetPos = prey->pos;
+      hasTarget = true;
+    } else {
+      targetPos = player.position();
+    }
   } else {
     Vector3 friendlyPos;
     uint32_t friendlyId = nearestFriendly(e.pos, friendlyPos);
@@ -1075,7 +1127,8 @@ void EntityManager::updateBomber(Entity &e, float dt, const Planet &planet,
     }
   }
   bool willFire = (e.aiState == AIState::Attack) ||
-                  (isInfected && dist < Config::AI_ATTACK_RANGE);
+                  (isInfected && hasTarget &&
+                   dist < Config::AI_ATTACK_RANGE);
 
   // Bombers ease the throttle in ATTACK so the slow projectiles get
   // a stable firing platform; full thrust during PURSUE to close.
@@ -1676,20 +1729,14 @@ void EntityManager::updateCollector(Entity &e, float dt, const Planet &planet) {
 // turret's barrel angle (same convention as the Ground Tank now).
 // ====================================================================
 void EntityManager::updateBase(Entity &e, float dt) {
-  // Find nearest enemy in range. Friendlies and projectiles are
-  // skipped; the friendly-type filter mirrors the one used by
-  // acquireTarget / applyEMPStun / applySplashDamage.
+  // Find nearest enemy in range via the shared auto-aim predicate.
+  // Skips friendlies, projectiles, AND infected / infecting entities
+  // (which are the player's allies after the flip).
   uint32_t targetId = 0;
   Vector3 targetPos{};
   float bestDist = Config::BASE_TURRET_RANGE;
   for (const Entity &other : m_entities) {
-    if (!other.alive) continue;
-    if (other.type == EntityType::Projectile) continue;
-    if (other.type == EntityType::Collector ||
-        other.type == EntityType::RepairStation ||
-        other.type == EntityType::RadarBooster ||
-        other.type == EntityType::Base)
-      continue;
+    if (!isAutoAimTarget(other)) continue;
     float d = Vector3Distance(other.pos, e.pos);
     if (d < bestDist) {
       bestDist = d;
@@ -1886,31 +1933,30 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
   // The carrier deals no damage itself; the children carry the load.
   bool isGuided = (p.kind == ProjectileKind::Missile ||
                    p.kind == ProjectileKind::ClusterParent ||
-                   p.kind == ProjectileKind::ShieldMissile) &&
+                   p.kind == ProjectileKind::ShieldMissile ||
+                   p.kind == ProjectileKind::InfectiousMissile) &&
                   p.turnRate > 0.0f;
   if (isGuided) {
-    // Resolve current target by id.
+    // Resolve current target by id. If the locked target got infected
+    // mid-flight, treat it as gone so the missile drops the lock and
+    // tries to reacquire on a still-valid enemy below.
     const Entity *target = nullptr;
     if (p.seekTargetId != 0) {
       for (const Entity &e : m_entities) {
-        if (e.alive && e.id == p.seekTargetId) {
+        if (e.id == p.seekTargetId && isAutoAimTarget(e)) {
           target = &e;
           break;
         }
       }
     }
     // Reacquire if the prior target is gone (or never had one).
+    // Same auto-aim filter as the initial lock — infected ships are
+    // skipped here too.
     if (!target) {
       uint32_t newId = 0;
       float bestDist = Config::MISSILE_REACQUIRE_RANGE;
       for (const Entity &e : m_entities) {
-        if (!e.alive) continue;
-        if (e.type == EntityType::Projectile) continue;
-        if (e.type == EntityType::Collector ||
-            e.type == EntityType::RepairStation ||
-            e.type == EntityType::RadarBooster ||
-            e.type == EntityType::Base)
-          continue;
+        if (!isAutoAimTarget(e)) continue;
         float d = Vector3Distance(e.pos, p.pos);
         if (d < bestDist) {
           bestDist = d;
@@ -2071,6 +2117,42 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
             return;
           }
         }
+      } else if (p.kind == ProjectileKind::InfectiousMissile &&
+                 dist > 0.001f) {
+        // Same fuse pattern as Shield Missile — narrow range, just
+        // enough to catch a near-miss. On detonation, call tryInfect
+        // on the locked target. Success → infection sequence runs
+        // (B.4 state machine). Failure (shields up / un-infectable) →
+        // dud puff, no damage, no infection. The player learns to
+        // strip shields first.
+        float fuseRange = target->radius + 1.5f;
+        if (dist < fuseRange) {
+          Vector3 toTargetN = Vector3Scale(toTarget, 1.0f / dist);
+          float closing = Vector3DotProduct(p.vel, toTargetN);
+          if (closing < 0.0f) {
+            if (p.owner == ProjectileOwner::Player) {
+              bool flipped = false;
+              for (Entity &e : m_entities) {
+                if (e.alive && e.id == p.seekTargetId) {
+                  flipped = tryInfect(e);
+                  break;
+                }
+              }
+              if (flipped) {
+                // Strong visual on a successful flip — the moment
+                // matters.
+                emitKillExplosion(target->pos, particles);
+              } else {
+                // Dud — small puff so the player still sees the
+                // missile expended.
+                emitHitBurst(target->pos, particles);
+              }
+            }
+            p.alive = false;
+            --m_liveProjectiles;
+            return;
+          }
+        }
       }
 
       // Standard proportional-nav steering toward target.
@@ -2178,14 +2260,25 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
       float d = Vector3Distance(p.pos, e.pos);
       if (d < (e.radius + p.radius)) {
         emitHitBurst(p.pos, particles);
-        // Damage routing branches on kind. Shield Missile uses the
-        // shield-priority split (heavy shield drain, token hull) and
-        // has no splash; everything else applies p.damage normally
-        // and splashes if splashRadius > 0.
+        // Damage routing branches on kind:
+        //   ShieldMissile     → shield-priority split, no splash
+        //   InfectiousMissile → tryInfect on the contact target,
+        //                       no damage of its own (success or
+        //                       dud only matters visually)
+        //   everything else   → p.damage normally, splash if set
         if (p.kind == ProjectileKind::ShieldMissile) {
           applyShieldHit(e, Config::SHIELD_MISSILE_SHIELD_DMG,
                          Config::SHIELD_MISSILE_HULL_DMG, p.pos, particles);
           emitKillExplosion(p.pos, particles);
+        } else if (p.kind == ProjectileKind::InfectiousMissile) {
+          bool flipped = tryInfect(e);
+          if (flipped) {
+            // Strong visual cue on flip; the kill-burst sound + fx
+            // double as the "infection started" cue.
+            emitKillExplosion(p.pos, particles);
+          }
+          // Dud (shields up / can't be infected) — just the
+          // emitHitBurst above is the feedback.
         } else {
           applyDamage(e, p.damage, p.pos, particles);
           // Splash weapons (Plasma, Missile) blast everyone else in
@@ -2800,6 +2893,21 @@ void EntityManager::renderProjectile(const Entity &p) const {
       tip.z += dir.z * 0.8f / speed;
     }
     DrawCubeV(tip, {0.4f, 0.4f, 0.4f}, {80, 180, 255, 255});
+    break;
+  }
+  case ProjectileKind::InfectiousMissile: {
+    // Sickly yellow-green body + bright green tip — reads as
+    // "biological" at chase distance, distinct from Shield Missile's
+    // blue and standard Missile's silver+red.
+    DrawCubeV(p.pos, {0.7f, 0.7f, 1.6f}, {180, 220, 120, 255});
+    Vector3 tip = p.pos;
+    Vector3 dir = p.vel;
+    float speed = sqrtf(dir.x * dir.x + dir.z * dir.z);
+    if (speed > 0.01f) {
+      tip.x += dir.x * 0.8f / speed;
+      tip.z += dir.z * 0.8f / speed;
+    }
+    DrawCubeV(tip, {0.4f, 0.4f, 0.4f}, {120, 255, 100, 255});
     break;
   }
   case ProjectileKind::Cannon:

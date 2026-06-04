@@ -32,6 +32,7 @@ void Player::init(Vector3 startPos, int flightAssistLevel) {
   m_clusterAmmo = Config::CLUSTER_AMMO_MAX;
   m_depthChargeAmmo = Config::DEPTH_CHARGE_MAX;
   m_shieldMissileAmmo = Config::SHIELD_MISSILE_AMMO_MAX;
+  m_infectiousMissileAmmo = Config::INFECT_MISSILE_AMMO_MAX;
   m_primaryEnergy = Config::PRIMARY_ENERGY_MAX;
   m_beamFiring = false;
   m_empCooldown = 0.0f;
@@ -299,10 +300,10 @@ void Player::handleInput(float dt) {
   // single-pulse on first frame for the others — fire rate gates rate).
   m_secondaryFireRequested = IsMouseButtonDown(MOUSE_BUTTON_RIGHT);
 
-  // ---- Secondary cycle — Z (Missile → Cluster → DepthCharge → Shield → ...).
+  // ---- Secondary cycle — Z (Missile → Cluster → DepthCharge → Shield → Infectious → ...).
   bool zDown = IsKeyDown(KEY_Z);
   if (zDown && !m_zWasDown) {
-    int next = (static_cast<int>(m_secondaryWeapon) + 1) % 4;
+    int next = (static_cast<int>(m_secondaryWeapon) + 1) % 5;
     m_secondaryWeapon = static_cast<SecondaryWeapon>(next);
   }
   m_zWasDown = zDown;
@@ -628,6 +629,20 @@ void Player::update(float dt, const Planet &planet) {
         --m_shieldMissileAmmo;
       }
       break;
+    case SecondaryWeapon::Infectious:
+      if (m_infectiousMissileAmmo > 0) {
+        // PN-guided like a standard missile; projectile kind is
+        // InfectiousMissile so impact calls EntityManager::tryInfect
+        // on the locked target. Flips faction (B.4 state machine) if
+        // shields are down AND canBeInfected; otherwise duds.
+        m_infectiousMissilePos = Vector3Add(m_pos, Vector3Scale(fwd, 3.0f));
+        m_infectiousMissileVel = Vector3Add(
+            Vector3Scale(fwd, Config::INFECT_MISSILE_SPEED), m_vel);
+        m_pendingInfectiousMissile = true;
+        m_secondaryTimer = Config::INFECT_MISSILE_FIRE_RATE;
+        --m_infectiousMissileAmmo;
+      }
+      break;
     }
   }
 
@@ -679,6 +694,7 @@ void Player::update(float dt, const Planet &planet) {
     m_clusterAmmo = Config::CLUSTER_AMMO_MAX;
     m_depthChargeAmmo = Config::DEPTH_CHARGE_MAX;
     m_shieldMissileAmmo = Config::SHIELD_MISSILE_AMMO_MAX;
+    m_infectiousMissileAmmo = Config::INFECT_MISSILE_AMMO_MAX;
     m_primaryEnergy = Config::PRIMARY_ENERGY_MAX;
     m_empCooldown = 0.0f;
     m_shieldBoosterCooldown = 0.0f;
@@ -724,6 +740,15 @@ bool Player::consumePendingShieldMissile(Vector3 &outPos, Vector3 &outVel) {
   outPos = m_shieldMissilePos;
   outVel = m_shieldMissileVel;
   m_pendingShieldMissile = false;
+  return true;
+}
+
+bool Player::consumePendingInfectiousMissile(Vector3 &outPos,
+                                             Vector3 &outVel) {
+  if (!m_pendingInfectiousMissile) return false;
+  outPos = m_infectiousMissilePos;
+  outVel = m_infectiousMissileVel;
+  m_pendingInfectiousMissile = false;
   return true;
 }
 

@@ -113,7 +113,8 @@ public:
     Missile = 0,
     Cluster = 1,
     DepthCharge = 2,
-    Shield = 3, // Slice B.3 — shield-stripper missile
+    Shield = 3,     // Slice B.3 — shield-stripper missile
+    Infectious = 4, // Slice B.5 — flips target's faction
   };
   enum class SpecialWeapon : uint8_t { EMP = 0, ShieldBooster = 1 };
   PrimaryWeapon primaryWeapon() const { return m_primaryWeapon; }
@@ -135,6 +136,7 @@ public:
   int clusterAmmo() const { return m_clusterAmmo; }
   int depthChargeAmmo() const { return m_depthChargeAmmo; }
   int shieldMissileAmmo() const { return m_shieldMissileAmmo; }
+  int infectiousMissileAmmo() const { return m_infectiousMissileAmmo; }
   // Shared primary-weapon energy pool (Slice B.1). Drained by Beam /
   // Plasma / future Shield Laser; Cannon is free. HUD displays this
   // any time the active primary uses energy.
@@ -161,6 +163,11 @@ public:
   // projectile's kind is ShieldMissile so impact routes to the
   // shield/hull split via EntityManager::applyShieldHit.
   bool consumePendingShieldMissile(Vector3 &outPos, Vector3 &outVel);
+  // Infectious Missile (Slice B.5) — fires like a normal missile but
+  // the projectile's kind is InfectiousMissile, so impact calls
+  // EntityManager::tryInfect on the locked target (flips faction if
+  // shields are down + canBeInfected).
+  bool consumePendingInfectiousMissile(Vector3 &outPos, Vector3 &outVel);
   bool consumePendingEMP(Vector3 &outPos); // pos only — instant area effect
   bool consumePendingShieldBoost();        // signal-only; effect applied internally
   // Beam firing this tick? GameState reads each frame; if true it should
@@ -235,10 +242,12 @@ private:
   int m_clusterAmmo = Config::CLUSTER_AMMO_MAX;
   int m_depthChargeAmmo = Config::DEPTH_CHARGE_MAX;
   int m_shieldMissileAmmo = Config::SHIELD_MISSILE_AMMO_MAX;
+  int m_infectiousMissileAmmo = Config::INFECT_MISSILE_AMMO_MAX;
   bool m_pendingMissile = false;
   bool m_pendingDepthCharge = false;
   bool m_pendingCluster = false;
   bool m_pendingShieldMissile = false;
+  bool m_pendingInfectiousMissile = false;
   Vector3 m_missilePos = {};
   Vector3 m_missileVel = {};
   Vector3 m_depthChargePos = {};
@@ -247,6 +256,8 @@ private:
   Vector3 m_clusterVel = {};
   Vector3 m_shieldMissilePos = {};
   Vector3 m_shieldMissileVel = {};
+  Vector3 m_infectiousMissilePos = {};
+  Vector3 m_infectiousMissileVel = {};
 
   // Special slot. F activates whichever special is selected. EMP =
   // area stun, ShieldBooster = instant full sector refill. Each has

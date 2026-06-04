@@ -1011,6 +1011,27 @@ void GameState::update(float dt) {
                              Config::SHIELD_MISSILE_TURN_RATE);
       }
 
+      // Infectious Missile — PN-guided like a standard missile; on
+      // impact calls tryInfect on the locked target. No damage of its
+      // own — success flips faction, failure (shields up / not
+      // canBeInfected) duds. Player must strip shields first.
+      Vector3 im_pos, im_vel;
+      if (m_player.consumePendingInfectiousMissile(im_pos, im_vel)) {
+        Vector3 fwd = m_player.forward();
+        uint32_t lockId =
+            m_em.acquireTarget(im_pos, fwd, Config::MISSILE_LOCK_CONE,
+                               Config::INFECT_MISSILE_RANGE);
+        m_em.spawnProjectile(im_pos, im_vel,
+                             0.0f, // no damage — flip-or-dud only
+                             Config::INFECT_MISSILE_RANGE,
+                             Config::INFECT_MISSILE_SPEED,
+                             ProjectileOwner::Player,
+                             ProjectileKind::InfectiousMissile,
+                             0.0f, // no splash
+                             lockId,
+                             Config::INFECT_MISSILE_TURN_RATE);
+      }
+
       // Beam-class fire — continuous raycast while held. Player
       // flagged it firing this tick if energy was available. Beam and
       // Shield Laser branch internally for the damage routing: Beam
@@ -1591,6 +1612,11 @@ void GameState::drawHUD() const {
       secName = "SHLD MSL";
       secAmmo = m_player.shieldMissileAmmo();
       secMax = Config::SHIELD_MISSILE_AMMO_MAX;
+      break;
+    case Player::SecondaryWeapon::Infectious:
+      secName = "INFECT";
+      secAmmo = m_player.infectiousMissileAmmo();
+      secMax = Config::INFECT_MISSILE_AMMO_MAX;
       break;
     default:
       break;
@@ -2599,11 +2625,12 @@ void GameState::drawLoadoutSelect() {
     if (hit >= 0)
       m_loadout.primary = static_cast<Player::PrimaryWeapon>(hit);
   }
-  // Secondary row — Missile / Cluster / Depth Charge / Shield Missile.
+  // Secondary row — Missile / Cluster / Depth Charge / Shield / Infectious.
   {
-    const char *opts[4] = {"MISSILE", "CLUSTER", "DEPTHCHG", "SHLD MSL"};
+    const char *opts[5] = {"MISSILE", "CLUSTER", "DEPTHCHG", "SHLD MSL",
+                           "INFECT"};
     int sel = static_cast<int>(m_loadout.secondary);
-    int hit = drawSlotRow(py + 130, "SECONDARY", opts, 4, sel);
+    int hit = drawSlotRow(py + 130, "SECONDARY", opts, 5, sel);
     if (hit >= 0)
       m_loadout.secondary = static_cast<Player::SecondaryWeapon>(hit);
   }

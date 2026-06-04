@@ -64,6 +64,12 @@ enum class ProjectileKind : uint8_t {
   // instead of routing through applyDamage's shield-first-overflow
   // path. No splash.
   ShieldMissile,
+  // Infectious Missile (Slice B.5) — flies and steers like a normal
+  // Missile, no damage of its own. On impact calls tryInfect() on the
+  // locked target: success flips the entity's faction (B.4 state
+  // machine), failure (shields up or canBeInfected = false) duds with
+  // a small visual puff. Player has to strip shields first.
+  InfectiousMissile,
 };
 
 // AI state machine — Drones and projectiles ignore this. The

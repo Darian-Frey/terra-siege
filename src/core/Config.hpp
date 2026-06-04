@@ -230,6 +230,24 @@ constexpr float SHIELD_MISSILE_RANGE = 600.0f;
 constexpr int SHIELD_MISSILE_AMMO_MAX = 12;
 
 // ----------------------------------------------------------------
+// Infectious Missile (Slice B.5). Triggers the B.4 infection state
+// machine on a shield-stripped + canBeInfected target. PN-guided like
+// a standard missile (proximity fuse from the earlier missile fix).
+// Slower and smaller ammo than Shield Missile because each successful
+// flip is a much bigger payoff (a new ally vs a stripped sector).
+//
+// Carries no damage of its own — on detonation it either flips the
+// target (success) or duds (target has shields up / can't be
+// infected). Player has to set up with Shield Laser or Shield
+// Missile first.
+// ----------------------------------------------------------------
+constexpr float INFECT_MISSILE_SPEED = 60.0f;
+constexpr float INFECT_MISSILE_TURN_RATE = 3.5f;
+constexpr float INFECT_MISSILE_FIRE_RATE = 0.6f;
+constexpr float INFECT_MISSILE_RANGE = 600.0f;
+constexpr int INFECT_MISSILE_AMMO_MAX = 8;
+
+// ----------------------------------------------------------------
 // Infection (Slice B.4). State machine for flipping a shielded enemy
 // ship's faction. Triggered by Infectious Missile (B.5) when the
 // target's shields are at zero. Three-second reboot during which
@@ -246,6 +264,13 @@ constexpr int SHIELD_MISSILE_AMMO_MAX = 12;
 // ----------------------------------------------------------------
 constexpr float INFECT_REBOOT_DURATION = 3.0f; // sec freeze before flip
 constexpr float INFECT_SPEED_PENALTY = 0.80f;  // max-speed multiplier post-flip
+// Infected ships slowly bleed hull HP and eventually explode. Drains
+// as a fraction of hullMax per second so Fighters (160 hull) and
+// Bombers (350 hull) take the same time to die from the bleed
+// alone. At 1%/sec → ~100s of useful life if the ship isn't shot
+// down sooner. The bleed represents the virus consuming systems and
+// gives the player a reason to push the temporary ally into a fight.
+constexpr float INFECT_BLEED_HP_FRAC_PS = 0.01f;
 
 // ----------------------------------------------------------------
 // Weapons — special
