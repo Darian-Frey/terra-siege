@@ -185,6 +185,8 @@ add_executable(terra-siege-inspect
     src/inspector/main.cpp
     src/inspector/Inspector.cpp
     src/inspector/Inspector.hpp
+    src/inspector/InspectorConfig.cpp
+    src/inspector/InspectorConfig.hpp
     src/inspector/Tool.hpp
     src/inspector/VertexTool.cpp
     src/inspector/VertexTool.hpp

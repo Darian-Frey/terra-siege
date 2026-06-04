@@ -5,12 +5,6 @@
 #include <cstdio>
 
 int main(int argc, char **argv) {
-  if (argc < 2) {
-    std::fprintf(stderr, "Usage: %s <path-to-obj>\n",
-                 argc > 0 ? argv[0] : "terra-siege-inspect");
-    return 2;
-  }
-
   SetTraceLogLevel(LOG_WARNING);
   SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
   InitWindow(Config::SCREEN_WIDTH, Config::SCREEN_HEIGHT,
@@ -18,10 +12,13 @@ int main(int argc, char **argv) {
   SetTargetFPS(60);
 
   tsmesh::Inspector inspector;
-  if (!inspector.load(argv[1])) {
-    std::fprintf(stderr, "Failed to load: %s\n", argv[1]);
-    CloseWindow();
-    return 1;
+  // CLI arg is a shortcut for "boot and immediately open this file".
+  // No arg → empty workspace; user presses O / drag-and-drops.
+  if (argc >= 2) {
+    if (!inspector.load(argv[1])) {
+      std::fprintf(stderr, "[main] failed to load %s — starting empty\n",
+                   argv[1]);
+    }
   }
 
   int rc = inspector.run();
