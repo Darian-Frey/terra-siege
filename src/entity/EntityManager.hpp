@@ -165,9 +165,14 @@ private:
   bool tickRetreat(Entity &e, float dt, const Planet &planet,
                    float maxSpeed, float turnRate, float thrust);
 
-  // Drone — boids flocking + pursuit + kamikaze contact damage.
+  // Drone — boids flocking + stand-off band + orbital drift + weak
+  // gun. No contact damage (legacy kamikaze behaviour retired). Global
+  // cap on live drones gated by liveDroneCount() — Seeder/Carrier
+  // deploys skip when full.
   void updateDrone(Entity &e, float dt, const Planet &planet,
                    Player &player, ParticleSystem &particles);
+  void fireDroneShot(Entity &e, Vector3 targetPos);
+  int liveDroneCount() const;
 
   // Bomber — heavier, slower Fighter variant. Same state machine,
   // different fire rhythm + handling.

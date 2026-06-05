@@ -183,12 +183,18 @@ Entity *EntityManager::spawnEnemy(EntityType type, Vector3 pos) {
     e->canBeInfected = true; // Slice B.4
     break;
   case EntityType::Drone:
-    // Kamikaze swarm — 1-shot kill, no shield, contact damage only.
+    // Light gunship swarm — 1-shot kill, no shield, no contact damage.
+    // Holds a stand-off band and fires small projectiles. fireTimer
+    // starts at FIRST_SHOT_DELAY so a freshly-dropped drone doesn't
+    // instantly burst the player. stateTimer drives the orbital-drift
+    // bearing pick; first pick happens immediately on the first tick.
     e->hullMax = Config::HULL_DRONE;
     e->hullHP = e->hullMax;
     e->shieldMax = 0.0f;
     e->shieldHP = 0.0f;
     e->radius = Config::HIT_RADIUS_DRONE;
+    e->fireTimer = Config::DRONE_FIRST_SHOT_DELAY;
+    e->stateTimer = 0.0f; // forces immediate bearing pick on first update
     break;
   case EntityType::Bomber:
     // Heavy bruiser — high HP, has a shield with the slowest recharge
@@ -1239,8 +1245,29 @@ void EntityManager::fireBomberShot(Entity &e, Vector3 targetPos,
 // = 256 ops). Spatial grid replacement comes when 5d.4 (Carrier) and
 // later increase concurrent enemy counts.
 // ====================================================================
+// ====================================================================
+// Drone v2 — light gunship swarm. Boids flocking (sep / align /
+// cohesion) keeps inter-drone spacing; the player-relative force is
+// a stand-off band + orbital drift instead of "ram the player".
+//
+//   * Stand-off:  radial push away if inside DRONE_STANDOFF_MIN,
+//                 radial pull in if outside DRONE_STANDOFF_MAX,
+//                 zero inside the band so orbital drift dominates.
+//   * Orbital:    each drone holds a random bearing (unit XZ vector,
+//                 stored in targetPos) and tries to slide to
+//                 player.pos + bearing * standoffMid. stateTimer
+//                 counts down; on zero a fresh bearing is picked
+//                 (interval randomised per-drone 3..4s). This gives
+//                 chaotic swirl rather than predictable orbits.
+//   * Weapon:     fire when fireTimer ≤ 0 AND distance ≤ FIRE_RANGE.
+//                 Weak per-shot damage — the threat is the count.
+//   * No contact damage — drones never self-detonate on the player.
+// ====================================================================
 void EntityManager::updateDrone(Entity &e, float dt, const Planet &planet,
                                 Player &player, ParticleSystem &particles) {
+  (void)particles; // unused now — kamikaze burst retired
+
+  // ---------- Boids (sep / align / cohesion) ----------
   Vector3 sepForce = {0, 0, 0};
   Vector3 alignAvgVel = {0, 0, 0};
   Vector3 cohesionAvgPos = {0, 0, 0};
@@ -1256,7 +1283,6 @@ void EntityManager::updateDrone(Entity &e, float dt, const Planet &planet,
     if (dist < 0.01f) continue;
 
     if (dist < Config::DRONE_SEP_RADIUS) {
-      // Closer = stronger push; inverse-distance weight.
       Vector3 push = Vector3Scale(d, 1.0f / (dist * dist));
       sepForce = Vector3Add(sepForce, push);
     }
@@ -1270,15 +1296,11 @@ void EntityManager::updateDrone(Entity &e, float dt, const Planet &planet,
     }
   }
 
-  // Alignment force = (avg neighbour vel) − (own vel), nudges toward
-  // group heading without snapping to it.
   Vector3 alignForce = {0, 0, 0};
   if (alignCount > 0) {
     alignAvgVel = Vector3Scale(alignAvgVel, 1.0f / alignCount);
     alignForce = Vector3Subtract(alignAvgVel, e.vel);
   }
-
-  // Cohesion force = direction from drone toward neighbour centroid.
   Vector3 cohesionForce = {0, 0, 0};
   if (cohesionCount > 0) {
     cohesionAvgPos = Vector3Scale(cohesionAvgPos, 1.0f / cohesionCount);
@@ -1288,24 +1310,67 @@ void EntityManager::updateDrone(Entity &e, float dt, const Planet &planet,
       cohesionForce = Vector3Scale(cohesionForce, 1.0f / clen);
   }
 
-  // Pursuit — head toward player (3D, not just horizontal).
-  Vector3 toPlayer = Vector3Subtract(player.position(), e.pos);
-  float pdist = Vector3Length(toPlayer);
-  Vector3 pursueForce = {0, 0, 0};
-  if (pdist > 0.01f)
-    pursueForce = Vector3Scale(toPlayer, 1.0f / pdist);
+  // ---------- Stand-off + orbital drift ----------
+  Vector3 toPlayerH = {player.position().x - e.pos.x, 0.0f,
+                       player.position().z - e.pos.z};
+  float distH = sqrtf(toPlayerH.x * toPlayerH.x + toPlayerH.z * toPlayerH.z);
 
-  // Sum weighted forces — drives velocity rather than position
-  // directly so the drone has momentum (matches the rest of the
-  // physics-based world).
+  // Radial: 0 inside the band, +radial (toward player) if too far,
+  // -radial (away) if too close.
+  Vector3 standoffForce = {0, 0, 0};
+  if (distH > 0.01f) {
+    Vector3 radial = Vector3Scale(toPlayerH, 1.0f / distH);
+    if (distH < Config::DRONE_STANDOFF_MIN) {
+      standoffForce = Vector3Scale(radial, -1.0f);
+    } else if (distH > Config::DRONE_STANDOFF_MAX) {
+      standoffForce = radial;
+    }
+  }
+
+  // Bearing retarget. stateTimer < 0 forces an immediate pick on the
+  // first tick after spawn (allocEnemy() sets stateTimer = 0). On each
+  // retarget, a fresh unit bearing is sampled from a hash of (id, time)
+  // — deterministic per drone but uncorrelated across the swarm.
+  e.stateTimer -= dt;
+  if (e.stateTimer <= 0.0f) {
+    uint32_t h = e.id * 1103515245u +
+                 static_cast<uint32_t>(player.position().x * 17.0f) +
+                 static_cast<uint32_t>(player.position().z * 31.0f);
+    float angle = static_cast<float>(h % 6283) / 1000.0f; // 0..2π
+    e.targetPos = {sinf(angle), 0.0f, cosf(angle)};
+    float u = static_cast<float>((h >> 13) & 0xFF) / 255.0f;
+    e.stateTimer = Config::DRONE_ORBIT_RETARGET_MIN +
+                   u * (Config::DRONE_ORBIT_RETARGET_MAX -
+                        Config::DRONE_ORBIT_RETARGET_MIN);
+  }
+
+  // Orbit target = player + bearing × midpoint of the band. Force is
+  // the unit vector from drone → orbit target on the XZ plane.
+  float standoffMid = 0.5f * (Config::DRONE_STANDOFF_MIN +
+                              Config::DRONE_STANDOFF_MAX);
+  Vector3 orbitTarget = {player.position().x + e.targetPos.x * standoffMid,
+                         e.pos.y,
+                         player.position().z + e.targetPos.z * standoffMid};
+  Vector3 orbitForce = {orbitTarget.x - e.pos.x, 0.0f,
+                        orbitTarget.z - e.pos.z};
+  float ol = sqrtf(orbitForce.x * orbitForce.x +
+                   orbitForce.z * orbitForce.z);
+  if (ol > 0.001f) {
+    orbitForce.x /= ol;
+    orbitForce.z /= ol;
+  }
+
+  // ---------- Sum forces ----------
   Vector3 total = {0, 0, 0};
   total = Vector3Add(total, Vector3Scale(sepForce, Config::DRONE_SEP_WEIGHT));
-  total =
-      Vector3Add(total, Vector3Scale(alignForce, Config::DRONE_ALIGN_WEIGHT));
-  total = Vector3Add(
-      total, Vector3Scale(cohesionForce, Config::DRONE_COHESION_WEIGHT));
-  total =
-      Vector3Add(total, Vector3Scale(pursueForce, Config::DRONE_PURSUE_WEIGHT));
+  total = Vector3Add(total,
+                     Vector3Scale(alignForce, Config::DRONE_ALIGN_WEIGHT));
+  total = Vector3Add(total, Vector3Scale(cohesionForce,
+                                          Config::DRONE_COHESION_WEIGHT));
+  total = Vector3Add(total, Vector3Scale(standoffForce,
+                                          Config::DRONE_STANDOFF_WEIGHT));
+  total = Vector3Add(total,
+                     Vector3Scale(orbitForce, Config::DRONE_ORBIT_WEIGHT));
 
   e.vel = Vector3Add(e.vel, Vector3Scale(total, Config::DRONE_THRUST * dt));
 
@@ -1319,8 +1384,7 @@ void EntityManager::updateDrone(Entity &e, float dt, const Planet &planet,
   if (drag > 1.0f) drag = 1.0f;
   e.vel = Vector3Scale(e.vel, 1.0f - drag);
 
-  // Update yaw to match horizontal velocity (purely visual — used for
-  // the radar triangle direction even though drones render as cubes).
+  // Update yaw to match horizontal velocity (visual + radar triangle).
   if (fabsf(e.vel.x) + fabsf(e.vel.z) > 0.1f)
     e.yaw = atan2f(e.vel.x, e.vel.z);
 
@@ -1334,19 +1398,36 @@ void EntityManager::updateDrone(Entity &e, float dt, const Planet &planet,
     if (e.vel.y < 0.0f) e.vel.y = 0.0f;
   }
 
-  // Kamikaze contact — if the drone is touching the player, deal
-  // contact damage and self-destruct (with a kill burst at the
-  // impact point so the player sees it die). Drone position is used
-  // as the hit point so the shield sector facing the swarm absorbs
-  // the impact.
-  Vector3 toPlayer3 = Vector3Subtract(player.position(), e.pos);
-  if (Vector3Length(toPlayer3) <
-      (e.radius + Config::HIT_RADIUS_PLAYER)) {
-    player.applyDamage(Config::DRONE_CONTACT_DAMAGE, e.pos);
-    e.alive = false;
-    --m_liveEnemies;
-    emitKillExplosion(e.pos, particles);
+  // ---------- Weapon fire ----------
+  // fireTimer is auto-decremented at the top of update(). Fire when
+  // ready AND inside the engage range. Aim straight at the player —
+  // the slow projectile speed gives the player a fair dodge window.
+  Vector3 toPlayer = Vector3Subtract(player.position(), e.pos);
+  float pdist = Vector3Length(toPlayer);
+  if (e.fireTimer <= 0.0f && pdist <= Config::DRONE_FIRE_RANGE) {
+    fireDroneShot(e, player.position());
+    e.fireTimer = Config::DRONE_FIRE_RATE;
   }
+}
+
+void EntityManager::fireDroneShot(Entity &e, Vector3 targetPos) {
+  Vector3 toTarget = Vector3Subtract(targetPos, e.pos);
+  float d = Vector3Length(toTarget);
+  if (d < 0.001f) return;
+  Vector3 dir = Vector3Scale(toTarget, 1.0f / d);
+  Vector3 vel = Vector3Scale(dir, Config::DRONE_PROJ_SPEED);
+  Vector3 spawn = Vector3Add(e.pos, Vector3Scale(dir, 1.0f));
+  spawnProjectile(spawn, vel, Config::DRONE_FIRE_DAMAGE,
+                  Config::DRONE_PROJ_RANGE, Config::DRONE_PROJ_SPEED,
+                  ProjectileOwner::Enemy);
+}
+
+int EntityManager::liveDroneCount() const {
+  int n = 0;
+  for (const Entity &e : m_entities) {
+    if (e.alive && e.type == EntityType::Drone) ++n;
+  }
+  return n;
 }
 
 // ====================================================================
@@ -1438,11 +1519,13 @@ void EntityManager::updateSeeder(Entity &e, float dt, const Planet &planet,
 
   // Drone drop — fireTimer is the deploy cooldown for seeders.
   // Already decremented at the top of update() so we just check it.
-  // Gate on player range so distant seeders don't flood the global pool.
+  // Gate on player range so distant seeders don't flood the global pool,
+  // AND on the global drone cap — when full, we DO NOT consume the
+  // cooldown, so the next drone-death immediately frees the slot for a
+  // fresh drop (no surprise stack-up the moment a kill happens).
   float dist = Vector3Length(toPlayer);
-  if (e.fireTimer <= 0.0f && dist < Config::SEEDER_DEPLOY_RANGE) {
-    // Spawn the drone slightly below the seeder so it visibly "drops"
-    // from the underside before the boids forces take over.
+  if (e.fireTimer <= 0.0f && dist < Config::SEEDER_DEPLOY_RANGE &&
+      liveDroneCount() < Config::DRONE_GLOBAL_CAP) {
     Vector3 dropPos = {e.pos.x, e.pos.y - 4.0f, e.pos.z};
     spawnEnemy(EntityType::Drone, dropPos);
     e.fireTimer = Config::SEEDER_DEPLOY_INTERVAL;
@@ -1519,10 +1602,12 @@ void EntityManager::updateCarrier(Entity &e, float dt, const Planet &planet,
     if (e.vel.y < 0.0f) e.vel.y = 0.0f;
   }
 
-  // Drone drop — fireTimer already decremented at the top of update().
-  // Drop from the underside of the carrier hull.
+  // Drone drop — same cap-aware gate as Seeder. Cooldown is NOT
+  // consumed when the cap is full so the moment a drone dies the next
+  // drop fires immediately.
   float dist = Vector3Length(toPlayer);
-  if (e.fireTimer <= 0.0f && dist < Config::CARRIER_DEPLOY_RANGE) {
+  if (e.fireTimer <= 0.0f && dist < Config::CARRIER_DEPLOY_RANGE &&
+      liveDroneCount() < Config::DRONE_GLOBAL_CAP) {
     Vector3 dropPos = {e.pos.x, e.pos.y - 6.0f, e.pos.z};
     spawnEnemy(EntityType::Drone, dropPos);
     e.fireTimer = Config::CARRIER_DEPLOY_INTERVAL;

@@ -429,22 +429,46 @@ constexpr float FIGHTER_MAX_SPEED = 35.0f;     // slower than player
 constexpr float FIGHTER_TURN_RATE = 1.2f;      // rad/s yaw rate
 constexpr float FIGHTER_PREFERRED_ALT = 60.0f; // AGL hover target
 
-// Drone — kamikaze swarm enemy. No weapons; damages by contact.
-// Boids-style flocking (separation + alignment + cohesion) plus a
-// pursuit force toward the player. 1-shot kill from Cannon (TTK 0.08s).
-constexpr float DRONE_CONTACT_DAMAGE = 10.0f; // damage to player on impact
+// Drone — light gunship swarm. No contact damage; small fast-firing
+// projectile + stand-off + orbital drift behaviour (no longer a
+// kamikaze). Hard global cap on live drones so the swarm density
+// stays trackable; Seeder/Carrier deploys SKIP silently when full
+// (cooldown is NOT consumed — the next slot triggers an immediate
+// drop). 1-shot kill from Cannon (TTK 0.08s).
+constexpr int   DRONE_GLOBAL_CAP = 16;        // hard limit on live drones
 constexpr float DRONE_THRUST = 20.0f;         // m/s² (faster than fighter)
 constexpr float DRONE_MAX_SPEED = 25.0f;
 constexpr float DRONE_PREFERRED_ALT = 30.0f; // AGL hover target
 constexpr float DRONE_HIT_RADIUS = 1.5f;
-// Boids weights / radii
+// Boids weights / radii — separation/alignment/cohesion still drive
+// inter-drone spacing; the player-relative force shifted from "pursue
+// (converge)" to "hold a stand-off band + orbital drift".
 constexpr float DRONE_SEP_RADIUS = 5.0f;
 constexpr float DRONE_ALIGN_RADIUS = 12.0f;
 constexpr float DRONE_COHESION_RADIUS = 15.0f;
 constexpr float DRONE_SEP_WEIGHT = 2.5f;
 constexpr float DRONE_ALIGN_WEIGHT = 0.6f;
 constexpr float DRONE_COHESION_WEIGHT = 0.4f;
-constexpr float DRONE_PURSUE_WEIGHT = 1.4f;
+constexpr float DRONE_STANDOFF_WEIGHT = 1.6f; // approach / push-away to band
+constexpr float DRONE_ORBIT_WEIGHT = 0.9f;    // tangential drift along band
+
+// Stand-off band — drones hold somewhere between MIN and MAX distance
+// from the player, never closer than MIN. If they drift outside this
+// band the standoff force pulls/pushes them back; inside it the
+// dominant force becomes orbital drift along a rotating bearing.
+constexpr float DRONE_STANDOFF_MIN = 25.0f;
+constexpr float DRONE_STANDOFF_MAX = 40.0f;
+constexpr float DRONE_ORBIT_RETARGET_MIN = 3.0f; // sec between bearing picks
+constexpr float DRONE_ORBIT_RETARGET_MAX = 4.0f;
+
+// Drone weapon — weak shots, slow cadence; the threat is the swarm,
+// not any one barrel. Projectile slower than Fighter so it's dodgeable.
+constexpr float DRONE_FIRE_RATE   = 1.0f;  // sec between shots
+constexpr float DRONE_FIRE_DAMAGE = 2.0f;  // tiny per-shot damage
+constexpr float DRONE_PROJ_SPEED  = 70.0f; // slower than fighter (90)
+constexpr float DRONE_PROJ_RANGE  = 50.0f; // shorter than fighter (80)
+constexpr float DRONE_FIRE_RANGE  = 45.0f; // only fire when this close
+constexpr float DRONE_FIRST_SHOT_DELAY = 1.5f; // grace after spawn
 
 // Seeder — slow flying carrier-lite. Drops drones at intervals while
 // drifting at high altitude. Fragile on its own (TTK 0.5s), so the
@@ -454,7 +478,10 @@ constexpr float SEEDER_THRUST = 8.0f;           // m/s² (slow)
 constexpr float SEEDER_MAX_SPEED = 14.0f;       // top horizontal speed
 constexpr float SEEDER_PREFERRED_ALT = 95.0f;   // hovers high — above fighter
 constexpr float SEEDER_HIT_RADIUS = 3.0f;       // fat target — easy to hit
-constexpr float SEEDER_DEPLOY_INTERVAL = 4.0f;  // sec between drone drops
+// Deploy intervals reduced 30% (4.0 → 2.8) to compensate for the
+// global drone cap — slots open the moment a drone dies, so a slower
+// rate would underutilise the swarm.
+constexpr float SEEDER_DEPLOY_INTERVAL = 2.8f;  // sec between drone drops
 constexpr float SEEDER_DEPLOY_RANGE = 240.0f;   // only deploys if player closer
 constexpr float SEEDER_FIRST_DROP_DELAY = 2.0f; // grace period after spawn
 constexpr float SEEDER_DRIFT_RADIUS = 120.0f;   // orbit radius around player
@@ -478,7 +505,8 @@ constexpr float CARRIER_PREFERRED_ALT = 130.0f;  // above everything else
 constexpr float CARRIER_HIT_RADIUS = 6.0f;       // huge target
 constexpr float CARRIER_DRIFT_RADIUS = 160.0f;   // orbit radius around player
 constexpr float CARRIER_RETREAT_RANGE = 120.0f;  // peel away if closer
-constexpr float CARRIER_DEPLOY_INTERVAL = 1.8f;  // sec between drone drops
+// Deploy interval reduced 30% (1.8 → 1.26) — see SEEDER_DEPLOY_INTERVAL.
+constexpr float CARRIER_DEPLOY_INTERVAL = 1.26f; // sec between drone drops
 constexpr float CARRIER_DEPLOY_RANGE = 320.0f;   // wide engagement
 constexpr float CARRIER_FIRST_DROP_DELAY = 3.0f; // grace after spawn
 
