@@ -148,6 +148,14 @@ struct Entity {
   float sectorMax[4] = {0, 0, 0, 0};
   float sectorTimer[4] = {0, 0, 0, 0}; // per-sector time-since-hit
 
+  // Shield-impact ring buffer (visual). Each slot holds the entity-local
+  // unit direction of a recent shield-absorbing hit plus an age timer.
+  // Render path draws a translucent spherical cap at each active slot
+  // and fades it over Config::SHIELD_FLASH_DURATION. Slots are evicted
+  // oldest-first by pushShieldImpact when full. Indexed [0..SHIELD_IMPACT_SLOTS).
+  Vector3 shieldImpactDir[4] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
+  float shieldImpactTimer[4] = {-1.0f, -1.0f, -1.0f, -1.0f}; // <0 = empty slot
+
   // Visual / collision
   float radius = 1.0f;
 

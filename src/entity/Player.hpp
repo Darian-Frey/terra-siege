@@ -36,11 +36,12 @@ public:
   // altitude. Called from GameState between planet and player render
   // so the shadow sits on the terrain below the ship.
   void renderGroundShadow(const Planet &planet) const;
-  // Directional-shield impact bubble. Drawn LAST in the 3D pass so
-  // its translucent alpha blends correctly over the ship + world.
-  // Invisible unless the shield was just engaged (within
-  // PLAYER_SHIELD_FLASH seconds of the last absorbing hit).
-  void renderShieldBubble() const;
+  // Directional-shield impact caps. Drawn LAST in the 3D pass so the
+  // translucent alpha blends correctly over the ship + world. Each
+  // recent shield-absorbing hit fades in a small spherical cap at the
+  // impact direction and decays over SHIELD_FLASH_DURATION; the shield
+  // is otherwise invisible. Up to SHIELD_IMPACT_SLOTS caps coexist.
+  void renderShieldCaps() const;
   void unload();
 
   // ---- State accessors ----
@@ -209,11 +210,14 @@ private:
   float m_sectorHP[4] = {0, 0, 0, 0};
   float m_sectorMax[4] = {0, 0, 0, 0};
   float m_sectorTimer[4] = {0, 0, 0, 0};
-  // Bubble-flash timer — single global value rather than per-sector
-  // because the visual is just "shield engaged" feedback (directional
-  // detail lives on the HUD pie if we ever bring it back). Set in
-  // applyDamage when the shield absorbs anything; decays in update.
-  float m_shieldFlashTimer = 0.0f;
+
+  // Shield-impact ring buffer (visual). Mirror of the Entity-side
+  // structure used by Carrier/Fighter/Bomber. Each slot holds the
+  // ship-local unit direction of a recent shield-absorbing hit plus
+  // an age timer; render path draws a translucent spherical cap and
+  // fades it over Config::SHIELD_FLASH_DURATION. timer < 0 = empty.
+  Vector3 m_shieldImpactDir[4] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
+  float m_shieldImpactTimer[4] = {-1.0f, -1.0f, -1.0f, -1.0f};
   bool m_thrusting = false;
   bool m_landed = false;
   bool m_godMode = false;

@@ -4,6 +4,7 @@
 #include "mesh/MeshRegistry.hpp"
 #include "raymath.h"
 #include "rlgl.h"
+#include "shield/ShieldRenderer.hpp"
 #include "world/Planet.hpp"
 #include <cmath>
 
@@ -453,6 +454,22 @@ uint32_t EntityManager::shieldLaserRaycast(Vector3 origin, Vector3 dir,
   return bestId;
 }
 
+// Compute the entity-local unit direction from `target.pos` to `hitPos`
+// (yaw removed). Used by the shield-impact ring buffer so the visual
+// cap moves with the ship as it turns. Returns +Z (nose) as a safe
+// fallback when the points coincide.
+static Vector3 shieldHitDirLocal(const Entity &target, Vector3 hitPos) {
+  Vector3 d = {hitPos.x - target.pos.x,
+               hitPos.y - target.pos.y,
+               hitPos.z - target.pos.z};
+  float L = Vector3Length(d);
+  if (L < 1e-4f) return Vector3{0, 0, 1};
+  d = Vector3Scale(d, 1.0f / L);
+  // Rotate world → ship-local by -yaw on the XZ plane.
+  float c = cosf(target.yaw), s = sinf(target.yaw);
+  return Vector3{ d.x * c - d.z * s, d.y, d.x * s + d.z * c };
+}
+
 // Shield-priority damage routing — drains shields and hull independently
 // rather than running the shield-first-overflow path used by applyDamage.
 // Reused by Shield Laser (per-tick continuous fire) and Shield Missile
@@ -473,14 +490,22 @@ void EntityManager::applyShieldHit(Entity &target, float shieldDmg,
                    target.sectorMax[1] > 0.0f ||
                    target.sectorMax[2] > 0.0f ||
                    target.sectorMax[3] > 0.0f);
+  bool shieldEngaged = false;
   if (sectored) {
     int s = damageSectorFromHit(target, hitPos);
     target.sectorTimer[s] = 0.0f;
+    if (target.sectorHP[s] > 0.0f) shieldEngaged = true;
     target.sectorHP[s] -= shieldDmg;
     if (target.sectorHP[s] < 0.0f) target.sectorHP[s] = 0.0f;
   } else if (target.shieldHP > 0.0f) {
+    shieldEngaged = true;
     target.shieldHP -= shieldDmg;
     if (target.shieldHP < 0.0f) target.shieldHP = 0.0f;
+  }
+  if (shieldEngaged) {
+    shieldfx::pushImpact(target.shieldImpactDir, target.shieldImpactTimer,
+                         Config::SHIELD_IMPACT_SLOTS,
+                         shieldHitDirLocal(target, hitPos));
   }
 
   // Hull drain — always, even while shields are up.
@@ -685,6 +710,9 @@ void EntityManager::update(float dt, const Planet &planet, Player &player,
                            ParticleSystem &particles) {
   for (auto &e : m_entities) {
     if (!e.alive) continue;
+
+    // Shield-impact ring buffer — age every active slot.
+    shieldfx::tickImpacts(e.shieldImpactTimer, Config::SHIELD_IMPACT_SLOTS, dt);
 
     // Shield recharge — uniform across all enemy types that have shields.
     e.timeSinceHit += dt;
@@ -2383,13 +2411,18 @@ void EntityManager::applyDamage(Entity &target, float damage,
   target.timeSinceHit = 0.0f;
   target.damageFlashTimer = 0.12f;
 
+  bool shieldEngaged = false;
   if (hasDirectionalShield(target)) {
     // Sectored path — drain the hit quadrant; overflow goes to hull.
     int s = damageSectorFromHit(target, hitPos);
     target.sectorTimer[s] = 0.0f;
     if (target.sectorHP[s] > 0.0f) {
+      shieldEngaged = true;
       if (damage <= target.sectorHP[s]) {
         target.sectorHP[s] -= damage;
+        shieldfx::pushImpact(target.shieldImpactDir, target.shieldImpactTimer,
+                             Config::SHIELD_IMPACT_SLOTS,
+                             shieldHitDirLocal(target, hitPos));
         return;
       }
       damage -= target.sectorHP[s];
@@ -2397,12 +2430,21 @@ void EntityManager::applyDamage(Entity &target, float damage,
     }
   } else if (target.shieldHP > 0.0f) {
     // Scalar (single-sector) path — drain shieldHP first.
+    shieldEngaged = true;
     if (damage <= target.shieldHP) {
       target.shieldHP -= damage;
+      shieldfx::pushImpact(target.shieldImpactDir, target.shieldImpactTimer,
+                           Config::SHIELD_IMPACT_SLOTS,
+                           shieldHitDirLocal(target, hitPos));
       return;
     }
     damage -= target.shieldHP;
     target.shieldHP = 0.0f;
+  }
+  if (shieldEngaged) {
+    shieldfx::pushImpact(target.shieldImpactDir, target.shieldImpactTimer,
+                         Config::SHIELD_IMPACT_SLOTS,
+                         shieldHitDirLocal(target, hitPos));
   }
 
   target.hullHP -= damage;
@@ -2468,6 +2510,16 @@ void EntityManager::render(Camera3D camera,
   for (const auto &e : m_entities) {
     if (!e.alive) continue;
     renderEnemy(e, camera, registry);
+  }
+  // Shield-impact caps for every shielded enemy — emitted after all
+  // bodies so the translucent geometry composites over the meshes.
+  // Cheap test: any entity with any active impact slot draws here.
+  for (const auto &e : m_entities) {
+    if (!e.alive) continue;
+    float r = e.radius * Config::SHIELD_VIS_RADIUS_SCALE;
+    shieldfx::renderImpacts(e.shieldImpactDir, e.shieldImpactTimer,
+                            Config::SHIELD_IMPACT_SLOTS,
+                            e.pos, r, e.yaw);
   }
   for (const auto &p : m_projectiles) {
     if (!p.alive) continue;
@@ -2588,11 +2640,11 @@ void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
     break;
   }
   case EntityType::Carrier: {
-    // Hull body — OBJ when available, procedural otherwise. Shield
-    // panels stay procedural either way because they fade per-sector
-    // (which an OBJ can't represent without a shader). The panels
-    // need their own rlPushMatrix/rlRotatef so they rotate with the
-    // carrier yaw — DrawCubeV is axis-aligned in world space.
+    // Hull body — OBJ when available, procedural otherwise. Sector
+    // shields used to draw as always-visible slab panels here; they
+    // were retired with the impact-cap rebuild — shields are now
+    // invisible until hit, then flash via shieldfx::renderImpacts in
+    // EntityManager::render (same path as Fighter/Bomber).
     if (registry && registry->has(EntityType::Carrier)) {
       registry->draw(EntityType::Carrier, e.pos, e.yaw, 1.0f, WHITE);
     } else {
@@ -2610,39 +2662,6 @@ void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
       DrawCubeV({0.0f, 1.9f, 0.0f}, {3.0f, 0.9f, 3.0f}, spire);
       rlPopMatrix();
     }
-
-    // Sector shield panels — always procedural. Own matrix block so
-    // the carrier-local axis-aligned slabs rotate with yaw.
-    rlPushMatrix();
-    rlTranslatef(e.pos.x, e.pos.y, e.pos.z);
-    rlRotatef(e.yaw * RAD2DEG, 0.0f, 1.0f, 0.0f);
-    struct PanelDef {
-      Vector3 pos;
-      Vector3 size;
-      int sector;
-    };
-    const PanelDef panels[4] = {
-        {{0.0f, 0.0f, 6.5f}, {11.0f, 3.5f, 0.3f},
-         static_cast<int>(ShieldSector::Front)},
-        {{0.0f, 0.0f, -6.5f}, {11.0f, 3.5f, 0.3f},
-         static_cast<int>(ShieldSector::Rear)},
-        {{5.5f, 0.0f, 0.0f}, {0.3f, 3.5f, 13.0f},
-         static_cast<int>(ShieldSector::Right)},
-        {{-5.5f, 0.0f, 0.0f}, {0.3f, 3.5f, 13.0f},
-         static_cast<int>(ShieldSector::Left)},
-    };
-    for (const PanelDef &pd : panels) {
-      if (e.sectorMax[pd.sector] <= 0.0f) continue;
-      float frac = e.sectorHP[pd.sector] / e.sectorMax[pd.sector];
-      if (frac <= 0.01f) continue;
-      unsigned char alpha =
-          static_cast<unsigned char>(40.0f + 120.0f * frac); // 40..160
-      Color shield = {static_cast<unsigned char>(60 + 60 * (1.0f - frac)),
-                      static_cast<unsigned char>(180 + 40 * frac),
-                      static_cast<unsigned char>(220), alpha};
-      DrawCubeV(pd.pos, pd.size, shield);
-    }
-    rlPopMatrix();
 
     // Hull bar — billboarded toward the camera so it reads at full
     // width from any approach angle (the carrier rotates with yaw,

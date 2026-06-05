@@ -2,7 +2,9 @@
 #include "core/Config.hpp"
 #include "entity/Entity.hpp" // ShieldSector enum
 #include "mesh/MeshRegistry.hpp"
+#include "raymath.h"
 #include "rlgl.h"
+#include "shield/ShieldRenderer.hpp"
 #include "world/Planet.hpp"
 #include <cmath>
 #include <cstring>
@@ -111,9 +113,22 @@ void Player::applyDamage(float amount, Vector3 hitPos) {
 
   m_sectorTimer[sector] = 0.0f;
   if (m_sectorHP[sector] > 0.0f) {
-    // Shield engaged — fire the bubble flash. Reset to full duration
-    // each impact so a stream of incoming fire keeps the bubble lit.
-    m_shieldFlashTimer = Config::PLAYER_SHIELD_FLASH;
+    // Shield engaged — push a fresh impact into the ring buffer. The
+    // cap geometry will fade in at the exact hit direction and decay
+    // over SHIELD_FLASH_DURATION. Direction is stored ship-local so
+    // the cap moves with the ship as it turns.
+    //
+    // Build a unit hit direction in ship-local space directly: the
+    // (lx, lz) we just computed is the XZ-plane projection in the
+    // ship's frame already, and we drop the Y component because the
+    // sector model is yaw-only. Renormalise from XZ length so the
+    // cap pole sits on the equator (matches "this side took it").
+    float L = sqrtf(lx * lx + lz * lz);
+    Vector3 hitLocal = (L < 1e-4f)
+        ? Vector3{0, 0, 1}
+        : Vector3{lx / L, 0.0f, lz / L};
+    shieldfx::pushImpact(m_shieldImpactDir, m_shieldImpactTimer,
+                         Config::SHIELD_IMPACT_SLOTS, hitLocal);
     if (amount <= m_sectorHP[sector]) {
       m_sectorHP[sector] -= amount;
       return;
@@ -505,11 +520,9 @@ void Player::update(float dt, const Planet &planet) {
         m_sectorHP[i] = m_sectorMax[i];
     }
   }
-  // Bubble flash decay — visual is invisible once this hits zero.
-  if (m_shieldFlashTimer > 0.0f) {
-    m_shieldFlashTimer -= dt;
-    if (m_shieldFlashTimer < 0.0f) m_shieldFlashTimer = 0.0f;
-  }
+  // Shield-impact ring buffer — age every active slot. Caps fade out
+  // automatically once they cross SHIELD_FLASH_DURATION.
+  shieldfx::tickImpacts(m_shieldImpactTimer, Config::SHIELD_IMPACT_SLOTS, dt);
 
   // Primary — branch by weapon. Cannon + Plasma share the
   // m_cannonTimer (single discrete-fire cooldown); Beam uses its
@@ -671,7 +684,17 @@ void Player::update(float dt, const Planet &planet) {
           m_sectorHP[i] = m_sectorMax[i];
           m_sectorTimer[i] = 0.0f;
         }
-        m_shieldFlashTimer = Config::PLAYER_SHIELD_FLASH;
+        // Shield Booster restored the shield — fire a 4-cap burst at
+        // the four sector centres so the visual reads as a near-full
+        // sphere flash (single bubble retired in the cap rebuild).
+        shieldfx::pushImpact(m_shieldImpactDir, m_shieldImpactTimer,
+                             Config::SHIELD_IMPACT_SLOTS, Vector3{0, 0, 1});
+        shieldfx::pushImpact(m_shieldImpactDir, m_shieldImpactTimer,
+                             Config::SHIELD_IMPACT_SLOTS, Vector3{1, 0, 0});
+        shieldfx::pushImpact(m_shieldImpactDir, m_shieldImpactTimer,
+                             Config::SHIELD_IMPACT_SLOTS, Vector3{0, 0, -1});
+        shieldfx::pushImpact(m_shieldImpactDir, m_shieldImpactTimer,
+                             Config::SHIELD_IMPACT_SLOTS, Vector3{-1, 0, 0});
         m_pendingShieldBoost = true;
         m_shieldBoosterCooldown = 20.0f;
       }
@@ -1040,31 +1063,14 @@ void Player::renderGroundShadow(const Planet &planet) const {
 }
 
 // ====================================================================
-// Shield bubble — translucent low-poly sphere around the ship that
-// fades in on any shield-absorbing hit and fades back to invisible
-// over PLAYER_SHIELD_FLASH seconds. Dim blue with a quick alpha
-// punch so the player gets an unmistakable "absorbed" cue without
-// the bubble being a permanent visual.
-//
-// Low-poly slice/ring counts give the flat-shaded faceted look the
-// rest of the game uses — solid lit sphere would clash with the
-// 1988 aesthetic.
+// Shield-impact caps — one translucent spherical cap per recent
+// shield-absorbing hit, fading over SHIELD_FLASH_DURATION. Shared
+// shieldfx::renderImpacts builds the geometry; we just pass the
+// ring buffer and the world-space sphere centre + radius + yaw.
+// Sphere itself is invisible — only the caps from recent hits show.
 // ====================================================================
-void Player::renderShieldBubble() const {
-  if (m_shieldFlashTimer <= 0.0f) return;
-
-  // Normalised flash progress: 1.0 just after impact, 0.0 at fadeout.
-  float t = m_shieldFlashTimer / Config::PLAYER_SHIELD_FLASH;
-  if (t < 0.0f) t = 0.0f;
-  if (t > 1.0f) t = 1.0f;
-
-  // Eased curve — quick punch then smooth tail. Squaring makes the
-  // first 0.1s the visible peak; the rest is gentle decay.
-  float alphaF = t * t;
-  unsigned char alpha = static_cast<unsigned char>(alphaF * 110.0f);
-  Color shield = {60, 140, 220, alpha};
-
-  // 8 rings × 12 slices = 96 quads — coarse enough to read as
-  // faceted, dense enough to look round at close range.
-  DrawSphereEx(m_pos, Config::PLAYER_SHIELD_RADIUS, 8, 12, shield);
+void Player::renderShieldCaps() const {
+  shieldfx::renderImpacts(m_shieldImpactDir, m_shieldImpactTimer,
+                          Config::SHIELD_IMPACT_SLOTS,
+                          m_pos, Config::PLAYER_SHIELD_RADIUS, m_yaw);
 }

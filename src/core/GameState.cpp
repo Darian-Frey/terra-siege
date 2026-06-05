@@ -1257,7 +1257,7 @@ void GameState::render(float alpha) {
     }
     // Shield bubble drawn AFTER everything else in 3D so its alpha
     // blends over the ship + enemies + particles correctly.
-    m_player.renderShieldBubble();
+    m_player.renderShieldCaps();
     EndMode3D();
 
     drawHUD();
@@ -1289,7 +1289,7 @@ void GameState::render(float alpha) {
     m_particles.render(m_camera);
     // Shield bubble drawn AFTER everything else in 3D so its alpha
     // blends over the ship + enemies + particles correctly.
-    m_player.renderShieldBubble();
+    m_player.renderShieldCaps();
     EndMode3D();
 
     if (m_state == AppState::MainMenu)

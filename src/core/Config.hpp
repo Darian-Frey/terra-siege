@@ -402,8 +402,22 @@ constexpr float PLAYER_HULL_HP = 100.0f;
 constexpr float PLAYER_SHIELD_HP_PER_SECTOR = 100.0f; // ×4 sectors = 400
 constexpr float PLAYER_SHIELD_DELAY = 3.0f;
 constexpr float PLAYER_SHIELD_RATE = 8.0f;
-constexpr float PLAYER_SHIELD_FLASH = 0.7f;  // sec — bubble visible after hit
 constexpr float PLAYER_SHIELD_RADIUS = 4.5f; // world units, sphere radius
+
+// Shield-impact cap visuals — when a shielded hit lands, a translucent
+// blue spherical cap fades in at the impact point and decays over
+// SHIELD_FLASH_DURATION. Up to SHIELD_IMPACT_SLOTS recent hits coexist
+// (older slots evicted oldest-first), so sustained fire reads as a
+// burst rather than a single blink. Cap geometry is low-poly to match
+// the flat-shaded aesthetic; half-angle controls how broad the patch
+// feels. Alpha is eased as (1 - t)² for a sharp peak + smooth tail.
+constexpr int   SHIELD_IMPACT_SLOTS    = 4;
+constexpr float SHIELD_FLASH_DURATION  = 0.55f; // sec — cap visible after hit
+constexpr float SHIELD_FLASH_ALPHA_PEAK = 0.55f; // 0..1 → ~140/255 at impact
+constexpr float SHIELD_VIS_RADIUS_SCALE = 1.55f; // multiplier on entity.radius
+constexpr float SHIELD_CAP_HALF_ANGLE_RAD = 0.55f; // ~31° cone — covers ~7% sphere
+constexpr int   SHIELD_CAP_RINGS  = 3;  // latitude bands within the cap
+constexpr int   SHIELD_CAP_SLICES = 8;  // azimuthal segments around cap pole
 
 // Fighter return-fire stats — ~25 DPS per spec player-survivability table
 constexpr float FIGHTER_FIRE_RATE = 0.20f;  // sec between shots
