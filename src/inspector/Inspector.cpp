@@ -1,5 +1,6 @@
 #include "Inspector.hpp"
 
+#include "ProfileTool.hpp"
 #include "VertexTool.hpp"
 #include "raymath.h"
 
@@ -56,6 +57,7 @@ bool copyFileBytes(const std::filesystem::path &src,
 
 Inspector::Inspector() {
   m_tools.push_back(std::make_unique<VertexTool>());
+  m_tools.push_back(std::make_unique<ProfileTool>()); // F.1
   m_cfgPath = InspectorConfig::defaultPath();
   m_cfg.load(m_cfgPath); // missing file is fine, defaults stand
 }
@@ -74,6 +76,16 @@ bool Inspector::load(const std::filesystem::path &path) {
   computeBoundingSphere();
   m_vertSphereR = std::max(0.05f, m_boundsR * 0.012f);
   resetCamera();
+
+  // Sidecar profile (F.1). Reset to defaults, then try to load the
+  // sibling *.meta.json — missing file is fine, defaults stand and
+  // m_profile.loaded stays false (the viewer overlay branches on
+  // section-present flags, not on loaded itself).
+  m_profile = EntityProfile{};
+  loadProfile(sidecarPathFor(m_path), m_profile);
+  for (const auto &w : m_profile.warnings)
+    std::fprintf(stderr, "[Inspector] sidecar: %s\n", w.c_str());
+
   for (auto &t : m_tools) t->onReload(*this);
   rebuildModel();
 
@@ -93,6 +105,7 @@ void Inspector::closeFile() {
   m_hasMesh = false;
   m_boundsR = 1.0f;
   m_vertSphereR = 0.1f;
+  m_profile = EntityProfile{}; // drop the sidecar with the mesh
   for (auto &t : m_tools) t->onReload(*this);
   resetCamera();
 }
@@ -151,6 +164,38 @@ void Inspector::switchTool(size_t idx) {
     m_tools[m_currentTool]->onDeactivate(*this);
   m_currentTool = next;
   m_tools[m_currentTool]->onActivate(*this);
+}
+
+// ====================================================================
+// Public menu-action surface — thin wrappers around the private flow
+// so the MenuBar can drive the inspector without friending into the
+// internals. Each mirrors the equivalent keyboard hotkey.
+// ====================================================================
+void Inspector::actionOpenDialog() {
+  guardDirty(PendingAction::OpenDialog);
+}
+void Inspector::actionOpenPath(const std::filesystem::path &p) {
+  m_pendingPath = p;
+  guardDirty(PendingAction::OpenPath);
+}
+bool Inspector::actionSave() { return doSave(); }
+void Inspector::actionSaveAsDialog() {
+  if (m_hasMesh) openModal(Modal::SaveAs);
+}
+void Inspector::actionClose() { guardDirty(PendingAction::Close); }
+void Inspector::actionQuit() { guardDirty(PendingAction::Quit); }
+void Inspector::actionFrameView() { resetCamera(); }
+void Inspector::actionSwitchTool(size_t idx) { switchTool(idx); }
+void Inspector::actionToggleControlsHelp() {
+  m_controlsOverlay = !m_controlsOverlay;
+  // Fired by the menu bar click; the same LMB-pressed that ran us
+  // would otherwise reach the overlay's "click outside to dismiss"
+  // check this frame and close it immediately. Grace flag swallows
+  // exactly that frame.
+  if (m_controlsOverlay) m_controlsJustOpened = true;
+}
+const char *Inspector::toolNameAt(size_t i) const {
+  return (i < m_tools.size()) ? m_tools[i]->name() : "(none)";
 }
 
 bool Inspector::doSave() {
@@ -317,6 +362,10 @@ int Inspector::run() {
     if (m_modal == Modal::Open) renderOpenModal();
     else if (m_modal == Modal::SaveAs) renderSaveAsModal();
     else if (m_modal == Modal::ConfirmUnsaved) renderConfirmUnsavedModal();
+    // Menu bar drawn AFTER tool/HUD so it stays on top, but BEFORE
+    // the controls overlay so the overlay can opt to cover it.
+    m_menubar.render(*this);
+    if (m_controlsOverlay) renderControlsOverlay();
     EndDrawing();
 
     if (m_shouldQuit) break;
@@ -354,18 +403,79 @@ void Inspector::handleInput() {
     }
   }
 
+  // Controls overlay owns wheel + click + key input while it's up
+  // (renderControlsOverlay handles its own scroll + dismiss).
+  // Returning early here also stops the orbit camera + tool input
+  // from running so wheel doesn't double-bind to zoom.
+  if (m_controlsOverlay) return;
+
+  // Menu bar input — owns its strip + dropdowns. handle() returns
+  // true if the menu consumed input this frame; in that case skip
+  // tool / camera / hotkey processing so a click on a dropdown
+  // doesn't fall through to the vertex picker behind it. The bar
+  // is suppressed while a modal is up (modals take priority).
+  if (m_modal == Modal::None) {
+    if (m_menubar.handle(*this)) return;
+  }
+
   // Modal-mode input — eats everything else.
   if (m_modal == Modal::Open) {
-    int n = static_cast<int>(m_dirEntries.size()) +
-            static_cast<int>(m_cfg.recentFiles.size());
-    if (IsKeyPressed(KEY_ESCAPE)) closeModal();
-    else if (IsKeyPressed(KEY_DOWN) && n > 0)
+    int recN = static_cast<int>(m_cfg.recentFiles.size());
+    int dirN = static_cast<int>(m_dirEntries.size());
+    int n = recN + dirN;
+
+    // Mirror the geometry computed in renderOpenModal() so a click
+    // lands on the same row the user sees highlighted. Kept inline
+    // because the layout is small; if it grows, extract into a
+    // shared helper.
+    int rowH = 22;
+    int sectionTitles = (recN > 0 ? 1 : 0) + 1;
+    int contentRows = recN + dirN + sectionTitles;
+    int sw = GetScreenWidth();
+    int sh = GetScreenHeight();
+    int w = MODAL_W;
+    int h = std::min(MODAL_LIST_H, 80 + contentRows * rowH);
+    int x = (sw - w) / 2;
+    int y = (sh - h) / 2;
+    int listY = y + 56;
+    int maxRows = (h - 70) / rowH;
+
+    // Mouse hover → highlight; mouse wheel → scroll; click → open.
+    Vector2 mp = GetMousePosition();
+    int hoverRow = -1;
+    for (int drawn = 0; drawn < maxRows; ++drawn) {
+      int idx = m_dirScroll + drawn;
+      if (idx >= n) break;
+      Rectangle r{static_cast<float>(x + 8),
+                  static_cast<float>(listY + drawn * rowH - 2),
+                  static_cast<float>(w - 16),
+                  static_cast<float>(rowH)};
+      if (CheckCollisionPointRec(mp, r)) { hoverRow = idx; break; }
+    }
+    if (hoverRow >= 0) m_dirSel = hoverRow;
+
+    float wheel = GetMouseWheelMove();
+    if (wheel != 0.0f && n > 0) {
+      m_dirScroll -= static_cast<int>(wheel);
+      if (m_dirScroll < 0) m_dirScroll = 0;
+      int maxScroll = std::max(0, n - maxRows);
+      if (m_dirScroll > maxScroll) m_dirScroll = maxScroll;
+    }
+
+    if (IsKeyPressed(KEY_ESCAPE)) { closeModal(); return; }
+
+    bool committed = false;
+    if (IsKeyPressed(KEY_DOWN) && n > 0)
       m_dirSel = (m_dirSel + 1) % n;
     else if (IsKeyPressed(KEY_UP) && n > 0)
       m_dirSel = (m_dirSel + n - 1) % n;
-    else if (IsKeyPressed(KEY_ENTER) && n > 0) {
+    else if (IsKeyPressed(KEY_ENTER) && n > 0)
+      committed = true;
+    else if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hoverRow >= 0)
+      committed = true;
+
+    if (committed && n > 0) {
       std::filesystem::path pick;
-      int recN = static_cast<int>(m_cfg.recentFiles.size());
       if (m_dirSel < recN) pick = m_cfg.recentFiles[m_dirSel];
       else pick = m_dirEntries[m_dirSel - recN];
       closeModal();
@@ -483,7 +593,163 @@ void Inspector::render() {
   if (m_hasMesh && m_currentTool < m_tools.size())
     m_tools[m_currentTool]->render3D(*this);
 
+  // F.1 read-only viewer — drawn for any open mesh regardless of
+  // which tool is active. Cheap (a few line + ring primitives) so
+  // we always emit; ProfileView's `present` flags gate individual
+  // pieces so an empty sidecar shows nothing.
+  if (m_hasMesh) renderProfileOverlay();
+
   EndMode3D();
+}
+
+// ====================================================================
+// renderProfileOverlay — sidecar viewer (F.1). All drawn in Mode3D.
+//
+//   forward arrow — yellow line from pivot along view.forward,
+//                   length scaled to bounds radius for legibility
+//   hardpoints    — small spheres at each hardpoint.pos with a short
+//                   arrow along hardpoint.dir, plus a translucent
+//                   fire-arc cone (DrawCircle3D) at the hardpoint
+//                   tip if fireArcDeg > 0
+//   AI rings      — concentric circles on the XZ plane at the
+//                   detectionRange + attackRange radii (worldspace
+//                   units divided by the mesh's typical scale of 1)
+//
+// Everything is read-only; ProfileTool's edits flow back through
+// the typed view, not through this renderer.
+// ====================================================================
+void Inspector::renderProfileOverlay() const {
+  const ProfileView &v = m_profile.view;
+  const Vector3 pivot = v.pivot;
+
+  // ---- forward arrow ----
+  // Yellow line from pivot along view.forward. Length scaled with
+  // the mesh bounds so a tiny ship and a huge ship both read.
+  float aLen = m_boundsR * 1.1f;
+  Vector3 fwdN = v.forward;
+  float flen = sqrtf(fwdN.x * fwdN.x + fwdN.y * fwdN.y + fwdN.z * fwdN.z);
+  if (flen > 1e-4f) {
+    fwdN.x /= flen; fwdN.y /= flen; fwdN.z /= flen;
+    Vector3 tip = {pivot.x + fwdN.x * aLen,
+                   pivot.y + fwdN.y * aLen,
+                   pivot.z + fwdN.z * aLen};
+    DrawLine3D(pivot, tip, {255, 220, 60, 255});
+    // Arrowhead — small sphere at the tip; flat-shaded look is fine
+    // for a marker.
+    DrawSphereEx(tip, m_boundsR * 0.04f, 5, 7, {255, 220, 60, 255});
+  }
+
+  // ---- pivot marker ----
+  // Small red sphere at the pivot itself so the user can see when
+  // pivot has been shifted off-origin.
+  DrawSphereEx(pivot, m_boundsR * 0.025f, 5, 7, {255, 100, 100, 255});
+
+  // ---- hardpoints ----
+  for (const ProfileView::Hardpoint &hp : v.hardpoints) {
+    Color hpCol = {120, 220, 255, 255};
+    DrawSphereEx(hp.pos, m_boundsR * 0.045f, 5, 8, hpCol);
+    // Direction arrow — short line + tip dot.
+    Vector3 dn = hp.dir;
+    float dl = sqrtf(dn.x * dn.x + dn.y * dn.y + dn.z * dn.z);
+    if (dl > 1e-4f) {
+      dn.x /= dl; dn.y /= dl; dn.z /= dl;
+      float L2 = m_boundsR * 0.35f;
+      Vector3 dt = {hp.pos.x + dn.x * L2,
+                    hp.pos.y + dn.y * L2,
+                    hp.pos.z + dn.z * L2};
+      DrawLine3D(hp.pos, dt, hpCol);
+    }
+    // Fire-arc cone — translucent disc at the muzzle perpendicular
+    // to dir, radius scaled by fireArcDeg. Cheap visual stub for
+    // F.1; F.3 will replace with a proper cone when hardpoints
+    // become editable.
+    if (hp.fireArcDeg > 0.0f && dl > 1e-4f) {
+      float arcRad = hp.fireArcDeg * (PI / 180.0f);
+      float r = m_boundsR * 0.35f * tanf(arcRad);
+      if (r > m_boundsR * 0.005f) {
+        Vector3 axisN = {dn.x, dn.y, dn.z};
+        // raylib DrawCircle3D wants a rotation angle + axis. Build
+        // a rotation that takes +Y onto the hardpoint direction.
+        Vector3 up = {0, 1, 0};
+        Vector3 axis = Vector3CrossProduct(up, axisN);
+        float aLen2 = sqrtf(axis.x * axis.x + axis.y * axis.y +
+                            axis.z * axis.z);
+        float angDeg = 0.0f;
+        if (aLen2 > 1e-4f) {
+          axis.x /= aLen2; axis.y /= aLen2; axis.z /= aLen2;
+          float c = up.x * axisN.x + up.y * axisN.y + up.z * axisN.z;
+          if (c > 1.0f) c = 1.0f;
+          if (c < -1.0f) c = -1.0f;
+          angDeg = acosf(c) * (180.0f / PI);
+        } else {
+          axis = {1, 0, 0};
+        }
+        Vector3 tipPos = {hp.pos.x + axisN.x * m_boundsR * 0.35f,
+                          hp.pos.y + axisN.y * m_boundsR * 0.35f,
+                          hp.pos.z + axisN.z * m_boundsR * 0.35f};
+        DrawCircle3D(tipPos, r, axis, angDeg, {120, 220, 255, 180});
+      }
+    }
+  }
+
+  // ---- AI rings ----
+  // Concentric circles on the XZ plane at detectionRange + attackRange.
+  // Skipped when the rings would be massively larger than the mesh
+  // (e.g. 350m detection vs 1m ship) by scaling them DOWN so they
+  // stay readable — the inspector is a scale-agnostic viewer.
+  if (v.aiPresent) {
+    Vector3 axisY = {0, 1, 0};
+    float refScale = m_boundsR * 6.0f; // viewport-friendly max ring radius
+    auto drawRing = [&](float worldRange, Color c) {
+      if (worldRange <= 0.0f) return;
+      float r = (worldRange > refScale) ? refScale : worldRange;
+      DrawCircle3D(pivot, r, axisY, 90.0f, c);
+    };
+    drawRing(v.detectionRange, {255, 130, 130, 140});
+    drawRing(v.attackRange, {255, 200, 100, 200});
+  }
+}
+
+void Inspector::renderProfileHud(int &yCursor) const {
+  const ProfileView &v = m_profile.view;
+  char buf[256];
+  bool any = !v.displayName.empty() || !v.entityClass.empty() ||
+             v.aiPresent || v.fxPresent || !v.hardpoints.empty();
+  if (!any && !m_profile.loaded) return;
+
+  if (!v.displayName.empty() || !v.entityClass.empty()) {
+    std::snprintf(buf, sizeof(buf), "sidecar: %s%s%s",
+                  v.displayName.empty() ? "(unnamed)" : v.displayName.c_str(),
+                  v.entityClass.empty() ? "" : "  · ",
+                  v.entityClass.c_str());
+    DrawText(buf, 10, yCursor, 14, {180, 220, 255, 240});
+    yCursor += 18;
+  }
+  if (v.fxPresent && v.smokeAtHPFrac > 0.0f) {
+    std::snprintf(buf, sizeof(buf), "smoke at hp ≤ %.0f%%",
+                  v.smokeAtHPFrac * 100.0f);
+    DrawText(buf, 10, yCursor, 13, {200, 200, 220, 220});
+    yCursor += 16;
+  }
+  if (v.aiPresent) {
+    std::snprintf(buf, sizeof(buf),
+                  "ai: detect=%.0f  attack=%.0f  evade=%.0f%%  retreat=%.0f%%",
+                  v.detectionRange, v.attackRange,
+                  v.evadeAtHPFrac * 100.0f, v.retreatAtHPFrac * 100.0f);
+    DrawText(buf, 10, yCursor, 13, {200, 200, 220, 220});
+    yCursor += 16;
+  }
+  if (!v.hardpoints.empty()) {
+    std::snprintf(buf, sizeof(buf), "hardpoints: %zu", v.hardpoints.size());
+    DrawText(buf, 10, yCursor, 13, {200, 200, 220, 220});
+    yCursor += 16;
+  }
+  if (!m_profile.warnings.empty()) {
+    std::snprintf(buf, sizeof(buf), "sidecar warnings: %zu",
+                  m_profile.warnings.size());
+    DrawText(buf, 10, yCursor, 13, {255, 180, 100, 240});
+    yCursor += 16;
+  }
 }
 
 // ====================================================================
@@ -502,11 +768,14 @@ void Inspector::renderHud() {
     DrawText(line1, (sw - w1) / 2, sh / 2 - 40, 36, {200, 220, 240, 220});
     DrawText(line2, (sw - w2) / 2, sh / 2 + 8, 16, {160, 180, 200, 220});
   } else {
-    // Tool HUD — same vertical region as before, just no longer the
-    // path / dirty / tool-cycle text since the status bar owns that.
-    int yCursor = 12;
+    // Tool HUD + sidecar HUD (F.1). Tool draws first, sidecar info
+    // appended below so the active tool's state stays at the top.
+    // y starts below the menu bar (kBarHeight + a few px).
+    int yCursor = MenuBar::kBarHeight + 8;
     if (m_currentTool < m_tools.size())
       m_tools[m_currentTool]->renderHud(*this, yCursor);
+    yCursor += 6;
+    renderProfileHud(yCursor);
   }
 
   // ----- Status bar (bottom strip) -----
@@ -529,11 +798,185 @@ void Inspector::renderHud() {
   }
   DrawText(left, 8, sh - barH + 6, 14, {210, 220, 235, 240});
 
-  const char *help =
-      "O: open  Ctrl+S: save  Ctrl+Shift+S: save-as  Ctrl+W: close  "
-      "TAB: tool  F: frame  Q: quit";
+  // Bottom-right hint — the discoverable surface is now the menu bar,
+  // so this is just a single nudge to Help → Controls for the full
+  // hotkey list.
+  const char *help = "Help → Controls for shortcuts";
   int hw = MeasureText(help, 12);
   DrawText(help, sw - hw - 8, sh - barH + 8, 12, {150, 170, 195, 220});
+}
+
+// ====================================================================
+// renderControlsOverlay — full keyboard + mouse cheat sheet, toggled
+// by Help → Controls (or Esc / click outside to dismiss). Wider
+// translucent panel with a scrollable content region — mouse wheel,
+// PageUp/PageDown, arrow keys, or drag the scroll thumb. Sections
+// are grouped (File / View / Mouse / Vertex tool / Profile tool) so
+// new shortcuts from F.2+ can be slotted in without rebuilding.
+// ====================================================================
+void Inspector::renderControlsOverlay() {
+  int sw = GetScreenWidth();
+  int sh = GetScreenHeight();
+  DrawRectangle(0, 0, sw, sh, {0, 0, 0, 160});
+
+  // Panel — generous width so descriptions fit without truncation.
+  // Height clamps to 80% of the screen so it stays usable on small
+  // windows.
+  int w = 760;
+  int h = std::min(560, sh - 80);
+  int x = (sw - w) / 2;
+  int y = (sh - h) / 2;
+  DrawRectangle(x, y, w, h, {32, 38, 50, 240});
+  DrawRectangleLines(x, y, w, h, {120, 150, 190, 255});
+
+  // Header (fixed; sits above the scroll region).
+  DrawText("Controls", x + 14, y + 12, 20, {220, 230, 250, 240});
+  DrawText("Esc to close", x + w - MeasureText("Esc to close", 12) - 14,
+           y + 18, 12, {160, 180, 200, 220});
+
+  // Content layout — single column with section headers. Each entry
+  // is either a section header (k empty, d is the header) or a row
+  // (k = shortcut, d = description). The renderer uses Scissor mode
+  // to clip content to the visible region so partial rows don't
+  // bleed outside the panel.
+  struct Row { const char *k; const char *d; };
+  static const Row rows[] = {
+      {"", "File"},
+      {"O",             "Open file"},
+      {"Ctrl+S",        "Save"},
+      {"Ctrl+Shift+S",  "Save As..."},
+      {"Ctrl+W",        "Close current file"},
+      {"Q",             "Quit"},
+      {"", "View"},
+      {"F",             "Frame view (reset orbit)"},
+      {"TAB",           "Cycle tools"},
+      {"", "Mouse"},
+      {"RMB drag",      "Orbit camera"},
+      {"Shift+RMB",     "Pan camera"},
+      {"Wheel",         "Zoom"},
+      {"", "Vertex tool"},
+      {"LMB",           "Pick + drag vertex"},
+      {"X / Y / Z",     "Axis-lock during drag"},
+      {"R",             "Reload from disk"},
+      {"", "Profile tool"},
+      {". / ,",         "Cycle focused field (next / prev)"},
+      {"↑ / ↓",         "Adjust focused field by ±0.05"},
+      {"Shift+↑ / ↓",   "Adjust focused field by ±1.0"},
+      {"", "Open file dialog"},
+      {"click / Enter", "Open hovered row"},
+      {"↑ / ↓",         "Move selection"},
+      {"Wheel",         "Scroll list"},
+      {"Esc",           "Cancel"},
+  };
+  const int nRows = static_cast<int>(sizeof(rows) / sizeof(rows[0]));
+  const int rowH = 22;
+  const int sectionGapTop = 8;      // extra gap above each section header
+  const int sectionGapBottom = 4;   // extra gap below each section header
+
+  // Compute total content height so the scroll range is right.
+  int totalH = 0;
+  for (int i = 0; i < nRows; ++i) {
+    if (rows[i].k[0] == '\0') totalH += sectionGapTop + rowH + sectionGapBottom;
+    else totalH += rowH;
+  }
+
+  // Scrollable viewport — between the header and the bottom hint.
+  const int headerH = 44;
+  const int hintH = 24;
+  int contentX = x + 12;
+  int contentY = y + headerH;
+  int contentW = w - 24 - 14; // leave room for scrollbar gutter
+  int contentH = h - headerH - hintH;
+
+  // Clamp scroll to valid range.
+  int maxScroll = std::max(0, totalH - contentH);
+  if (m_controlsScrollY < 0.0f) m_controlsScrollY = 0.0f;
+  if (m_controlsScrollY > maxScroll) m_controlsScrollY = static_cast<float>(maxScroll);
+
+  // Wheel + key scrolling. Only honour input while the overlay is
+  // up; the modal-priority gate above already prevents game input
+  // from running while this is open.
+  float wheel = GetMouseWheelMove();
+  if (wheel != 0.0f) m_controlsScrollY -= wheel * 30.0f;
+  if (IsKeyPressed(KEY_PAGE_DOWN)) m_controlsScrollY += contentH * 0.8f;
+  if (IsKeyPressed(KEY_PAGE_UP))   m_controlsScrollY -= contentH * 0.8f;
+  if (IsKeyDown(KEY_DOWN))         m_controlsScrollY += 2.0f;
+  if (IsKeyDown(KEY_UP))           m_controlsScrollY -= 2.0f;
+  if (m_controlsScrollY < 0.0f) m_controlsScrollY = 0.0f;
+  if (m_controlsScrollY > maxScroll) m_controlsScrollY = static_cast<float>(maxScroll);
+
+  // Draw rows inside a scissor rect so the scrolled-out portion
+  // doesn't leak past the panel.
+  BeginScissorMode(contentX, contentY, contentW, contentH);
+  int yCursor = contentY - static_cast<int>(m_controlsScrollY);
+  for (int i = 0; i < nRows; ++i) {
+    if (rows[i].k[0] == '\0') {
+      yCursor += sectionGapTop;
+      DrawText(rows[i].d, contentX, yCursor, 15, {180, 220, 255, 240});
+      // thin underline so the section reads at a glance
+      DrawRectangle(contentX, yCursor + 18, contentW - 8, 1,
+                    {80, 110, 150, 200});
+      yCursor += rowH + sectionGapBottom;
+    } else {
+      DrawText(rows[i].k, contentX + 16, yCursor, 14, {255, 220, 120, 240});
+      DrawText(rows[i].d, contentX + 180, yCursor, 14, {220, 230, 250, 230});
+      yCursor += rowH;
+    }
+  }
+  EndScissorMode();
+
+  // Scrollbar — only drawn if content is actually larger than the
+  // viewport. Background track + thumb whose size + position reflect
+  // the scroll fraction.
+  if (totalH > contentH) {
+    int trackX = x + w - 16;
+    int trackY = contentY;
+    int trackW = 6;
+    int trackH = contentH;
+    DrawRectangle(trackX, trackY, trackW, trackH, {18, 22, 30, 200});
+    float frac = static_cast<float>(contentH) / static_cast<float>(totalH);
+    int thumbH = std::max(20, static_cast<int>(trackH * frac));
+    int thumbRange = trackH - thumbH;
+    int thumbY = trackY + (maxScroll > 0
+                              ? static_cast<int>(thumbRange *
+                                                 (m_controlsScrollY /
+                                                  static_cast<float>(maxScroll)))
+                              : 0);
+    DrawRectangle(trackX, thumbY, trackW, thumbH, {120, 150, 190, 240});
+
+    // Drag the thumb to scroll. Simple: while LMB is held on the
+    // thumb track region, map cursor y → scroll.
+    Vector2 mp = GetMousePosition();
+    Rectangle trackRect{static_cast<float>(trackX),
+                        static_cast<float>(trackY),
+                        static_cast<float>(trackW),
+                        static_cast<float>(trackH)};
+    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) &&
+        CheckCollisionPointRec(mp, trackRect)) {
+      float t = (mp.y - trackY - thumbH * 0.5f) / std::max(1.0f, static_cast<float>(thumbRange));
+      if (t < 0.0f) t = 0.0f;
+      if (t > 1.0f) t = 1.0f;
+      m_controlsScrollY = t * maxScroll;
+    }
+  }
+
+  // Bottom hint — scroll affordance + dismissal.
+  const char *hint =
+      "wheel / PgUp / PgDn / arrows: scroll  |  Esc or click outside: close";
+  DrawText(hint, x + 14, y + h - hintH + 6, 12, {180, 200, 220, 220});
+
+  // Dismiss: Esc, OR click outside the panel. Skip click-dismiss on
+  // the frame the overlay was just opened — that LMB-press is the
+  // menu click that opened us, and it lands outside the panel by
+  // definition (on the Help menu strip).
+  if (IsKeyPressed(KEY_ESCAPE)) m_controlsOverlay = false;
+  if (!m_controlsJustOpened && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+    Vector2 mp = GetMousePosition();
+    Rectangle panel{static_cast<float>(x), static_cast<float>(y),
+                    static_cast<float>(w), static_cast<float>(h)};
+    if (!CheckCollisionPointRec(mp, panel)) m_controlsOverlay = false;
+  }
+  m_controlsJustOpened = false;
 }
 
 // ====================================================================
@@ -591,7 +1034,8 @@ void Inspector::renderOpenModal() {
              x + 14, listY, 13, {180, 180, 180, 220});
   }
 
-  const char *hint = "Enter: open  |  Esc: cancel  |  ↑/↓: navigate";
+  const char *hint =
+      "click or Enter: open  |  Esc: cancel  |  ↑/↓ + wheel: navigate";
   DrawText(hint, x + 14, y + h - 22, 12, {180, 200, 220, 220});
 }
 

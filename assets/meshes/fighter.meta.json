@@ -1,0 +1,64 @@
+{
+  "identity": {
+    "class": "ship-flyer",
+    "displayName": "Fighter",
+    "faction": "enemy"
+  },
+  "hull": {
+    "hp": 160,
+    "collisionRadius": 1.6,
+    "mass": 1.0,
+    "wreckage": { "metal": 30 }
+  },
+  "shields": {
+    "model": "omni",
+    "hp": 40,
+    "regen": 20,
+    "delay": 4.0
+  },
+  "weapons": [
+    {
+      "name": "main-cannon",
+      "type": "cannon",
+      "fireRate": 0.20,
+      "damage": 5,
+      "projSpeed": 90,
+      "range": 80
+    }
+  ],
+  "hardpoints": [
+    {
+      "name": "nose",
+      "pos": [0, 0, 1.2],
+      "dir": [0, 0, 1],
+      "weapon": "main-cannon",
+      "fireArcDeg": 6
+    }
+  ],
+  "ai": {
+    "profile": "pursue-attack-evade",
+    "detectionRange": 350,
+    "attackRange": 180,
+    "evadeAtHPFrac": 0.25,
+    "retreatAtHPFrac": 0.40,
+    "targetPref": "player"
+  },
+  "infection": {
+    "canBeInfected": true,
+    "rebootDuration": 3.0,
+    "speedPenaltyAfter": 0.80
+  },
+  "fx": {
+    "smokeAtHPFrac": 0.50,
+    "engineEmitters": [
+      { "name": "main", "pos": [0, 0, -1.2], "dir": [0, 0, -1] }
+    ],
+    "deathExplosionScale": 1.0
+  },
+  "resources": {
+    "yieldOnDeath": { "metal": 0, "bio": 0 }
+  },
+  "forward": [0, 0, 1],
+  "scale": 1.0,
+  "pivot": [0, 0, 0]
+}

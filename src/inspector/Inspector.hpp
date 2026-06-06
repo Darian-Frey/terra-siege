@@ -1,8 +1,10 @@
 #pragma once
 
 #include "InspectorConfig.hpp"
+#include "MenuBar.hpp"
 #include "Tool.hpp"
 #include "mesh/ObjLoader.hpp"
+#include "mesh/SidecarProfile.hpp"
 #include "raylib.h"
 
 #include <filesystem>
@@ -45,6 +47,31 @@ public:
   float boundsRadius() const { return m_boundsR; }
   float vertexSphereRadius() const { return m_vertSphereR; }
   bool hasMesh() const { return m_hasMesh; }
+
+  // Entity-sidecar profile (Inspector roadmap F.1). Populated by
+  // load() — empty defaults when no sidecar exists. F.* tools edit
+  // through the typed view; save flushes through saveProfile().
+  EntityProfile &profile() { return m_profile; }
+  const EntityProfile &profile() const { return m_profile; }
+
+  // ---- Menu-bar action surface ----
+  // Public so MenuBar callbacks can drive the inspector without
+  // friending into the private input handlers. Each action mirrors
+  // the equivalent keyboard shortcut.
+  void actionOpenDialog();           // O
+  void actionOpenPath(const std::filesystem::path &p); // recents list
+  bool actionSave();                 // Ctrl+S — returns true on success
+  void actionSaveAsDialog();         // Ctrl+Shift+S
+  void actionClose();                // Ctrl+W (dirty-guarded)
+  void actionQuit();                 // Q (dirty-guarded)
+  void actionFrameView();            // F
+  void actionSwitchTool(size_t idx); // Tool menu picks
+  void actionToggleControlsHelp();   // Help → Controls
+
+  size_t currentToolIndex() const { return m_currentTool; }
+  size_t toolCount() const { return m_tools.size(); }
+  const char *toolNameAt(size_t i) const;
+  const InspectorConfig &cfg() const { return m_cfg; }
 
   // Called by tools after they mutate vertex data; re-uploads the
   // GPU model so the next frame renders the edit.
@@ -92,6 +119,18 @@ private:
   void renderSaveAsModal();
   void renderConfirmUnsavedModal();
 
+  // Read-only sidecar viewer overlay (F.1) — forward arrow,
+  // hardpoint icons, fire arcs, AI rings. Drawn inside Mode3D after
+  // the mesh + axes so it composites over everything else but stays
+  // independent from whichever Tool is active.
+  void renderProfileOverlay() const;
+  // HUD strip showing identity + smoke threshold + warning count.
+  void renderProfileHud(int &yCursor) const;
+
+  // Help → Controls overlay (centred modal-ish panel listing every
+  // keyboard shortcut + mouse gesture; toggled via the Help menu).
+  void renderControlsOverlay();
+
   // Discovery: assets/meshes/ candidate, falls back to CWD.
   std::filesystem::path defaultMeshDirectory() const;
 
@@ -132,8 +171,27 @@ private:
   InspectorConfig m_cfg;
   std::filesystem::path m_cfgPath;
 
+  // Sidecar profile for the current OBJ (F.1). Loaded by load(),
+  // cleared by closeFile(); always present in default state when no
+  // file is open (so tool accessors never null-deref).
+  EntityProfile m_profile;
+
+  // Top-of-screen menu bar — discoverable surface for every action
+  // that's also bound to a keyboard shortcut. Built once at ctor.
+  MenuBar m_menubar;
+
   // Requested-quit flag, set after the modal flow approves it.
   bool m_shouldQuit = false;
+
+  // Help → Controls overlay (toggled from the menu bar). Scroll
+  // offset is in pixels so wheel/drag can move at sub-row precision.
+  // m_controlsJustOpened suppresses the click-outside-to-dismiss
+  // logic for one frame — without it, the same LMB-pressed that
+  // fired the menu action would also dismiss the overlay (since the
+  // menu click lands outside the not-yet-drawn panel).
+  bool m_controlsOverlay = false;
+  bool m_controlsJustOpened = false;
+  float m_controlsScrollY = 0.0f;
 };
 
 } // namespace tsmesh

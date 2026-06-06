@@ -45,6 +45,21 @@ if(TERRA_SIEGE_BUILD_TESTS)
     FetchContent_MakeAvailable(doctest)
 endif()
 
+# Fetch picojson for the entity-sidecar (inspector F.1). Header-only,
+# single header (~1100 lines), no build of its own — same minimal-dep
+# pattern as doctest. Used by the mesh static lib so both the game-
+# side EntityProfileRegistry (later) and the inspector share one
+# parser/writer.
+FetchContent_Declare(
+    picojson
+    GIT_REPOSITORY https://github.com/kazuho/picojson.git
+    GIT_TAG        v1.3.0
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(picojson)
+add_library(picojson INTERFACE)
+target_include_directories(picojson INTERFACE ${picojson_SOURCE_DIR})
+
 # ---------------------------------------------------------------
 # Shared mesh subsystem — used by the game, the inspector binary,
 # and the test executables. Keeping this as a single static lib
@@ -57,9 +72,11 @@ add_library(terra_siege_mesh STATIC
     src/mesh/MeshRegistry.cpp
     src/mesh/MeshRegistry.hpp
     src/mesh/Palette.hpp
+    src/mesh/SidecarProfile.cpp
+    src/mesh/SidecarProfile.hpp
 )
 target_include_directories(terra_siege_mesh PUBLIC src)
-target_link_libraries(terra_siege_mesh PUBLIC raylib)
+target_link_libraries(terra_siege_mesh PUBLIC raylib picojson)
 
 # ---------------------------------------------------------------
 # Game source files (no mesh sources — those come from the lib;
@@ -187,6 +204,10 @@ add_executable(terra-siege-inspect
     src/inspector/Inspector.hpp
     src/inspector/InspectorConfig.cpp
     src/inspector/InspectorConfig.hpp
+    src/inspector/MenuBar.cpp
+    src/inspector/MenuBar.hpp
+    src/inspector/ProfileTool.cpp
+    src/inspector/ProfileTool.hpp
     src/inspector/Tool.hpp
     src/inspector/VertexTool.cpp
     src/inspector/VertexTool.hpp
@@ -220,6 +241,12 @@ if(TERRA_SIEGE_BUILD_TESTS)
     add_executable(test_obj_save tests/test_obj_save.cpp)
     target_link_libraries(test_obj_save PRIVATE doctest terra_siege_mesh)
     add_test(NAME obj_save COMMAND test_obj_save)
+
+    # Sidecar profile load/save (F.1) — defaults, partial files,
+    # unknown-key preservation, forward/scale/pivot roundtrip.
+    add_executable(test_sidecar_profile tests/test_sidecar_profile.cpp)
+    target_link_libraries(test_sidecar_profile PRIVATE doctest terra_siege_mesh)
+    add_test(NAME sidecar_profile COMMAND test_sidecar_profile)
 endif()
 
 message(STATUS "terra-siege ${PROJECT_VERSION} | Build: ${CMAKE_BUILD_TYPE} | C++${CMAKE_CXX_STANDARD}")
