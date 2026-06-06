@@ -209,24 +209,40 @@ Entity *EntityManager::spawnEnemy(EntityType type, Vector3 pos) {
     // starts at FIRST_SHOT_DELAY so a freshly-dropped drone doesn't
     // instantly burst the player. stateTimer drives the orbital-drift
     // bearing pick; first pick happens immediately on the first tick.
-    e->hullMax = Config::HULL_DRONE;
+    if (prof && prof->view.hullPresent) {
+      e->hullMax = prof->view.hullHP;
+      e->radius = prof->view.hullCollisionRadius;
+    } else {
+      e->hullMax = Config::HULL_DRONE;
+      e->radius = Config::HIT_RADIUS_DRONE;
+    }
     e->hullHP = e->hullMax;
     e->shieldMax = 0.0f;
     e->shieldHP = 0.0f;
-    e->radius = Config::HIT_RADIUS_DRONE;
     e->fireTimer = Config::DRONE_FIRST_SHOT_DELAY;
     e->stateTimer = 0.0f; // forces immediate bearing pick on first update
     break;
   case EntityType::Bomber:
     // Heavy bruiser — high HP, has a shield with the slowest recharge
     // delay so sustained pressure keeps the shield down.
-    e->hullMax = Config::HULL_BOMBER;
+    if (prof && prof->view.hullPresent) {
+      e->hullMax = prof->view.hullHP;
+      e->radius = prof->view.hullCollisionRadius;
+    } else {
+      e->hullMax = Config::HULL_BOMBER;
+      e->radius = Config::HIT_RADIUS_BOMBER;
+    }
+    if (prof && prof->view.shieldsPresent) {
+      e->shieldMax = prof->view.shieldHP;
+      e->shieldRate = prof->view.shieldRegen;
+      e->shieldDelay = prof->view.shieldDelay;
+    } else {
+      e->shieldMax = Config::SHIELD_BOMBER;
+      e->shieldRate = Config::SHIELD_RATE_BOMBER;
+      e->shieldDelay = Config::SHIELD_DELAY_BOMBER;
+    }
     e->hullHP = e->hullMax;
-    e->shieldMax = Config::SHIELD_BOMBER;
     e->shieldHP = e->shieldMax;
-    e->shieldDelay = Config::SHIELD_DELAY_BOMBER;
-    e->shieldRate = Config::SHIELD_RATE_BOMBER;
-    e->radius = Config::HIT_RADIUS_BOMBER;
     e->canBeInfected = true; // Slice B.4
     break;
   case EntityType::Seeder:
@@ -234,11 +250,16 @@ Entity *EntityManager::spawnEnemy(EntityType type, Vector3 pos) {
     // re-purposed as the deploy cooldown — first drop after the
     // grace delay so the seeder doesn't dump a drone the instant it
     // pops in next to the player.
-    e->hullMax = Config::HULL_SEEDER;
+    if (prof && prof->view.hullPresent) {
+      e->hullMax = prof->view.hullHP;
+      e->radius = prof->view.hullCollisionRadius;
+    } else {
+      e->hullMax = Config::HULL_SEEDER;
+      e->radius = Config::HIT_RADIUS_SEEDER;
+    }
     e->hullHP = e->hullMax;
     e->shieldMax = 0.0f;
     e->shieldHP = 0.0f;
-    e->radius = Config::HIT_RADIUS_SEEDER;
     e->fireTimer = Config::SEEDER_FIRST_DROP_DELAY;
     break;
   case EntityType::Carrier:
@@ -246,18 +267,40 @@ Entity *EntityManager::spawnEnemy(EntityType type, Vector3 pos) {
     // The scalar shieldHP stays 0 (the directional-shield path is
     // triggered by sectorMax[i] > 0). shieldDelay + shieldRate are
     // shared by all sectors via the per-tick recharge loop.
-    e->hullMax = Config::HULL_CARRIER;
+    //
+    // Profile.shieldHP for a "4-sector" model is interpreted as the
+    // PER-SECTOR HP (matches the sidecar field's natural meaning;
+    // the Config equivalent is SHIELD_CARRIER_PER_SECTOR). Total
+    // shield = sector_hp × 4.
+    if (prof && prof->view.hullPresent) {
+      e->hullMax = prof->view.hullHP;
+      e->radius = prof->view.hullCollisionRadius;
+    } else {
+      e->hullMax = Config::HULL_CARRIER;
+      e->radius = Config::HIT_RADIUS_CARRIER;
+    }
+    {
+      float sectorHP, sectorRate, sectorDelay;
+      if (prof && prof->view.shieldsPresent) {
+        sectorHP = prof->view.shieldHP;
+        sectorRate = prof->view.shieldRegen;
+        sectorDelay = prof->view.shieldDelay;
+      } else {
+        sectorHP = Config::SHIELD_CARRIER_PER_SECTOR;
+        sectorRate = Config::SHIELD_RATE_CARRIER;
+        sectorDelay = Config::SHIELD_DELAY_CARRIER;
+      }
+      e->shieldRate = sectorRate;
+      e->shieldDelay = sectorDelay;
+      for (int i = 0; i < 4; ++i) {
+        e->sectorMax[i] = sectorHP;
+        e->sectorHP[i] = sectorHP;
+        e->sectorTimer[i] = 0.0f;
+      }
+    }
     e->hullHP = e->hullMax;
     e->shieldMax = 0.0f;
     e->shieldHP = 0.0f;
-    e->shieldDelay = Config::SHIELD_DELAY_CARRIER;
-    e->shieldRate = Config::SHIELD_RATE_CARRIER;
-    for (int i = 0; i < 4; ++i) {
-      e->sectorMax[i] = Config::SHIELD_CARRIER_PER_SECTOR;
-      e->sectorHP[i] = e->sectorMax[i];
-      e->sectorTimer[i] = 0.0f;
-    }
-    e->radius = Config::HIT_RADIUS_CARRIER;
     // fireTimer doubles as drone-deploy cooldown (same as Seeder).
     e->fireTimer = Config::CARRIER_FIRST_DROP_DELAY;
     break;
@@ -265,34 +308,54 @@ Entity *EntityManager::spawnEnemy(EntityType type, Vector3 pos) {
     // Stationary ground threat. yaw is the barrel direction (starts
     // pointing forward by convention; updateGroundTurret rotates it
     // toward the player). pos.y is anchored to terrain at spawn.
-    e->hullMax = Config::HULL_TURRET;
+    if (prof && prof->view.hullPresent) {
+      e->hullMax = prof->view.hullHP;
+      e->radius = prof->view.hullCollisionRadius;
+    } else {
+      e->hullMax = Config::HULL_TURRET;
+      e->radius = Config::HIT_RADIUS_TURRET;
+    }
     e->hullHP = e->hullMax;
     e->shieldMax = 0.0f;
     e->shieldHP = 0.0f;
-    e->radius = Config::HIT_RADIUS_TURRET;
     e->aiState = AIState::Idle; // turret has no pursue/evade — just track+fire
     break;
   case EntityType::Collector:
     // Ground vehicle that wanders between waypoints. fireTimer is
     // re-purposed as the waypoint-pick cooldown. stateTimer holds
     // the current yaw target (faked: encoded in vel direction).
-    e->hullMax = Config::COLLECTOR_HULL;
+    if (prof && prof->view.hullPresent) {
+      e->hullMax = prof->view.hullHP;
+      e->radius = prof->view.hullCollisionRadius;
+    } else {
+      e->hullMax = Config::COLLECTOR_HULL;
+      e->radius = Config::HIT_RADIUS_COLLECTOR;
+    }
     e->hullHP = e->hullMax;
-    e->radius = Config::HIT_RADIUS_COLLECTOR;
     // Initial heading: random-ish from spawn seed; updateCollector
     // pivots toward fresh waypoints as it walks.
     e->yaw = static_cast<float>((e->id * 1103515245u) % 6283) / 1000.0f;
     e->fireTimer = 0.0f;
     break;
   case EntityType::RepairStation:
-    e->hullMax = Config::REPAIR_STATION_HULL;
+    if (prof && prof->view.hullPresent) {
+      e->hullMax = prof->view.hullHP;
+      e->radius = prof->view.hullCollisionRadius;
+    } else {
+      e->hullMax = Config::REPAIR_STATION_HULL;
+      e->radius = Config::HIT_RADIUS_REPAIR;
+    }
     e->hullHP = e->hullMax;
-    e->radius = Config::HIT_RADIUS_REPAIR;
     break;
   case EntityType::RadarBooster:
-    e->hullMax = Config::RADAR_BOOSTER_HULL;
+    if (prof && prof->view.hullPresent) {
+      e->hullMax = prof->view.hullHP;
+      e->radius = prof->view.hullCollisionRadius;
+    } else {
+      e->hullMax = Config::RADAR_BOOSTER_HULL;
+      e->radius = Config::HIT_RADIUS_BOOSTER;
+    }
     e->hullHP = e->hullMax;
-    e->radius = Config::HIT_RADIUS_BOOSTER;
     // yaw is animated by updateRadarBooster (rotating dish visual).
     e->yaw = 0.0f;
     break;
@@ -300,9 +363,14 @@ Entity *EntityManager::spawnEnemy(EntityType type, Vector3 pos) {
     // Stationary delivery destination. High HP — losing this means
     // losing the collector economy, so it should take real effort
     // to destroy. yaw animates a landing-light beacon at render time.
-    e->hullMax = Config::BASE_HULL;
+    if (prof && prof->view.hullPresent) {
+      e->hullMax = prof->view.hullHP;
+      e->radius = prof->view.hullCollisionRadius;
+    } else {
+      e->hullMax = Config::BASE_HULL;
+      e->radius = Config::HIT_RADIUS_BASE;
+    }
     e->hullHP = e->hullMax;
-    e->radius = Config::HIT_RADIUS_BASE;
     e->yaw = 0.0f;
     break;
   default:

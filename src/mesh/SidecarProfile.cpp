@@ -147,6 +147,37 @@ void extractView(const picojson::object &root, ProfileView &v,
     extractFloat(o, "smokeAtHPFrac", v.smokeAtHPFrac, warnings, "fx");
   }
 
+  if (auto it = root.find("weapons");
+      it != root.end() && it->second.is<picojson::array>()) {
+    const auto &arr = it->second.get<picojson::array>();
+    v.weapons.reserve(arr.size());
+    for (size_t i = 0; i < arr.size(); ++i) {
+      if (!arr[i].is<picojson::object>()) {
+        warnings.emplace_back("weapons[" + std::to_string(i) +
+                              "]: expected object");
+        continue;
+      }
+      const auto &o = arr[i].get<picojson::object>();
+      std::string p = "weapons[" + std::to_string(i) + "]";
+      ProfileView::Weapon w;
+      extractString(o, "name", w.name, warnings, p.c_str());
+      extractString(o, "type", w.type, warnings, p.c_str());
+      extractFloat(o, "fireRate", w.fireRate, warnings, p.c_str());
+      extractFloat(o, "damage", w.damage, warnings, p.c_str());
+      extractFloat(o, "projSpeed", w.projSpeed, warnings, p.c_str());
+      extractFloat(o, "range", w.range, warnings, p.c_str());
+      // ammo is an int but stored as a JSON number — accept either
+      // double or int64 by going through the double extractor and
+      // truncating.
+      if (auto ait = o.find("ammo");
+          ait != o.end() && ait->second.is<double>()) {
+        w.ammo = static_cast<int>(ait->second.get<double>());
+      }
+      extractString(o, "cooldownGroup", w.cooldownGroup, warnings, p.c_str());
+      v.weapons.push_back(std::move(w));
+    }
+  }
+
   if (auto it = root.find("hardpoints");
       it != root.end() && it->second.is<picojson::array>()) {
     const auto &arr = it->second.get<picojson::array>();
@@ -247,6 +278,51 @@ void mergeTypedEdits(picojson::value &root, const ProfileView &v) {
     s["hp"] = picojson::value(static_cast<double>(v.shieldHP));
     s["regen"] = picojson::value(static_cast<double>(v.shieldRegen));
     s["delay"] = picojson::value(static_cast<double>(v.shieldDelay));
+  }
+
+  // weapons — full overwrite of the array when the tool has anything
+  // to say. The "anything to say" test is the conservative one:
+  // either the in-memory list is non-empty, OR a weapons key already
+  // existed (so we don't strip it on a no-op save).
+  if (!v.weapons.empty() || obj.find("weapons") != obj.end()) {
+    picojson::array arr;
+    arr.reserve(v.weapons.size());
+    for (const ProfileView::Weapon &w : v.weapons) {
+      picojson::object wo;
+      wo["name"] = picojson::value(w.name);
+      if (!w.type.empty()) wo["type"] = picojson::value(w.type);
+      wo["fireRate"] = picojson::value(static_cast<double>(w.fireRate));
+      wo["damage"] = picojson::value(static_cast<double>(w.damage));
+      wo["projSpeed"] = picojson::value(static_cast<double>(w.projSpeed));
+      wo["range"] = picojson::value(static_cast<double>(w.range));
+      if (w.ammo >= 0)
+        wo["ammo"] = picojson::value(static_cast<double>(w.ammo));
+      if (!w.cooldownGroup.empty())
+        wo["cooldownGroup"] = picojson::value(w.cooldownGroup);
+      arr.emplace_back(wo);
+    }
+    obj["weapons"] = picojson::value(arr);
+  }
+
+  // hardpoints — same rule. Each hardpoint is a small flat object;
+  // we always write pos / dir / fireArcDeg numerically and only emit
+  // name + weapon when non-empty (so freshly-added hardpoints round
+  // trip without empty-string clutter).
+  if (!v.hardpoints.empty() || obj.find("hardpoints") != obj.end()) {
+    picojson::array arr;
+    arr.reserve(v.hardpoints.size());
+    for (const ProfileView::Hardpoint &hp : v.hardpoints) {
+      picojson::object ho;
+      if (!hp.name.empty()) ho["name"] = picojson::value(hp.name);
+      ho["pos"] = vec3Value(hp.pos);
+      ho["dir"] = vec3Value(hp.dir);
+      ho["fireArcDeg"] =
+          picojson::value(static_cast<double>(hp.fireArcDeg));
+      if (!hp.weapon.empty())
+        ho["weapon"] = picojson::value(hp.weapon);
+      arr.emplace_back(ho);
+    }
+    obj["hardpoints"] = picojson::value(arr);
   }
 }
 

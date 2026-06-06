@@ -84,6 +84,23 @@ struct ProfileView {
   bool fxPresent = false;
   float smokeAtHPFrac = 0.0f;
 
+  // ---- Weapons ----
+  // Named stat blocks referenced by hardpoint.weapon. F.3 edits the
+  // list directly; the runtime weapon system doesn't read these yet
+  // (Slice B weapons still come from Config::*) — wiring lives behind
+  // a future migration, same as F.2's hull/shield port.
+  struct Weapon {
+    std::string name;       // primary key — hardpoint.weapon references this
+    std::string type;       // "cannon" / "plasma" / "beam" / "missile" / ...
+    float fireRate = 0.20f; // seconds between shots
+    float damage = 5.0f;
+    float projSpeed = 90.0f;
+    float range = 80.0f;
+    int   ammo = -1;        // -1 = unlimited
+    std::string cooldownGroup; // optional — empty = own cooldown
+  };
+  std::vector<Weapon> weapons;
+
   // ---- Hardpoints ----
   struct Hardpoint {
     std::string name;

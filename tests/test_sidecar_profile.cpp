@@ -256,6 +256,90 @@ TEST_CASE("save with hullsPresent=false leaves no hull block") {
   std::filesystem::remove(path);
 }
 
+TEST_CASE("F.3 weapons round-trip through load + save") {
+  auto path = writeTemp(R"({
+    "weapons": [
+      { "name": "main-cannon", "type": "cannon",
+        "fireRate": 0.20, "damage": 8, "projSpeed": 200, "range": 200 },
+      { "name": "missile-pod", "type": "missile",
+        "fireRate": 1.50, "damage": 60, "projSpeed": 75, "range": 600,
+        "ammo": 12 }
+    ]
+  })",
+                        ".meta.json");
+  EntityProfile prof;
+  REQUIRE(loadProfile(path, prof));
+  REQUIRE(prof.view.weapons.size() == 2);
+  CHECK(prof.view.weapons[0].name == "main-cannon");
+  CHECK(prof.view.weapons[0].fireRate == doctest::Approx(0.20f));
+  CHECK(prof.view.weapons[1].ammo == 12);
+
+  // Edit + save (Weapons-tool path: tweak fireRate, add a new one)
+  prof.view.weapons[0].damage = 12.0f;
+  tsmesh::ProfileView::Weapon w3;
+  w3.name = "shield-laser";
+  w3.type = "beam";
+  w3.fireRate = 0.0f;
+  w3.damage = 60.0f;
+  w3.projSpeed = 0.0f;
+  w3.range = 160.0f;
+  prof.view.weapons.push_back(w3);
+  REQUIRE(saveProfile(path, prof));
+
+  EntityProfile reread;
+  REQUIRE(loadProfile(path, reread));
+  REQUIRE(reread.view.weapons.size() == 3);
+  CHECK(reread.view.weapons[0].damage == doctest::Approx(12.0f));
+  CHECK(reread.view.weapons[2].name == "shield-laser");
+  CHECK(reread.view.weapons[2].type == "beam");
+  std::filesystem::remove(path);
+}
+
+TEST_CASE("F.3 hardpoints add + delete round-trip") {
+  auto path = writeTemp(R"({
+    "hardpoints": [
+      { "name": "nose", "pos": [0, 0, 1.2], "dir": [0, 0, 1],
+        "weapon": "main-cannon", "fireArcDeg": 6 }
+    ],
+    "ai": { "detectionRange": 350 }
+  })",
+                        ".meta.json");
+  EntityProfile prof;
+  REQUIRE(loadProfile(path, prof));
+  REQUIRE(prof.view.hardpoints.size() == 1);
+
+  // Hardpoints-tool "add" — push a new mount.
+  tsmesh::ProfileView::Hardpoint hp;
+  hp.name = "port-wing";
+  hp.pos = {-0.8f, 0.0f, 0.4f};
+  hp.dir = {0.0f, 0.0f, 1.0f};
+  hp.fireArcDeg = 12.0f;
+  hp.weapon = "main-cannon";
+  prof.view.hardpoints.push_back(hp);
+  REQUIRE(saveProfile(path, prof));
+
+  EntityProfile mid;
+  REQUIRE(loadProfile(path, mid));
+  REQUIRE(mid.view.hardpoints.size() == 2);
+  CHECK(mid.view.hardpoints[1].name == "port-wing");
+  CHECK(mid.view.hardpoints[1].fireArcDeg == doctest::Approx(12.0f));
+
+  // Hardpoints-tool "delete" — remove the first one.
+  mid.view.hardpoints.erase(mid.view.hardpoints.begin());
+  REQUIRE(saveProfile(path, mid));
+
+  EntityProfile reread;
+  REQUIRE(loadProfile(path, reread));
+  REQUIRE(reread.view.hardpoints.size() == 1);
+  CHECK(reread.view.hardpoints[0].name == "port-wing");
+
+  // The ai block must STILL survive both round-trips even though F.3
+  // doesn't edit it — the unknown-key preservation test extended.
+  std::string raw = readAll(path);
+  CHECK(raw.find("detectionRange") != std::string::npos);
+  std::filesystem::remove(path);
+}
+
 TEST_CASE("wrong-type fields warn but don't fail the load") {
   auto path = writeTemp(R"({
     "scale": "not a number",

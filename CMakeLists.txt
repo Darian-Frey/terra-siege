@@ -206,6 +206,8 @@ add_executable(terra-siege-inspect
     src/inspector/Inspector.hpp
     src/inspector/InspectorConfig.cpp
     src/inspector/InspectorConfig.hpp
+    src/inspector/HardpointsTool.cpp
+    src/inspector/HardpointsTool.hpp
     src/inspector/HullTool.cpp
     src/inspector/HullTool.hpp
     src/inspector/IdentityTool.cpp
@@ -219,6 +221,8 @@ add_executable(terra-siege-inspect
     src/inspector/Tool.hpp
     src/inspector/VertexTool.cpp
     src/inspector/VertexTool.hpp
+    src/inspector/WeaponsTool.cpp
+    src/inspector/WeaponsTool.hpp
 )
 target_include_directories(terra-siege-inspect PRIVATE src)
 target_link_libraries(terra-siege-inspect PRIVATE terra_siege_mesh)
