@@ -1,6 +1,7 @@
 #include "EntityManager.hpp"
 #include "Player.hpp"
 #include "core/Particles.hpp"
+#include "mesh/EntityProfileRegistry.hpp"
 #include "mesh/MeshRegistry.hpp"
 #include "raymath.h"
 #include "rlgl.h"
@@ -171,15 +172,35 @@ Entity *EntityManager::spawnEnemy(EntityType type, Vector3 pos) {
   e->spawnPos = pos;
   e->aiState = AIState::Pursue;
 
+  // F.2 — sidecar profile takes precedence when present. `prof` is
+  // resolved per-spawn (cheap pointer lookup) so live edits via the
+  // inspector pick up on the next spawn without a restart.
+  const tsmesh::EntityProfile *prof =
+      m_profileRegistry ? m_profileRegistry->get(type) : nullptr;
+
   switch (type) {
   case EntityType::Fighter:
-    e->hullMax = Config::HULL_FIGHTER;
+    // Fighter is the canonical F.2 migration target — values read
+    // from fighter.meta.json when the registry is wired, else fall
+    // back to the same TTK-derived Config defaults as before.
+    if (prof && prof->view.hullPresent) {
+      e->hullMax = prof->view.hullHP;
+      e->radius = prof->view.hullCollisionRadius;
+    } else {
+      e->hullMax = Config::HULL_FIGHTER;
+      e->radius = Config::HIT_RADIUS_FIGHTER;
+    }
+    if (prof && prof->view.shieldsPresent) {
+      e->shieldMax = prof->view.shieldHP;
+      e->shieldRate = prof->view.shieldRegen;
+      e->shieldDelay = prof->view.shieldDelay;
+    } else {
+      e->shieldMax = Config::SHIELD_FIGHTER;
+      e->shieldRate = Config::SHIELD_RATE_FIGHTER;
+      e->shieldDelay = Config::SHIELD_DELAY_FIGHTER;
+    }
     e->hullHP = e->hullMax;
-    e->shieldMax = Config::SHIELD_FIGHTER;
     e->shieldHP = e->shieldMax;
-    e->shieldDelay = Config::SHIELD_DELAY_FIGHTER;
-    e->shieldRate = Config::SHIELD_RATE_FIGHTER;
-    e->radius = Config::HIT_RADIUS_FIGHTER;
     e->canBeInfected = true; // Slice B.4
     break;
   case EntityType::Drone:

@@ -166,6 +166,96 @@ TEST_CASE("save on missing file creates a minimal valid sidecar") {
   std::filesystem::remove(path);
 }
 
+TEST_CASE("hull section parses + present flag flips on load") {
+  auto path = writeTemp(R"({
+    "hull": { "hp": 160, "collisionRadius": 1.6, "mass": 1.0,
+              "wreckage": { "metal": 30, "bio": 0 } }
+  })",
+                        ".meta.json");
+  EntityProfile prof;
+  REQUIRE(loadProfile(path, prof));
+  CHECK(prof.view.hullPresent);
+  CHECK(prof.view.hullHP == doctest::Approx(160.0f));
+  CHECK(prof.view.hullCollisionRadius == doctest::Approx(1.6f));
+  CHECK(prof.view.hullMass == doctest::Approx(1.0f));
+  CHECK(prof.view.hullWreckageMetal == doctest::Approx(30.0f));
+  CHECK(prof.view.hullWreckageBio == doctest::Approx(0.0f));
+  std::filesystem::remove(path);
+}
+
+TEST_CASE("shields section parses (omni + 4-sector)") {
+  auto pathA = writeTemp(R"({
+    "shields": { "model": "omni", "hp": 40, "regen": 20, "delay": 4.0 }
+  })",
+                         ".meta.json");
+  EntityProfile a;
+  REQUIRE(loadProfile(pathA, a));
+  CHECK(a.view.shieldsPresent);
+  CHECK(a.view.shieldModel == "omni");
+  CHECK(a.view.shieldHP == doctest::Approx(40.0f));
+  std::filesystem::remove(pathA);
+
+  auto pathB = writeTemp(R"({
+    "shields": { "model": "4-sector", "hp": 250, "regen": 80, "delay": 2.0 }
+  })",
+                         ".meta.json");
+  EntityProfile b;
+  REQUIRE(loadProfile(pathB, b));
+  CHECK(b.view.shieldModel == "4-sector");
+  CHECK(b.view.shieldHP == doctest::Approx(250.0f));
+  std::filesystem::remove(pathB);
+}
+
+TEST_CASE("F.2 round-trip: hull + shields edits survive save+reload") {
+  auto path = writeTemp(R"({
+    "identity": { "displayName": "T", "class": "ship-flyer",
+                  "faction": "enemy" },
+    "hull": { "hp": 160, "collisionRadius": 1.6, "mass": 1.0 },
+    "shields": { "model": "omni", "hp": 40, "regen": 20, "delay": 4 },
+    "ai": { "profile": "pursue-attack-evade", "detectionRange": 350 }
+  })",
+                        ".meta.json");
+
+  EntityProfile prof;
+  REQUIRE(loadProfile(path, prof));
+
+  // Hull-tool style edit.
+  prof.view.hullHP = 200.0f;
+  prof.view.hullCollisionRadius = 1.8f;
+  // Shields-tool style edit — switch model + tune HP.
+  prof.view.shieldModel = "4-sector";
+  prof.view.shieldHP = 60.0f;
+  REQUIRE(saveProfile(path, prof));
+
+  EntityProfile reread;
+  REQUIRE(loadProfile(path, reread));
+  CHECK(reread.view.hullHP == doctest::Approx(200.0f));
+  CHECK(reread.view.hullCollisionRadius == doctest::Approx(1.8f));
+  CHECK(reread.view.shieldModel == "4-sector");
+  CHECK(reread.view.shieldHP == doctest::Approx(60.0f));
+  // Untouched ai block must survive the save.
+  std::string text = readAll(path);
+  CHECK(text.find("pursue-attack-evade") != std::string::npos);
+  CHECK(text.find("detectionRange") != std::string::npos);
+  std::filesystem::remove(path);
+}
+
+TEST_CASE("save with hullsPresent=false leaves no hull block") {
+  // Brand-new file, no DOM. View defaults — hullPresent stays false.
+  auto path = std::filesystem::temp_directory_path() /
+              "no_hull_sidecar.meta.json";
+  std::filesystem::remove(path);
+
+  EntityProfile prof;
+  REQUIRE(saveProfile(path, prof));
+  std::string raw = readAll(path);
+  // forward/scale/pivot always written; hull should NOT appear.
+  CHECK(raw.find("\"forward\"") != std::string::npos);
+  CHECK(raw.find("\"hull\"") == std::string::npos);
+  CHECK(raw.find("\"shields\"") == std::string::npos);
+  std::filesystem::remove(path);
+}
+
 TEST_CASE("wrong-type fields warn but don't fail the load") {
   auto path = writeTemp(R"({
     "scale": "not a number",

@@ -1,0 +1,32 @@
+{
+  "identity": {
+    "class": "ground",
+    "displayName": "Collector",
+    "faction": "friendly"
+  },
+  "hull": {
+    "hp": 60,
+    "collisionRadius": 2.4,
+    "mass": 2.0,
+    "wreckage": { "metal": 0, "bio": 0 }
+  },
+  "ai": {
+    "profile": "harvest-loop",
+    "detectionRange": 0,
+    "targetPref": "base"
+  },
+  "infection": {
+    "canBeInfected": false
+  },
+  "fx": {
+    "smokeAtHPFrac": 0.50,
+    "deathExplosionScale": 0.8
+  },
+  "resources": {
+    "yieldOnDeath": { "metal": 0, "bio": 0 },
+    "capacity": { "metal": 5, "bio": 0 }
+  },
+  "forward": [0, 0, 1],
+  "scale": 1.0,
+  "pivot": [0, 0, 0]
+}

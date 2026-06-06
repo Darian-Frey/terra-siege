@@ -5,6 +5,7 @@
 #include "entity/EntityManager.hpp"
 #include "entity/Player.hpp"
 #include "hud/Radar.hpp"
+#include "mesh/EntityProfileRegistry.hpp"
 #include "mesh/MeshRegistry.hpp"
 #include "raylib.h"
 #include "wave/WaveManager.hpp"
@@ -227,6 +228,10 @@ private:
   // keep their procedural render path; the registry returns false
   // from has() for those slots.
   tsmesh::MeshRegistry m_meshRegistry;
+  // Parallel sidecar profile registry (F.2). Loaded at init() right
+  // after MeshRegistry from the same assets/meshes/ directory; missing
+  // sidecars are fine (the consumer falls back to Config defaults).
+  tsmesh::EntityProfileRegistry m_profileRegistry;
 
   // Camera
   Camera3D m_camera = {};

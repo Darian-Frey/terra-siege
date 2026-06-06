@@ -1,0 +1,26 @@
+{
+  "identity": {
+    "class": "static",
+    "displayName": "Repair Station",
+    "faction": "friendly"
+  },
+  "hull": {
+    "hp": 90,
+    "collisionRadius": 3.0,
+    "mass": 30.0,
+    "wreckage": { "metal": 0, "bio": 0 }
+  },
+  "infection": {
+    "canBeInfected": false
+  },
+  "fx": {
+    "smokeAtHPFrac": 0.50,
+    "deathExplosionScale": 1.0
+  },
+  "resources": {
+    "yieldOnDeath": { "metal": 0, "bio": 0 }
+  },
+  "forward": [0, 0, 1],
+  "scale": 1.0,
+  "pivot": [0, 0, 0]
+}

@@ -1,0 +1,64 @@
+{
+  "identity": {
+    "class": "ship-flyer",
+    "displayName": "Bomber",
+    "faction": "enemy"
+  },
+  "hull": {
+    "hp": 350,
+    "collisionRadius": 4.0,
+    "mass": 2.5,
+    "wreckage": { "metal": 80, "bio": 0 }
+  },
+  "shields": {
+    "model": "omni",
+    "hp": 150,
+    "regen": 25,
+    "delay": 5.0
+  },
+  "weapons": [
+    {
+      "name": "bomber-cannon",
+      "type": "cannon",
+      "fireRate": 0.80,
+      "damage": 25,
+      "projSpeed": 70,
+      "range": 100
+    }
+  ],
+  "hardpoints": [
+    {
+      "name": "ventral",
+      "pos": [0, -0.6, 1.0],
+      "dir": [0, 0, 1],
+      "weapon": "bomber-cannon",
+      "fireArcDeg": 8
+    }
+  ],
+  "ai": {
+    "profile": "pursue-attack-evade",
+    "detectionRange": 400,
+    "attackRange": 90,
+    "evadeAtHPFrac": 0.25,
+    "retreatAtHPFrac": 0.40,
+    "targetPref": "player"
+  },
+  "infection": {
+    "canBeInfected": true,
+    "rebootDuration": 3.0,
+    "speedPenaltyAfter": 0.80
+  },
+  "fx": {
+    "smokeAtHPFrac": 0.50,
+    "engineEmitters": [
+      { "name": "main", "pos": [0, 0, -2.0], "dir": [0, 0, -1] }
+    ],
+    "deathExplosionScale": 1.4
+  },
+  "resources": {
+    "yieldOnDeath": { "metal": 0, "bio": 0 }
+  },
+  "forward": [0, 0, 1],
+  "scale": 1.0,
+  "pivot": [0, 0, 0]
+}

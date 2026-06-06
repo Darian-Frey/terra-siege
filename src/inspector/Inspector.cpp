@@ -1,6 +1,9 @@
 #include "Inspector.hpp"
 
+#include "HullTool.hpp"
+#include "IdentityTool.hpp"
 #include "ProfileTool.hpp"
+#include "ShieldsTool.hpp"
 #include "VertexTool.hpp"
 #include "raymath.h"
 
@@ -57,7 +60,10 @@ bool copyFileBytes(const std::filesystem::path &src,
 
 Inspector::Inspector() {
   m_tools.push_back(std::make_unique<VertexTool>());
-  m_tools.push_back(std::make_unique<ProfileTool>()); // F.1
+  m_tools.push_back(std::make_unique<ProfileTool>());  // F.1
+  m_tools.push_back(std::make_unique<IdentityTool>()); // F.2
+  m_tools.push_back(std::make_unique<HullTool>());     // F.2
+  m_tools.push_back(std::make_unique<ShieldsTool>());  // F.2
   m_cfgPath = InspectorConfig::defaultPath();
   m_cfg.load(m_cfgPath); // missing file is fine, defaults stand
 }

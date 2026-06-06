@@ -74,6 +74,8 @@ add_library(terra_siege_mesh STATIC
     src/mesh/Palette.hpp
     src/mesh/SidecarProfile.cpp
     src/mesh/SidecarProfile.hpp
+    src/mesh/EntityProfileRegistry.cpp
+    src/mesh/EntityProfileRegistry.hpp
 )
 target_include_directories(terra_siege_mesh PUBLIC src)
 target_link_libraries(terra_siege_mesh PUBLIC raylib picojson)
@@ -204,10 +206,16 @@ add_executable(terra-siege-inspect
     src/inspector/Inspector.hpp
     src/inspector/InspectorConfig.cpp
     src/inspector/InspectorConfig.hpp
+    src/inspector/HullTool.cpp
+    src/inspector/HullTool.hpp
+    src/inspector/IdentityTool.cpp
+    src/inspector/IdentityTool.hpp
     src/inspector/MenuBar.cpp
     src/inspector/MenuBar.hpp
     src/inspector/ProfileTool.cpp
     src/inspector/ProfileTool.hpp
+    src/inspector/ShieldsTool.cpp
+    src/inspector/ShieldsTool.hpp
     src/inspector/Tool.hpp
     src/inspector/VertexTool.cpp
     src/inspector/VertexTool.hpp

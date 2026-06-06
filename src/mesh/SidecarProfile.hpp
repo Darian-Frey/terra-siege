@@ -31,40 +31,66 @@
 // ====================================================================
 namespace tsmesh {
 
-// Read-only viewer convenience — typed snapshot of fields F.1 cares
-// about for the 3D overlay (forward arrow, hardpoint icons, AI rings,
-// smoke threshold, display name). Each section is populated only if
-// it exists in the JSON; otherwise the fields stay at their defaults.
-//
-// `present` flags let the renderer skip drawing overlays for missing
-// sections rather than drawing them at default values.
+// Read-only viewer convenience — typed snapshot of fields F.1+F.2
+// care about for the 3D overlay and the per-tool forms. Each
+// section is populated only if it exists in the JSON; otherwise
+// the fields stay at their defaults. `present` flags let the
+// renderer skip drawing overlays for missing sections rather than
+// drawing them at default values.
 struct ProfileView {
-  std::string displayName; // identity.displayName
-  std::string entityClass; // identity.class (e.g. "ship-flyer")
-  std::string faction;     // identity.faction
+  // ---- identity ----
+  // entityClass picks from a small enum: "static" / "ground" / "hover"
+  // / "flyer" / "projectile". Free-form for now; the IdentityTool
+  // restricts the picker to that set.
+  std::string displayName;
+  std::string entityClass;
+  std::string faction;
 
+  // ---- transform ----
   Vector3 forward = {0, 0, 1}; // unit vector in entity-local space
   float scale = 1.0f;          // uniform scale applied at render
   Vector3 pivot = {0, 0, 0};   // entity origin offset
 
-  // AI rings
+  // ---- hull ----
+  // hullPresent flips true when any hull.* key exists so the viewer
+  // can draw the collision sphere without showing default-radius
+  // bubbles around hull-less entities.
+  bool hullPresent = false;
+  float hullHP = 100.0f;
+  float hullCollisionRadius = 1.0f;
+  float hullMass = 1.0f;
+  float hullWreckageMetal = 0.0f;
+  float hullWreckageBio = 0.0f;
+
+  // ---- shields ----
+  // shieldsPresent flips on any shields.* key. shieldModel chooses
+  // the gameplay routing AND the viz: "omni" = single bubble,
+  // "4-sector" = front/rear/right/left pies, "per-face" = baked
+  // face groups (not yet wired into the game — F.x leftover).
+  bool shieldsPresent = false;
+  std::string shieldModel = "omni";
+  float shieldHP = 0.0f;
+  float shieldRegen = 0.0f;
+  float shieldDelay = 0.0f;
+
+  // ---- AI rings ----
   bool aiPresent = false;
   float detectionRange = 0.0f;
   float attackRange = 0.0f;
   float evadeAtHPFrac = 0.0f;
   float retreatAtHPFrac = 0.0f;
 
-  // FX
+  // ---- FX ----
   bool fxPresent = false;
   float smokeAtHPFrac = 0.0f;
 
-  // Hardpoints
+  // ---- Hardpoints ----
   struct Hardpoint {
     std::string name;
     Vector3 pos = {0, 0, 0};
     Vector3 dir = {0, 0, 1};
     float fireArcDeg = 0.0f;
-    std::string weapon; // weapon-name reference
+    std::string weapon;
   };
   std::vector<Hardpoint> hardpoints;
 };

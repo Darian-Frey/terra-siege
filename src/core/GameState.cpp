@@ -178,9 +178,14 @@ void GameState::init() {
   // without a matching file fall back to procedural rendering, so
   // partial migration is safe. Must run AFTER InitWindow (which
   // main.cpp guarantees by calling game.init() after the window).
-  m_meshRegistry.loadAll(
-      std::filesystem::path(TERRA_SIEGE_PROJECT_ROOT) / "assets" /
-      "meshes");
+  std::filesystem::path meshesDir =
+      std::filesystem::path(TERRA_SIEGE_PROJECT_ROOT) / "assets" / "meshes";
+  m_meshRegistry.loadAll(meshesDir);
+  // F.2 — sidecar profiles are loaded in lockstep. EntityManager
+  // pulls hull/shield numbers from here when a sidecar exists,
+  // falling back to Config::* defaults when one is absent.
+  m_profileRegistry.loadAll(meshesDir);
+  m_em.setProfileRegistry(&m_profileRegistry);
   loadWorld(12345u); // stable default seed — DEV_MODE F5 rerolls
   double t1 = GetTime();
   TraceLog(LOG_INFO, "Terrain generation: %.2f seconds (%d x %d heightmap)",

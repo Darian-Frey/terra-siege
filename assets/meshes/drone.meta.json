@@ -1,0 +1,32 @@
+{
+  "identity": {
+    "class": "ship-flyer",
+    "displayName": "Drone",
+    "faction": "enemy"
+  },
+  "hull": {
+    "hp": 8,
+    "collisionRadius": 1.5,
+    "mass": 0.3,
+    "wreckage": { "metal": 5, "bio": 0 }
+  },
+  "ai": {
+    "profile": "boids-swarm",
+    "detectionRange": 200,
+    "attackRange": 45,
+    "targetPref": "player"
+  },
+  "infection": {
+    "canBeInfected": false
+  },
+  "fx": {
+    "smokeAtHPFrac": 0.0,
+    "deathExplosionScale": 0.5
+  },
+  "resources": {
+    "yieldOnDeath": { "metal": 0, "bio": 0 }
+  },
+  "forward": [0, 0, 1],
+  "scale": 1.0,
+  "pivot": [0, 0, 0]
+}

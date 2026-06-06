@@ -1,0 +1,33 @@
+{
+  "identity": {
+    "class": "ship-flyer",
+    "displayName": "Seeder",
+    "faction": "enemy"
+  },
+  "hull": {
+    "hp": 50,
+    "collisionRadius": 3.0,
+    "mass": 1.0,
+    "wreckage": { "metal": 20, "bio": 0 }
+  },
+  "ai": {
+    "profile": "drift-deploy",
+    "detectionRange": 350,
+    "attackRange": 240,
+    "retreatAtHPFrac": 0.40,
+    "targetPref": "player"
+  },
+  "infection": {
+    "canBeInfected": false
+  },
+  "fx": {
+    "smokeAtHPFrac": 0.50,
+    "deathExplosionScale": 0.9
+  },
+  "resources": {
+    "yieldOnDeath": { "metal": 0, "bio": 0 }
+  },
+  "forward": [0, 0, 1],
+  "scale": 1.0,
+  "pivot": [0, 0, 0]
+}

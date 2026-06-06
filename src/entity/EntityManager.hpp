@@ -12,6 +12,7 @@ class Player;
 class ParticleSystem;
 namespace tsmesh {
 class MeshRegistry;
+class EntityProfileRegistry;
 }
 
 // ====================================================================
@@ -33,6 +34,14 @@ public:
   EntityManager() = default;
 
   void clear();
+
+  // F.2 — sidecar profile registry. Set once by GameState::init right
+  // after the registries load. EntityManager reads HP / shield / radius
+  // from the registry when a profile is available for the spawned
+  // entity type, falling back to the Config::* defaults when not.
+  void setProfileRegistry(const tsmesh::EntityProfileRegistry *r) {
+    m_profileRegistry = r;
+  }
 
   // Dev-only — kill every alive enemy without triggering kill bursts
   // or scoring. Used by the F7 skip-wave hotkey to advance through the
@@ -143,6 +152,9 @@ private:
   int m_liveProjectiles = 0;
   int m_deliveryCount = 0; // Collector deliveries completed this round
   uint32_t m_nextId = 1;
+  // F.2 — optional sidecar registry. Non-owning. Defaults to nullptr
+  // so unit tests / tools that don't wire one in still work.
+  const tsmesh::EntityProfileRegistry *m_profileRegistry = nullptr;
 
   // Per-entity update bodies
   void updateFighter(Entity &e, float dt, const Planet &planet,

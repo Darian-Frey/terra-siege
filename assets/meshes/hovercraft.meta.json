@@ -1,0 +1,26 @@
+{
+  "identity": {
+    "class": "hover",
+    "displayName": "Player Hovercraft",
+    "faction": "player"
+  },
+  "hull": {
+    "hp": 100,
+    "collisionRadius": 2.0,
+    "mass": 1.5,
+    "wreckage": { "metal": 0, "bio": 0 }
+  },
+  "shields": {
+    "model": "4-sector",
+    "hp": 100,
+    "regen": 8,
+    "delay": 3.0
+  },
+  "fx": {
+    "smokeAtHPFrac": 0.30,
+    "deathExplosionScale": 1.2
+  },
+  "forward": [0, 0, 1],
+  "scale": 1.0,
+  "pivot": [0, 0, 0]
+}

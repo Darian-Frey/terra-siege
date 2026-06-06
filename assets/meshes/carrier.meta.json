@@ -1,0 +1,38 @@
+{
+  "identity": {
+    "class": "ship-flyer",
+    "displayName": "Carrier",
+    "faction": "enemy"
+  },
+  "hull": {
+    "hp": 1500,
+    "collisionRadius": 6.0,
+    "mass": 10.0,
+    "wreckage": { "metal": 300, "bio": 0 }
+  },
+  "shields": {
+    "model": "4-sector",
+    "hp": 250,
+    "regen": 80,
+    "delay": 2.0
+  },
+  "ai": {
+    "profile": "boss-orbit",
+    "detectionRange": 600,
+    "attackRange": 320,
+    "targetPref": "player"
+  },
+  "infection": {
+    "canBeInfected": false
+  },
+  "fx": {
+    "smokeAtHPFrac": 0.35,
+    "deathExplosionScale": 3.0
+  },
+  "resources": {
+    "yieldOnDeath": { "metal": 0, "bio": 0 }
+  },
+  "forward": [0, 0, 1],
+  "scale": 1.0,
+  "pivot": [0, 0, 0]
+}

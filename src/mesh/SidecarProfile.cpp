@@ -105,6 +105,31 @@ void extractView(const picojson::object &root, ProfileView &v,
     extractString(o, "faction", v.faction, warnings, "identity");
   }
 
+  if (auto it = root.find("hull");
+      it != root.end() && it->second.is<picojson::object>()) {
+    v.hullPresent = true;
+    const auto &o = it->second.get<picojson::object>();
+    extractFloat(o, "hp", v.hullHP, warnings, "hull");
+    extractFloat(o, "collisionRadius", v.hullCollisionRadius, warnings, "hull");
+    extractFloat(o, "mass", v.hullMass, warnings, "hull");
+    if (auto wit = o.find("wreckage");
+        wit != o.end() && wit->second.is<picojson::object>()) {
+      const auto &w = wit->second.get<picojson::object>();
+      extractFloat(w, "metal", v.hullWreckageMetal, warnings, "hull.wreckage");
+      extractFloat(w, "bio", v.hullWreckageBio, warnings, "hull.wreckage");
+    }
+  }
+
+  if (auto it = root.find("shields");
+      it != root.end() && it->second.is<picojson::object>()) {
+    v.shieldsPresent = true;
+    const auto &o = it->second.get<picojson::object>();
+    extractString(o, "model", v.shieldModel, warnings, "shields");
+    extractFloat(o, "hp", v.shieldHP, warnings, "shields");
+    extractFloat(o, "regen", v.shieldRegen, warnings, "shields");
+    extractFloat(o, "delay", v.shieldDelay, warnings, "shields");
+  }
+
   if (auto it = root.find("ai");
       it != root.end() && it->second.is<picojson::object>()) {
     v.aiPresent = true;
@@ -154,18 +179,75 @@ picojson::value vec3Value(Vector3 v) {
   return picojson::value(a);
 }
 
-// Merge the F.1 typed fields (forward / scale / pivot) back into the
-// DOM. Other keys are left untouched. If the root is not an object
-// (or is null because the file didn't exist), seed a fresh empty
-// object before writing.
-void mergeF1Edits(picojson::value &root, const ProfileView &v) {
+// Fetch (or create) a nested JSON object by key. Returned reference
+// is stable for the rest of the merge — picojson::object is just a
+// std::map, so insert + lookup return stable refs.
+picojson::object &ensureObject(picojson::object &parent, const char *key) {
+  auto it = parent.find(key);
+  if (it == parent.end() || !it->second.is<picojson::object>())
+    parent[key] = picojson::value(picojson::object{});
+  return parent[key].get<picojson::object>();
+}
+
+// Merge every typed field the inspector currently understands back
+// into the DOM. F.1 set forward/scale/pivot; F.2 adds identity/hull/
+// shields. Keys we don't know stay untouched — the round-trip
+// preservation test (T-unknown-keys) validates this.
+//
+// `present` flags gate the F.2 sections: writing a hull / shields
+// block when the file never had one would be surprising (the
+// inspector hasn't edited it). When the user enters values via the
+// F.2 tools they'll flip the present flag themselves, so this is
+// only a guard against the "open / save unchanged" path.
+void mergeTypedEdits(picojson::value &root, const ProfileView &v) {
   if (!root.is<picojson::object>()) {
     root = picojson::value(picojson::object{});
   }
   auto &obj = root.get<picojson::object>();
+
+  // F.1 transform — always written (these have safe defaults).
   obj["forward"] = vec3Value(v.forward);
   obj["scale"] = picojson::value(static_cast<double>(v.scale));
   obj["pivot"] = vec3Value(v.pivot);
+
+  // identity — written if any string is non-empty so an unchanged
+  // file with no identity section doesn't sprout an empty one.
+  if (!v.displayName.empty() || !v.entityClass.empty() ||
+      !v.faction.empty() || obj.find("identity") != obj.end()) {
+    auto &ident = ensureObject(obj, "identity");
+    if (!v.displayName.empty())
+      ident["displayName"] = picojson::value(v.displayName);
+    if (!v.entityClass.empty())
+      ident["class"] = picojson::value(v.entityClass);
+    if (!v.faction.empty())
+      ident["faction"] = picojson::value(v.faction);
+  }
+
+  // hull — written when the present flag is up (it flips at load
+  // time iff the JSON had a hull block, or when the HullTool edits).
+  if (v.hullPresent) {
+    auto &h = ensureObject(obj, "hull");
+    h["hp"] = picojson::value(static_cast<double>(v.hullHP));
+    h["collisionRadius"] =
+        picojson::value(static_cast<double>(v.hullCollisionRadius));
+    h["mass"] = picojson::value(static_cast<double>(v.hullMass));
+    if (v.hullWreckageMetal > 0.0f || v.hullWreckageBio > 0.0f ||
+        h.find("wreckage") != h.end()) {
+      auto &w = ensureObject(h, "wreckage");
+      w["metal"] =
+          picojson::value(static_cast<double>(v.hullWreckageMetal));
+      w["bio"] = picojson::value(static_cast<double>(v.hullWreckageBio));
+    }
+  }
+
+  // shields — same present-flag guard.
+  if (v.shieldsPresent) {
+    auto &s = ensureObject(obj, "shields");
+    s["model"] = picojson::value(v.shieldModel);
+    s["hp"] = picojson::value(static_cast<double>(v.shieldHP));
+    s["regen"] = picojson::value(static_cast<double>(v.shieldRegen));
+    s["delay"] = picojson::value(static_cast<double>(v.shieldDelay));
+  }
 }
 
 } // anonymous namespace
@@ -221,7 +303,7 @@ bool saveProfile(const std::filesystem::path &path,
   if (profile.dom && profile.dom->root.is<picojson::object>()) {
     root = profile.dom->root;
   }
-  mergeF1Edits(root, profile.view);
+  mergeTypedEdits(root, profile.view);
 
   std::error_code ec;
   std::filesystem::create_directories(path.parent_path(), ec);

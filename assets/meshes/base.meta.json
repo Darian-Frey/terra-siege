@@ -1,0 +1,33 @@
+{
+  "identity": {
+    "class": "static",
+    "displayName": "Friendly Base",
+    "faction": "friendly"
+  },
+  "hull": {
+    "hp": 240,
+    "collisionRadius": 4.5,
+    "mass": 50.0,
+    "wreckage": { "metal": 0, "bio": 0 }
+  },
+  "ai": {
+    "profile": "stationary-turret",
+    "detectionRange": 220,
+    "attackRange": 140
+  },
+  "infection": {
+    "canBeInfected": true,
+    "rebootDuration": 5.0
+  },
+  "fx": {
+    "smokeAtHPFrac": 0.50,
+    "deathExplosionScale": 2.0
+  },
+  "resources": {
+    "yieldOnDeath": { "metal": 0, "bio": 0 },
+    "capacity": { "metal": 1000, "bio": 0 }
+  },
+  "forward": [0, 0, 1],
+  "scale": 1.0,
+  "pivot": [0, 0, 0]
+}
