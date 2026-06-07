@@ -6,6 +6,7 @@
 #include "InspectorFont.hpp"
 #include "HullTool.hpp"
 #include "IdentityTool.hpp"
+#include "PrimitivesTool.hpp"
 #include "ProfileTool.hpp"
 #include "ShieldsTool.hpp"
 #include "VertexTool.hpp"
@@ -65,6 +66,7 @@ bool copyFileBytes(const std::filesystem::path &src,
 
 Inspector::Inspector() {
   m_tools.push_back(std::make_unique<VertexTool>());
+  m_tools.push_back(std::make_unique<PrimitivesTool>());  // E
   m_tools.push_back(std::make_unique<ProfileTool>());     // F.1
   m_tools.push_back(std::make_unique<IdentityTool>());    // F.2
   m_tools.push_back(std::make_unique<HullTool>());        // F.2
@@ -101,6 +103,8 @@ bool Inspector::load(const std::filesystem::path &path) {
   for (const auto &w : m_profile.warnings)
     std::fprintf(stderr, "[Inspector] sidecar: %s\n", w.c_str());
 
+  // Hard reset — fresh mesh, fresh undo history.
+  clearUndoHistory();
   for (auto &t : m_tools) t->onReload(*this);
   rebuildModel();
 
@@ -121,8 +125,64 @@ void Inspector::closeFile() {
   m_boundsR = 1.0f;
   m_vertSphereR = 0.1f;
   m_profile = EntityProfile{}; // drop the sidecar with the mesh
+  clearUndoHistory();
   for (auto &t : m_tools) t->onReload(*this);
   resetCamera();
+}
+
+// ====================================================================
+// Undo / redo — shared across tools (Phase B + E). Snapshots the full
+// Mesh3D so topology changes (primitive insertion, future weld/split)
+// round-trip cleanly. Vertex-only edits would happily snapshot just
+// the vertex array, but the cost saving isn't worth the divergence.
+// ====================================================================
+void Inspector::pushUndo() {
+  if (!m_hasMesh) return;
+  m_undoStack.push_back(m_mesh);
+  if (static_cast<int>(m_undoStack.size()) > kMaxUndoHistory)
+    m_undoStack.erase(m_undoStack.begin());
+  m_redoStack.clear();
+}
+
+void Inspector::undoMesh() {
+  if (m_undoStack.empty()) return;
+  m_redoStack.push_back(m_mesh);
+  if (static_cast<int>(m_redoStack.size()) > kMaxUndoHistory)
+    m_redoStack.erase(m_redoStack.begin());
+  m_mesh = std::move(m_undoStack.back());
+  m_undoStack.pop_back();
+  computeBoundingSphere();
+  m_vertSphereR = std::max(0.05f, m_boundsR * 0.012f);
+  rebuildModel();
+}
+
+void Inspector::redoMesh() {
+  if (m_redoStack.empty()) return;
+  m_undoStack.push_back(m_mesh);
+  if (static_cast<int>(m_undoStack.size()) > kMaxUndoHistory)
+    m_undoStack.erase(m_undoStack.begin());
+  m_mesh = std::move(m_redoStack.back());
+  m_redoStack.pop_back();
+  computeBoundingSphere();
+  m_vertSphereR = std::max(0.05f, m_boundsR * 0.012f);
+  rebuildModel();
+}
+
+void Inspector::clearUndoHistory() {
+  m_undoStack.clear();
+  m_redoStack.clear();
+}
+
+void Inspector::initEmptyMesh() {
+  if (m_hasMesh) return;
+  m_mesh = Mesh3D{};
+  m_hasMesh = true;
+  m_boundsR = 1.0f;
+  m_vertSphereR = 0.1f;
+  m_path.clear(); // no source file yet — Save As will prompt
+  for (auto &t : m_tools) t->onReload(*this);
+  resetCamera();
+  rebuildModel();
 }
 
 void Inspector::resetCamera() {
@@ -547,8 +607,19 @@ void Inspector::handleInput() {
   if (IsKeyPressed(KEY_F)) resetCamera();
   if (IsKeyPressed(KEY_Q)) guardDirty(PendingAction::Quit);
 
-  if (m_hasMesh && m_currentTool < m_tools.size())
+  // Inspector-level undo / redo (Phase B + E). Intercepted here so the
+  // hotkeys work regardless of which tool is active.
+  if (ctrlDown() && IsKeyPressed(KEY_Z)) { undoMesh(); return; }
+  if (ctrlDown() && IsKeyPressed(KEY_Y)) { redoMesh(); return; }
+
+  // Tool input — runs when a mesh is loaded OR when the active tool
+  // declares canRunWithoutMesh() (PrimitivesTool overrides). The
+  // start-from-empty path: user has no mesh, switches to Primitives,
+  // inserts a cube, mesh now exists.
+  if (m_currentTool < m_tools.size() &&
+      (m_hasMesh || m_tools[m_currentTool]->canRunWithoutMesh())) {
     m_tools[m_currentTool]->handleInput(*this);
+  }
 
   // Orbit camera — only moves while RMB is held.
   Vector2 md = GetMouseDelta();
@@ -605,7 +676,8 @@ void Inspector::render() {
   DrawLine3D({0, -L, 0}, {0, L, 0}, {100, 220, 100, 200}); // Y
   DrawLine3D({0, 0, -L}, {0, 0, L}, {100, 140, 240, 200}); // Z
 
-  if (m_hasMesh && m_currentTool < m_tools.size())
+  if (m_currentTool < m_tools.size() &&
+      (m_hasMesh || m_tools[m_currentTool]->canRunWithoutMesh()))
     m_tools[m_currentTool]->render3D(*this);
 
   // F.1 read-only viewer — drawn for any open mesh regardless of
@@ -774,7 +846,13 @@ void Inspector::renderHud() {
   int sw = GetScreenWidth();
   int sh = GetScreenHeight();
 
-  if (!m_hasMesh) {
+  // Empty-workspace overlay is suppressed when the active tool can
+  // run without a mesh — it'd otherwise occlude PrimitivesTool's HUD.
+  bool toolWantsEmptyWorkspace =
+      m_currentTool < m_tools.size() &&
+      m_tools[m_currentTool]->canRunWithoutMesh();
+
+  if (!m_hasMesh && !toolWantsEmptyWorkspace) {
     const char *line1 = "no file loaded";
     const char *line2 = "press O to open  |  drag an .obj onto the window  "
                         "|  Q to quit";
@@ -782,15 +860,16 @@ void Inspector::renderHud() {
     int w2 = measureText(line2, 16);
     drawText(line1, (sw - w1) / 2, sh / 2 - 40, 36, {200, 220, 240, 220});
     drawText(line2, (sw - w2) / 2, sh / 2 + 8, 16, {160, 180, 200, 220});
-  } else {
+  } else if (m_currentTool < m_tools.size()) {
     // Tool HUD + sidecar HUD (F.1). Tool draws first, sidecar info
     // appended below so the active tool's state stays at the top.
     // y starts below the menu bar (kBarHeight + a few px).
     int yCursor = MenuBar::kBarHeight + 8;
-    if (m_currentTool < m_tools.size())
-      m_tools[m_currentTool]->renderHud(*this, yCursor);
-    yCursor += 6;
-    renderProfileHud(yCursor);
+    m_tools[m_currentTool]->renderHud(*this, yCursor);
+    if (m_hasMesh) {
+      yCursor += 6;
+      renderProfileHud(yCursor);
+    }
   }
 
   // ----- Status bar (bottom strip) -----

@@ -68,11 +68,10 @@ private:
   // onto ourselves), or -1 if none.
   int snapVertexUnderCursor(const Inspector &insp) const;
 
-  // Undo / redo.
-  void pushUndoSnapshot(const Inspector &insp);
-  void undo(Inspector &insp);
-  void redo(Inspector &insp);
-  void clearHistory();
+  // Undo snapshot helper — defers to Inspector's shared stack so
+  // PrimitivesTool insertions land on the same history. Wraps the
+  // numeric-input cancel that used to live in undo().
+  void pushUndoSnapshot(Inspector &insp);
 
   // Numeric input.
   void commitNumericInput(Inspector &insp);
@@ -97,14 +96,6 @@ private:
   // Box-select.
   bool m_boxSelecting = false;
   Vector2 m_boxStart{};
-
-  // Undo / redo. Each entry is a full snapshot of the mesh's vertex
-  // positions at the moment before an edit started. ~32 KB per snapshot
-  // for the largest current entities (under 1000 verts) — pool stays
-  // tiny in absolute terms.
-  static constexpr int kMaxHistory = 32;
-  std::vector<std::vector<Vector3>> m_undoStack;
-  std::vector<std::vector<Vector3>> m_redoStack;
 
   // Snap.
   static constexpr float kSnapSteps[5] = {0.05f, 0.1f, 0.25f, 0.5f, 1.0f};

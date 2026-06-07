@@ -132,43 +132,13 @@ int VertexTool::snapVertexUnderCursor(const Inspector &insp) const {
 }
 
 // ====================================================================
-// Undo / redo
+// Undo / redo — delegated to Inspector so PrimitivesTool's topology
+// edits share the same stack. The private pushUndoSnapshot remains
+// as a thin shim so existing call sites don't have to change.
 // ====================================================================
-void VertexTool::pushUndoSnapshot(const Inspector &insp) {
-  m_undoStack.push_back(insp.mesh().vertices);
-  if (static_cast<int>(m_undoStack.size()) > kMaxHistory)
-    m_undoStack.erase(m_undoStack.begin());
-  // Any fresh edit invalidates the redo lineage.
-  m_redoStack.clear();
-}
-
-void VertexTool::undo(Inspector &insp) {
-  if (m_undoStack.empty()) return;
-  m_redoStack.push_back(insp.mesh().vertices);
-  if (static_cast<int>(m_redoStack.size()) > kMaxHistory)
-    m_redoStack.erase(m_redoStack.begin());
-  insp.mesh().vertices = std::move(m_undoStack.back());
-  m_undoStack.pop_back();
-  insp.rebuildModel();
-  m_dirty = true;
+void VertexTool::pushUndoSnapshot(Inspector &insp) {
+  insp.pushUndo();
   cancelNumericInput();
-}
-
-void VertexTool::redo(Inspector &insp) {
-  if (m_redoStack.empty()) return;
-  m_undoStack.push_back(insp.mesh().vertices);
-  if (static_cast<int>(m_undoStack.size()) > kMaxHistory)
-    m_undoStack.erase(m_undoStack.begin());
-  insp.mesh().vertices = std::move(m_redoStack.back());
-  m_redoStack.pop_back();
-  insp.rebuildModel();
-  m_dirty = true;
-  cancelNumericInput();
-}
-
-void VertexTool::clearHistory() {
-  m_undoStack.clear();
-  m_redoStack.clear();
 }
 
 // ====================================================================
@@ -274,10 +244,8 @@ void VertexTool::endDrag(Inspector & /*insp*/) {
 // Input
 // ====================================================================
 void VertexTool::handleInput(Inspector &insp) {
-  // Ctrl+Z / Ctrl+Y — undo / redo. Done first so they work even mid-
-  // drag (in case the user wants to bail).
-  if (ctrlDown() && IsKeyPressed(KEY_Z)) { undo(insp); return; }
-  if (ctrlDown() && IsKeyPressed(KEY_Y)) { redo(insp); return; }
+  // Ctrl+Z / Ctrl+Y are intercepted at Inspector level so they work
+  // across every tool — no per-tool plumbing needed here any more.
 
   // Snap-step cycle: `[` smaller, `]` larger. Toggle snap with `G`.
   if (IsKeyPressed(KEY_LEFT_BRACKET) && m_snapStepIdx > 0) --m_snapStepIdx;
@@ -448,7 +416,7 @@ void VertexTool::renderHud(const Inspector &insp, int &yCursor) const {
                 "snap: %s @ %.2f  |  undo %zu / redo %zu",
                 m_snapEnabled ? "ON" : "off",
                 kSnapSteps[m_snapStepIdx],
-                m_undoStack.size(), m_redoStack.size());
+                insp.undoCount(), insp.redoCount());
   drawText(buf, 10, yCursor, 13, {160, 180, 200, 220});
   yCursor += 18;
 
@@ -558,7 +526,8 @@ void VertexTool::onReload(Inspector & /*insp*/) {
   m_boxSelecting = false;
   m_snapTargetIdx = -1;
   cancelNumericInput();
-  clearHistory();
+  // Undo history lives on Inspector now — load() / closeFile() clear
+  // it on the inspector's side.
   m_dirty = false;
 }
 

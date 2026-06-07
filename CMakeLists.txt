@@ -220,6 +220,8 @@ add_executable(terra-siege-inspect
     src/inspector/IdentityTool.hpp
     src/inspector/MenuBar.cpp
     src/inspector/MenuBar.hpp
+    src/inspector/PrimitivesTool.cpp
+    src/inspector/PrimitivesTool.hpp
     src/inspector/ProfileTool.cpp
     src/inspector/ProfileTool.hpp
     src/inspector/ShieldsTool.cpp

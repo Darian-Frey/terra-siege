@@ -80,6 +80,24 @@ public:
   // True if any tool reports unsaved edits.
   bool anyDirty() const;
 
+  // ---- Undo / redo (shared across tools, Phase B + E) ----
+  // Tools call pushUndo() BEFORE mutating the mesh — full snapshot
+  // (vertices + indices + faceNormals + facePalette) so primitive
+  // insertion's topology changes round-trip correctly. Ctrl+Z / Ctrl+Y
+  // are intercepted at the inspector level so the keys work no matter
+  // which tool is active. Cleared by load() / closeFile() — those
+  // are the "hard reset" entry points.
+  void pushUndo();
+  void undoMesh();
+  void redoMesh();
+  void clearUndoHistory();
+  size_t undoCount() const { return m_undoStack.size(); }
+  size_t redoCount() const { return m_redoStack.size(); }
+
+  // Bootstrap an empty mesh so PrimitivesTool can start authoring from
+  // the empty workspace. No-op when a mesh is already loaded.
+  void initEmptyMesh();
+
 private:
   // -------- Mainloop helpers --------
   void handleInput();
@@ -152,6 +170,15 @@ private:
 
   std::vector<std::unique_ptr<Tool>> m_tools;
   size_t m_currentTool = 0;
+
+  // Shared undo/redo across tools (Phase B + E). Each snapshot is a
+  // full Mesh3D — vertices + indices + faceNormals + facePalette —
+  // so topology changes (primitive insertion, future weld/split/
+  // delete) round-trip. Cap is small in absolute terms: 32 × ~40 KB
+  // for the largest current entities = ~1.3 MB worst case.
+  static constexpr int kMaxUndoHistory = 32;
+  std::vector<Mesh3D> m_undoStack;
+  std::vector<Mesh3D> m_redoStack;
 
   // Modal state
   Modal m_modal = Modal::None;

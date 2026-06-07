@@ -29,6 +29,10 @@ public:
   virtual void onDeactivate(Inspector &insp) { (void)insp; }
   virtual void onReload(Inspector &insp) { (void)insp; }
   virtual bool isDirty() const { return false; }
+  // Phase E — PrimitivesTool overrides to true so the inspector lets
+  // it process input + render even when no mesh is loaded (start-
+  // from-scratch authoring). Other tools assume a mesh exists.
+  virtual bool canRunWithoutMesh() const { return false; }
 };
 
 } // namespace tsmesh
