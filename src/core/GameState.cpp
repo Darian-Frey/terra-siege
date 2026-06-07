@@ -281,6 +281,9 @@ void GameState::loadWorld(uint32_t seed) {
   };
 
   m_planet.generate(seed, progressCb);
+  // Engine Phase 3.5 — populate the world with trees/rocks/antennas/
+  // crash sites. Deterministic on `seed` so reroll reproduces.
+  m_decorations.generate(m_planet, seed);
   m_particles.clear();
   m_em.clear();
 
@@ -1279,6 +1282,7 @@ void GameState::render(float alpha) {
       rlMatrixMode(RL_MODELVIEW);
     }
     m_planet.draw(m_camera.position);
+    m_decorations.render(m_planet, m_camera.position);
     m_player.renderGroundShadow(m_planet);
     m_player.render(&m_meshRegistry);
     m_em.render(m_camera, &m_meshRegistry);
@@ -1325,6 +1329,7 @@ void GameState::render(float alpha) {
       rlMatrixMode(RL_MODELVIEW);
     }
     m_planet.draw(m_camera.position);
+    m_decorations.render(m_planet, m_camera.position);
     m_player.renderGroundShadow(m_planet);
     m_player.render(&m_meshRegistry);
     m_em.render(m_camera, &m_meshRegistry);
@@ -1359,6 +1364,7 @@ void GameState::render(float alpha) {
       rlMatrixMode(RL_MODELVIEW);
     }
     m_planet.draw(m_camera.position);
+    m_decorations.render(m_planet, m_camera.position);
     m_player.renderGroundShadow(m_planet);
     m_player.render(&m_meshRegistry); // wreck stays visible at the crash site
     m_em.render(m_camera, &m_meshRegistry);

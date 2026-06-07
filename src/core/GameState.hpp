@@ -10,6 +10,7 @@
 #include "mesh/MeshRegistry.hpp"
 #include "raylib.h"
 #include "wave/WaveManager.hpp"
+#include "world/Decorations.hpp"
 #include "world/Planet.hpp"
 #include <array>
 #include <cstdint>
@@ -219,6 +220,10 @@ private:
 
   // World
   Planet m_planet;
+  // Engine Phase 3.5 — atmospheric terrain objects (trees/rocks/
+  // antennas/crash sites). Generated once after Planet::generate,
+  // then static for the session.
+  Decorations m_decorations;
   Player m_player;
   ParticleSystem m_particles;
   EntityManager m_em;

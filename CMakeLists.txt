@@ -104,6 +104,8 @@ set(GAME_SOURCES
     src/world/TerrainChunk.hpp
     src/world/SkyDome.cpp
     src/world/SkyDome.hpp
+    src/world/Decorations.cpp
+    src/world/Decorations.hpp
 
     src/entity/Entity.hpp
     src/entity/Player.cpp
