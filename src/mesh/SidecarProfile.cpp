@@ -134,10 +134,22 @@ void extractView(const picojson::object &root, ProfileView &v,
       it != root.end() && it->second.is<picojson::object>()) {
     v.aiPresent = true;
     const auto &o = it->second.get<picojson::object>();
+    extractString(o, "profile", v.aiProfile, warnings, "ai");
+    extractString(o, "targetPref", v.targetPref, warnings, "ai");
     extractFloat(o, "detectionRange", v.detectionRange, warnings, "ai");
     extractFloat(o, "attackRange", v.attackRange, warnings, "ai");
     extractFloat(o, "evadeAtHPFrac", v.evadeAtHPFrac, warnings, "ai");
     extractFloat(o, "retreatAtHPFrac", v.retreatAtHPFrac, warnings, "ai");
+  }
+
+  if (auto it = root.find("infection");
+      it != root.end() && it->second.is<picojson::object>()) {
+    v.infectionPresent = true;
+    const auto &o = it->second.get<picojson::object>();
+    extractBool(o, "canBeInfected", v.canBeInfected, warnings, "infection");
+    extractFloat(o, "rebootDuration", v.rebootDuration, warnings, "infection");
+    extractFloat(o, "speedPenaltyAfter", v.speedPenaltyAfter, warnings,
+                 "infection");
   }
 
   if (auto it = root.find("fx");
@@ -145,6 +157,43 @@ void extractView(const picojson::object &root, ProfileView &v,
     v.fxPresent = true;
     const auto &o = it->second.get<picojson::object>();
     extractFloat(o, "smokeAtHPFrac", v.smokeAtHPFrac, warnings, "fx");
+    extractFloat(o, "deathExplosionScale", v.deathExplosionScale, warnings,
+                 "fx");
+    // engineGlowColour — accept either {r,g,b} object or [r,g,b] array.
+    // Each component 0..255; values outside range are clamped on load.
+    auto storeColor = [&](double r, double g, double b) {
+      auto clamp = [](double x) {
+        if (x < 0) x = 0;
+        if (x > 255) x = 255;
+        return static_cast<unsigned char>(x);
+      };
+      v.engineGlowR = clamp(r);
+      v.engineGlowG = clamp(g);
+      v.engineGlowB = clamp(b);
+    };
+    if (auto eit = o.find("engineGlowColour");
+        eit != o.end() && eit->second.is<picojson::array>()) {
+      const auto &arr = eit->second.get<picojson::array>();
+      if (arr.size() == 3 && arr[0].is<double>() && arr[1].is<double>() &&
+          arr[2].is<double>()) {
+        storeColor(arr[0].get<double>(), arr[1].get<double>(),
+                   arr[2].get<double>());
+      } else {
+        warnings.emplace_back(
+            "fx.engineGlowColour: expected [r, g, b] array of numbers");
+      }
+    } else if (auto eit2 = o.find("engineGlowColour");
+               eit2 != o.end() && eit2->second.is<picojson::object>()) {
+      const auto &obj2 = eit2->second.get<picojson::object>();
+      double r = 80, g = 180, b = 220;
+      if (auto rit = obj2.find("r"); rit != obj2.end() && rit->second.is<double>())
+        r = rit->second.get<double>();
+      if (auto git = obj2.find("g"); git != obj2.end() && git->second.is<double>())
+        g = git->second.get<double>();
+      if (auto bit = obj2.find("b"); bit != obj2.end() && bit->second.is<double>())
+        b = bit->second.get<double>();
+      storeColor(r, g, b);
+    }
   }
 
   if (auto it = root.find("weapons");
@@ -323,6 +372,49 @@ void mergeTypedEdits(picojson::value &root, const ProfileView &v) {
       arr.emplace_back(ho);
     }
     obj["hardpoints"] = picojson::value(arr);
+  }
+
+  // ai — present-flag guarded. Profile/targetPref strings emitted
+  // only when non-empty so an empty form doesn't sprout junk keys.
+  if (v.aiPresent) {
+    auto &a = ensureObject(obj, "ai");
+    if (!v.aiProfile.empty()) a["profile"] = picojson::value(v.aiProfile);
+    if (!v.targetPref.empty())
+      a["targetPref"] = picojson::value(v.targetPref);
+    a["detectionRange"] =
+        picojson::value(static_cast<double>(v.detectionRange));
+    a["attackRange"] =
+        picojson::value(static_cast<double>(v.attackRange));
+    a["evadeAtHPFrac"] =
+        picojson::value(static_cast<double>(v.evadeAtHPFrac));
+    a["retreatAtHPFrac"] =
+        picojson::value(static_cast<double>(v.retreatAtHPFrac));
+  }
+
+  // infection — same rule.
+  if (v.infectionPresent) {
+    auto &inf = ensureObject(obj, "infection");
+    inf["canBeInfected"] = picojson::value(v.canBeInfected);
+    inf["rebootDuration"] =
+        picojson::value(static_cast<double>(v.rebootDuration));
+    inf["speedPenaltyAfter"] =
+        picojson::value(static_cast<double>(v.speedPenaltyAfter));
+  }
+
+  // fx — smoke threshold + death explosion scale + engine glow rgb.
+  // engineGlowColour written as a 3-element array (compact, plays
+  // nicely with how `forward` / `pivot` are stored).
+  if (v.fxPresent) {
+    auto &fx = ensureObject(obj, "fx");
+    fx["smokeAtHPFrac"] =
+        picojson::value(static_cast<double>(v.smokeAtHPFrac));
+    fx["deathExplosionScale"] =
+        picojson::value(static_cast<double>(v.deathExplosionScale));
+    picojson::array rgb;
+    rgb.emplace_back(static_cast<double>(v.engineGlowR));
+    rgb.emplace_back(static_cast<double>(v.engineGlowG));
+    rgb.emplace_back(static_cast<double>(v.engineGlowB));
+    fx["engineGlowColour"] = picojson::value(rgb);
   }
 }
 

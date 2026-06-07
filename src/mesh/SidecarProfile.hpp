@@ -73,16 +73,43 @@ struct ProfileView {
   float shieldRegen = 0.0f;
   float shieldDelay = 0.0f;
 
-  // ---- AI rings ----
+  // ---- AI ----
+  // aiProfile names a behavior preset the game's AI dispatch can
+  // switch on (pursue-attack-evade / kamikaze / strafe-friendlies /
+  // boids-swarm / stationary-turret / drift-deploy / boss-orbit /
+  // harvest-loop / none). Currently informational — game-side
+  // dispatch is still per-entity-type hardcoded; future Slice C
+  // work makes this a real switch.
+  // Ranges are honoured at runtime once the entity has cached them.
   bool aiPresent = false;
+  std::string aiProfile;
+  std::string targetPref; // player / friendlies / bases / nearest
   float detectionRange = 0.0f;
   float attackRange = 0.0f;
   float evadeAtHPFrac = 0.0f;
   float retreatAtHPFrac = 0.0f;
 
+  // ---- Infection (Slice B.4) ----
+  // canBeInfected gates the flip; rebootDuration is the reboot delay
+  // before an infected ship re-enters combat under the player's
+  // colors; speedPenaltyAfter scales its top speed once active.
+  bool infectionPresent = false;
+  bool canBeInfected = false;
+  float rebootDuration = 3.0f;
+  float speedPenaltyAfter = 0.80f;
+
   // ---- FX ----
+  // smokeAtHPFrac is the hull fraction below which damage smoke
+  // emits. deathExplosionScale multiplies the death-burst radius.
+  // engineGlow is an RGB tint applied to the engine emitter colour
+  // (0..255 each; not yet wired into the runtime emitter pool —
+  // editable in the inspector, ignored by the game until a follow-up).
   bool fxPresent = false;
   float smokeAtHPFrac = 0.0f;
+  float deathExplosionScale = 1.0f;
+  unsigned char engineGlowR = 80;
+  unsigned char engineGlowG = 180;
+  unsigned char engineGlowB = 220;
 
   // ---- Weapons ----
   // Named stat blocks referenced by hardpoint.weapon. F.3 edits the

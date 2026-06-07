@@ -2,6 +2,7 @@
 
 #include "Inspector.hpp"
 #include "InspectorConfig.hpp"
+#include "InspectorFont.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -34,8 +35,8 @@ bool itemEnabled(const MenuBar::Item &it, const Inspector &insp) {
 // label + shortcut + paddings. Submenu arrow adds a small extra
 // gutter.
 int rowWidth(const MenuBar::Item &it) {
-  int lw = MeasureText(it.label.c_str(), 13);
-  int sw = it.shortcut.empty() ? 0 : MeasureText(it.shortcut.c_str(), 13);
+  int lw = measureText(it.label.c_str(), 13);
+  int sw = it.shortcut.empty() ? 0 : measureText(it.shortcut.c_str(), 13);
   int extra = (it.submenu.empty() && !it.dynamicSubmenu) ? 0 : 14;
   return lw + (sw > 0 ? 22 + sw : 0) + extra;
 }
@@ -223,7 +224,7 @@ bool MenuBar::handle(Inspector &insp) {
   }
   float x = 0.0f;
   for (size_t i = 0; i < m_menus.size(); ++i) {
-    int lw = MeasureText(m_menus[i].label.c_str(), kBarTextSize);
+    int lw = measureText(m_menus[i].label.c_str(), kBarTextSize);
     m_topX[i] = x;
     m_topW[i] = static_cast<float>(lw + 2 * kBarPadX);
     x += m_topW[i];
@@ -438,7 +439,7 @@ void MenuBar::render(const Inspector &insp) {
   // Top-level labels.
   float x = 0.0f;
   for (size_t i = 0; i < m_menus.size(); ++i) {
-    int lw = MeasureText(m_menus[i].label.c_str(), kBarTextSize);
+    int lw = measureText(m_menus[i].label.c_str(), kBarTextSize);
     int w = lw + 2 * kBarPadX;
     bool open = (static_cast<int>(i) == m_open);
     Vector2 mp = GetMousePosition();
@@ -447,7 +448,7 @@ void MenuBar::render(const Inspector &insp) {
     bool hover = CheckCollisionPointRec(mp, r);
     if (open) DrawRectangleRec(r, BAR_OPEN_BG);
     else if (hover) DrawRectangleRec(r, BAR_HOVER_BG);
-    DrawText(m_menus[i].label.c_str(),
+    drawText(m_menus[i].label.c_str(),
              static_cast<int>(x) + kBarPadX,
              (kBarHeight - kBarTextSize) / 2 + 1, kBarTextSize, BAR_TEXT);
     x += w;
@@ -482,23 +483,23 @@ void MenuBar::render(const Inspector &insp) {
     }
     // ✓ marker for radio/checked items.
     if (it.checked && it.checked(insp)) {
-      DrawText("✓", static_cast<int>(dd.x) + 6,
+      drawText("✓", static_cast<int>(dd.x) + 6,
                static_cast<int>(yRow) + 4, kRowTextSize, DD_CHECK);
     }
     // Label.
     Color textCol = en ? BAR_TEXT : BAR_DIM;
-    DrawText(it.label.c_str(),
+    drawText(it.label.c_str(),
              static_cast<int>(dd.x) + kRowPadX + 12,
              static_cast<int>(yRow) + 4, kRowTextSize, textCol);
     // Submenu arrow.
     bool hasSub = !it.submenu.empty() || (bool)it.dynamicSubmenu;
     if (hasSub) {
-      DrawText(">",
+      drawText(">",
                static_cast<int>(dd.x + dd.width) - 14,
                static_cast<int>(yRow) + 4, kRowTextSize, DD_SUBARROW);
     } else if (!it.shortcut.empty()) {
-      int sw_ = MeasureText(it.shortcut.c_str(), kRowTextSize);
-      DrawText(it.shortcut.c_str(),
+      int sw_ = measureText(it.shortcut.c_str(), kRowTextSize);
+      drawText(it.shortcut.c_str(),
                static_cast<int>(dd.x + dd.width) - sw_ - kRowPadX,
                static_cast<int>(yRow) + 4, kRowTextSize, DD_SHORTCUT);
     }
@@ -546,11 +547,11 @@ void MenuBar::render(const Inspector &insp) {
                         DD_ROW_HOVER);
         }
         if (it.checked && it.checked(insp)) {
-          DrawText("✓", static_cast<int>(subR.x) + 6,
+          drawText("✓", static_cast<int>(subR.x) + 6,
                    static_cast<int>(ys) + 4, kRowTextSize, DD_CHECK);
         }
         Color textCol = en ? BAR_TEXT : BAR_DIM;
-        DrawText(it.label.c_str(),
+        drawText(it.label.c_str(),
                  static_cast<int>(subR.x) + kRowPadX + 12,
                  static_cast<int>(ys) + 4, kRowTextSize, textCol);
         ys += kRowH;

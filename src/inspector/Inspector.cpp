@@ -1,6 +1,9 @@
 #include "Inspector.hpp"
 
+#include "AITool.hpp"
+#include "FXTool.hpp"
 #include "HardpointsTool.hpp"
+#include "InspectorFont.hpp"
 #include "HullTool.hpp"
 #include "IdentityTool.hpp"
 #include "ProfileTool.hpp"
@@ -68,6 +71,8 @@ Inspector::Inspector() {
   m_tools.push_back(std::make_unique<ShieldsTool>());     // F.2
   m_tools.push_back(std::make_unique<WeaponsTool>());     // F.3
   m_tools.push_back(std::make_unique<HardpointsTool>());  // F.3
+  m_tools.push_back(std::make_unique<AITool>());          // F.4
+  m_tools.push_back(std::make_unique<FXTool>());          // F.5
   m_cfgPath = InspectorConfig::defaultPath();
   m_cfg.load(m_cfgPath); // missing file is fine, defaults stand
 }
@@ -732,13 +737,13 @@ void Inspector::renderProfileHud(int &yCursor) const {
                   v.displayName.empty() ? "(unnamed)" : v.displayName.c_str(),
                   v.entityClass.empty() ? "" : "  · ",
                   v.entityClass.c_str());
-    DrawText(buf, 10, yCursor, 14, {180, 220, 255, 240});
+    drawText(buf, 10, yCursor, 14, {180, 220, 255, 240});
     yCursor += 18;
   }
   if (v.fxPresent && v.smokeAtHPFrac > 0.0f) {
     std::snprintf(buf, sizeof(buf), "smoke at hp ≤ %.0f%%",
                   v.smokeAtHPFrac * 100.0f);
-    DrawText(buf, 10, yCursor, 13, {200, 200, 220, 220});
+    drawText(buf, 10, yCursor, 13, {200, 200, 220, 220});
     yCursor += 16;
   }
   if (v.aiPresent) {
@@ -746,18 +751,18 @@ void Inspector::renderProfileHud(int &yCursor) const {
                   "ai: detect=%.0f  attack=%.0f  evade=%.0f%%  retreat=%.0f%%",
                   v.detectionRange, v.attackRange,
                   v.evadeAtHPFrac * 100.0f, v.retreatAtHPFrac * 100.0f);
-    DrawText(buf, 10, yCursor, 13, {200, 200, 220, 220});
+    drawText(buf, 10, yCursor, 13, {200, 200, 220, 220});
     yCursor += 16;
   }
   if (!v.hardpoints.empty()) {
     std::snprintf(buf, sizeof(buf), "hardpoints: %zu", v.hardpoints.size());
-    DrawText(buf, 10, yCursor, 13, {200, 200, 220, 220});
+    drawText(buf, 10, yCursor, 13, {200, 200, 220, 220});
     yCursor += 16;
   }
   if (!m_profile.warnings.empty()) {
     std::snprintf(buf, sizeof(buf), "sidecar warnings: %zu",
                   m_profile.warnings.size());
-    DrawText(buf, 10, yCursor, 13, {255, 180, 100, 240});
+    drawText(buf, 10, yCursor, 13, {255, 180, 100, 240});
     yCursor += 16;
   }
 }
@@ -773,10 +778,10 @@ void Inspector::renderHud() {
     const char *line1 = "no file loaded";
     const char *line2 = "press O to open  |  drag an .obj onto the window  "
                         "|  Q to quit";
-    int w1 = MeasureText(line1, 36);
-    int w2 = MeasureText(line2, 16);
-    DrawText(line1, (sw - w1) / 2, sh / 2 - 40, 36, {200, 220, 240, 220});
-    DrawText(line2, (sw - w2) / 2, sh / 2 + 8, 16, {160, 180, 200, 220});
+    int w1 = measureText(line1, 36);
+    int w2 = measureText(line2, 16);
+    drawText(line1, (sw - w1) / 2, sh / 2 - 40, 36, {200, 220, 240, 220});
+    drawText(line2, (sw - w2) / 2, sh / 2 + 8, 16, {160, 180, 200, 220});
   } else {
     // Tool HUD + sidecar HUD (F.1). Tool draws first, sidecar info
     // appended below so the active tool's state stays at the top.
@@ -806,14 +811,14 @@ void Inspector::renderHud() {
   } else {
     std::snprintf(left, sizeof(left), "(empty workspace)");
   }
-  DrawText(left, 8, sh - barH + 6, 14, {210, 220, 235, 240});
+  drawText(left, 8, sh - barH + 6, 14, {210, 220, 235, 240});
 
   // Bottom-right hint — the discoverable surface is now the menu bar,
   // so this is just a single nudge to Help → Controls for the full
   // hotkey list.
   const char *help = "Help → Controls for shortcuts";
-  int hw = MeasureText(help, 12);
-  DrawText(help, sw - hw - 8, sh - barH + 8, 12, {150, 170, 195, 220});
+  int hw = measureText(help, 12);
+  drawText(help, sw - hw - 8, sh - barH + 8, 12, {150, 170, 195, 220});
 }
 
 // ====================================================================
@@ -840,8 +845,8 @@ void Inspector::renderControlsOverlay() {
   DrawRectangleLines(x, y, w, h, {120, 150, 190, 255});
 
   // Header (fixed; sits above the scroll region).
-  DrawText("Controls", x + 14, y + 12, 20, {220, 230, 250, 240});
-  DrawText("Esc to close", x + w - MeasureText("Esc to close", 12) - 14,
+  drawText("Controls", x + 14, y + 12, 20, {220, 230, 250, 240});
+  drawText("Esc to close", x + w - measureText("Esc to close", 12) - 14,
            y + 18, 12, {160, 180, 200, 220});
 
   // Content layout — single column with section headers. Each entry
@@ -922,14 +927,14 @@ void Inspector::renderControlsOverlay() {
   for (int i = 0; i < nRows; ++i) {
     if (rows[i].k[0] == '\0') {
       yCursor += sectionGapTop;
-      DrawText(rows[i].d, contentX, yCursor, 15, {180, 220, 255, 240});
+      drawText(rows[i].d, contentX, yCursor, 15, {180, 220, 255, 240});
       // thin underline so the section reads at a glance
       DrawRectangle(contentX, yCursor + 18, contentW - 8, 1,
                     {80, 110, 150, 200});
       yCursor += rowH + sectionGapBottom;
     } else {
-      DrawText(rows[i].k, contentX + 16, yCursor, 14, {255, 220, 120, 240});
-      DrawText(rows[i].d, contentX + 180, yCursor, 14, {220, 230, 250, 230});
+      drawText(rows[i].k, contentX + 16, yCursor, 14, {255, 220, 120, 240});
+      drawText(rows[i].d, contentX + 180, yCursor, 14, {220, 230, 250, 230});
       yCursor += rowH;
     }
   }
@@ -973,7 +978,7 @@ void Inspector::renderControlsOverlay() {
   // Bottom hint — scroll affordance + dismissal.
   const char *hint =
       "wheel / PgUp / PgDn / arrows: scroll  |  Esc or click outside: close";
-  DrawText(hint, x + 14, y + h - hintH + 6, 12, {180, 200, 220, 220});
+  drawText(hint, x + 14, y + h - hintH + 6, 12, {180, 200, 220, 220});
 
   // Dismiss: Esc, OR click outside the panel. Skip click-dismiss on
   // the frame the overlay was just opened — that LMB-press is the
@@ -1009,8 +1014,8 @@ void Inspector::renderOpenModal() {
 
   DrawRectangle(x, y, w, h, {32, 38, 50, MODAL_BG_ALPHA});
   DrawRectangleLines(x, y, w, h, {120, 150, 190, 255});
-  DrawText("Open OBJ", x + 14, y + 10, 18, {220, 230, 250, 240});
-  DrawText(m_dirPath.string().c_str(), x + 14, y + 32, 12,
+  drawText("Open OBJ", x + 14, y + 10, 18, {220, 230, 250, 240});
+  drawText(m_dirPath.string().c_str(), x + 14, y + 32, 12,
            {160, 180, 200, 220});
 
   int listY = y + 56;
@@ -1036,17 +1041,17 @@ void Inspector::renderOpenModal() {
       std::snprintf(label, sizeof(label), "★ %s", p.string().c_str());
     else
       std::snprintf(label, sizeof(label), "  %s", p.filename().string().c_str());
-    DrawText(label, x + 14, row, 14, col);
+    drawText(label, x + 14, row, 14, col);
   }
 
   if (total == 0) {
-    DrawText("(no .obj files in directory and no recent files)",
+    drawText("(no .obj files in directory and no recent files)",
              x + 14, listY, 13, {180, 180, 180, 220});
   }
 
   const char *hint =
       "click or Enter: open  |  Esc: cancel  |  ↑/↓ + wheel: navigate";
-  DrawText(hint, x + 14, y + h - 22, 12, {180, 200, 220, 220});
+  drawText(hint, x + 14, y + h - 22, 12, {180, 200, 220, 220});
 }
 
 void Inspector::renderSaveAsModal() {
@@ -1061,8 +1066,8 @@ void Inspector::renderSaveAsModal() {
   DrawRectangle(x, y, w, h, {32, 38, 50, MODAL_BG_ALPHA});
   DrawRectangleLines(x, y, w, h, {120, 150, 190, 255});
 
-  DrawText("Save As", x + 14, y + 10, 18, {220, 230, 250, 240});
-  DrawText("destination path:", x + 14, y + 40, 14, {180, 200, 220, 220});
+  drawText("Save As", x + 14, y + 10, 18, {220, 230, 250, 240});
+  drawText("destination path:", x + 14, y + 40, 14, {180, 200, 220, 220});
 
   int boxX = x + 14;
   int boxY = y + 60;
@@ -1070,13 +1075,13 @@ void Inspector::renderSaveAsModal() {
   int boxH = 32;
   DrawRectangle(boxX, boxY, boxW, boxH, {20, 24, 32, 230});
   DrawRectangleLines(boxX, boxY, boxW, boxH, {100, 130, 170, 255});
-  DrawText(m_saveAsBuf.c_str(), boxX + 6, boxY + 8, 16, {230, 240, 250, 255});
+  drawText(m_saveAsBuf.c_str(), boxX + 6, boxY + 8, 16, {230, 240, 250, 255});
 
   // Caret
-  int caretX = boxX + 6 + MeasureText(m_saveAsBuf.c_str(), 16);
+  int caretX = boxX + 6 + measureText(m_saveAsBuf.c_str(), 16);
   DrawRectangle(caretX + 1, boxY + 6, 2, boxH - 12, {230, 240, 250, 220});
 
-  DrawText("Enter: save  |  Esc: cancel", x + 14, y + h - 22, 12,
+  drawText("Enter: save  |  Esc: cancel", x + 14, y + h - 22, 12,
            {180, 200, 220, 220});
 }
 
@@ -1092,15 +1097,15 @@ void Inspector::renderConfirmUnsavedModal() {
   DrawRectangle(x, y, w, h, {32, 38, 50, MODAL_BG_ALPHA});
   DrawRectangleLines(x, y, w, h, {200, 160, 80, 255});
 
-  DrawText("Unsaved changes", x + 14, y + 10, 18, {255, 220, 120, 240});
-  DrawText("The current file has unsaved edits.", x + 14, y + 44, 14,
+  drawText("Unsaved changes", x + 14, y + 10, 18, {255, 220, 120, 240});
+  drawText("The current file has unsaved edits.", x + 14, y + 44, 14,
            {230, 235, 245, 240});
 
-  DrawText("[S] Save", x + 14, y + 80, 18, {200, 230, 200, 240});
-  DrawText("[D] Discard", x + 140, y + 80, 18, {230, 180, 180, 240});
-  DrawText("[C] Cancel", x + 296, y + 80, 18, {200, 215, 235, 240});
+  drawText("[S] Save", x + 14, y + 80, 18, {200, 230, 200, 240});
+  drawText("[D] Discard", x + 140, y + 80, 18, {230, 180, 180, 240});
+  drawText("[C] Cancel", x + 296, y + 80, 18, {200, 215, 235, 240});
 
-  DrawText("Esc cancels.", x + 14, y + h - 22, 12, {180, 200, 220, 220});
+  drawText("Esc cancels.", x + 14, y + h - 22, 12, {180, 200, 220, 220});
 }
 
 } // namespace tsmesh

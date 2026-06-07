@@ -178,6 +178,36 @@ Entity *EntityManager::spawnEnemy(EntityType type, Vector3 pos) {
   const tsmesh::EntityProfile *prof =
       m_profileRegistry ? m_profileRegistry->get(type) : nullptr;
 
+  // F.4 + F.5 — per-entity AI / FX / infection cached fields. Set
+  // universally (independent of entity type) so the AI tick paths
+  // and tickDamageSmoke can read e.* values directly. Config
+  // constants are the fallback when no sidecar is loaded.
+  if (prof && prof->view.aiPresent) {
+    e->aiDetectionRange = prof->view.detectionRange;
+    e->aiAttackRange = prof->view.attackRange;
+    e->aiEvadeAtHPFrac = prof->view.evadeAtHPFrac;
+    e->aiRetreatHPFrac = prof->view.retreatAtHPFrac;
+  } else {
+    e->aiDetectionRange = Config::AI_PURSUE_RANGE;
+    e->aiAttackRange = Config::AI_ATTACK_RANGE;
+    e->aiEvadeAtHPFrac = Config::AI_EVADE_HEALTH;
+    e->aiRetreatHPFrac = Config::RETREAT_HP_THRESHOLD;
+  }
+  if (prof && prof->view.infectionPresent) {
+    e->aiSpeedPenaltyAfterInfect = prof->view.speedPenaltyAfter;
+    e->infectionRebootDuration = prof->view.rebootDuration;
+  } else {
+    e->aiSpeedPenaltyAfterInfect = Config::INFECT_SPEED_PENALTY;
+    e->infectionRebootDuration = Config::INFECT_REBOOT_DURATION;
+  }
+  if (prof && prof->view.fxPresent) {
+    e->smokeAtHPFrac = prof->view.smokeAtHPFrac;
+    e->deathExplosionScale = prof->view.deathExplosionScale;
+  } else {
+    e->smokeAtHPFrac = Config::SMOKE_HP_THRESHOLD;
+    e->deathExplosionScale = 1.0f;
+  }
+
   switch (type) {
   case EntityType::Fighter:
     // Fighter is the canonical F.2 migration target — values read
@@ -629,7 +659,7 @@ bool EntityManager::tryInfect(Entity &target) {
     if (target.sectorHP[i] > 0.0f) return false;
   }
   target.aiState = AIState::Infecting;
-  target.infectionTimer = Config::INFECT_REBOOT_DURATION;
+  target.infectionTimer = target.infectionRebootDuration;
   target.canBeInfected = false;
   // Freeze velocity so the reboot freeze reads as a real pause.
   target.vel = {0.0f, 0.0f, 0.0f};
@@ -697,11 +727,15 @@ void EntityManager::applyEMPStun(Vector3 pos, float radius, float duration) {
 void EntityManager::tickDamageSmoke(Entity &e, ParticleSystem &particles,
                                     float dt) {
   if (e.hullMax <= 0.0f) return;
+  // F.5 — per-entity smoke threshold from sidecar (Config fallback
+  // already baked in at spawn). 0 means "no smoke for this entity".
+  float threshold = (e.smokeAtHPFrac > 0.0f) ? e.smokeAtHPFrac
+                                              : Config::SMOKE_HP_THRESHOLD;
   float hpFrac = e.hullHP / e.hullMax;
-  if (hpFrac >= Config::SMOKE_HP_THRESHOLD) return;
+  if (hpFrac >= threshold) return;
 
   // Linear emit-rate ramp from MIN at the threshold to MAX at zero HP.
-  float damageFrac = 1.0f - (hpFrac / Config::SMOKE_HP_THRESHOLD);
+  float damageFrac = 1.0f - (hpFrac / threshold);
   if (damageFrac < 0.0f) damageFrac = 0.0f;
   if (damageFrac > 1.0f) damageFrac = 1.0f;
   float emitRate =
@@ -740,9 +774,13 @@ bool EntityManager::tickRetreat(Entity &e, float dt, const Planet &planet,
 
   // Engine-damage scaling: full retreat speed at the threshold (hp ==
   // 40%), tapering toward 10% at zero HP so a near-dead ship visibly
-  // limps but doesn't freeze in place.
+  // limps but doesn't freeze in place. F.4 — retreat threshold can
+  // come from sidecar; falls back to Config::RETREAT_HP_THRESHOLD at
+  // spawn so the default behaviour is unchanged.
+  float retreatThr = (e.aiRetreatHPFrac > 0.0f) ? e.aiRetreatHPFrac
+                                                 : Config::RETREAT_HP_THRESHOLD;
   float hpFrac = (e.hullMax > 0.0f) ? (e.hullHP / e.hullMax) : 0.0f;
-  float band = hpFrac / Config::RETREAT_HP_THRESHOLD; // 1 at threshold, 0 at dead
+  float band = hpFrac / retreatThr; // 1 at threshold, 0 at dead
   if (band < 0.1f) band = 0.1f;
   if (band > 1.0f) band = 1.0f;
   float speedMul = Config::RETREAT_SPEED_FRAC * band;
@@ -972,7 +1010,7 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
   // Infected ships skip retreat — design §5.3 says they fight where
   // they are until destroyed and aren't replaced.
   if (!isInfected && e.hullMax > 0.0f &&
-      (e.hullHP / e.hullMax) < Config::RETREAT_HP_THRESHOLD) {
+      (e.hullHP / e.hullMax) < e.aiRetreatHPFrac) {
     e.aiState = AIState::Retreating;
   }
   if (e.aiState == AIState::Retreating) {
@@ -982,20 +1020,19 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
   }
 
   // Infection speed penalty — applies as a multiplier on max speed.
-  // Combines with evadeScale below (multiplicatively) so a wounded
-  // infected ship is even slower.
-  float infectMul = isInfected ? Config::INFECT_SPEED_PENALTY : 1.0f;
+  // F.4 — pulled from per-entity sidecar cache.
+  float infectMul = isInfected ? e.aiSpeedPenaltyAfterInfect : 1.0f;
 
   // EVADE state — fighter peels AWAY from the player when its hull
-  // drops below AI_EVADE_HEALTH (default 25%). Exit when it has put
+  // drops below aiEvadeAtHPFrac (default 25%). Exit when it has put
   // enough distance between itself and the player to recover. Now
   // effectively dead code (Retreating preempts at 40%), kept as a
-  // fallback if RETREAT_HP_THRESHOLD ever moves below AI_EVADE_HEALTH.
+  // fallback if aiRetreatHPFrac ever moves below aiEvadeAtHPFrac.
   // Suppressed for infected ships so the Infected aiState isn't
   // overwritten when the bleed drops HP into the EVADE band.
   bool wantEvade = !isInfected && (e.hullMax > 0.0f) &&
-                   ((e.hullHP / e.hullMax) < Config::AI_EVADE_HEALTH);
-  if (wantEvade && dist < Config::AI_PURSUE_RANGE * 1.5f) {
+                   ((e.hullHP / e.hullMax) < e.aiEvadeAtHPFrac);
+  if (wantEvade && dist < e.aiDetectionRange * 1.5f) {
     e.aiState = AIState::Evade;
   } else if (e.aiState == AIState::Evade && !wantEvade) {
     e.aiState = AIState::Pursue;
@@ -1008,8 +1045,8 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
   // damaged ship reads as sluggish on every axis.
   float evadeScale = 1.0f;
   if (e.aiState == AIState::Evade && e.hullMax > 0.0f) {
-    float hpFrac = e.hullHP / e.hullMax; // 0 .. AI_EVADE_HEALTH
-    float bandT = 1.0f - (hpFrac / Config::AI_EVADE_HEALTH);
+    float hpFrac = e.hullHP / e.hullMax; // 0 .. aiEvadeAtHPFrac
+    float bandT = 1.0f - (hpFrac / e.aiEvadeAtHPFrac);
     if (bandT < 0.0f) bandT = 0.0f;
     if (bandT > 1.0f) bandT = 1.0f;
     evadeScale = 0.60f - 0.35f * bandT; // 0.60 → 0.25
@@ -1036,9 +1073,9 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
   // pointing at a different target.
   Vector3 fwd = {sinf(e.yaw), 0.0f, cosf(e.yaw)};
   if (e.aiState != AIState::Evade && !isInfected) {
-    if (dist < Config::AI_ATTACK_RANGE) {
+    if (dist < e.aiAttackRange) {
       e.aiState = AIState::Attack;
-    } else if (dist < Config::AI_PURSUE_RANGE) {
+    } else if (dist < e.aiDetectionRange) {
       e.aiState = AIState::Pursue;
     }
   }
@@ -1049,7 +1086,7 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
   // the player anyway, but the visual would read wrong).
   bool willFire = (e.aiState == AIState::Attack) ||
                   (isInfected && hasTarget &&
-                   dist < Config::AI_ATTACK_RANGE);
+                   dist < e.aiAttackRange);
 
   // Thrust — composed: eased on ATTACK; further reduced by evadeScale
   // and infection penalty.
@@ -1153,7 +1190,7 @@ void EntityManager::updateBomber(Entity &e, float dt, const Planet &planet,
   bool isInfected = (e.aiState == AIState::Infected);
 
   if (!isInfected && e.hullMax > 0.0f &&
-      (e.hullHP / e.hullMax) < Config::RETREAT_HP_THRESHOLD) {
+      (e.hullHP / e.hullMax) < e.aiRetreatHPFrac) {
     e.aiState = AIState::Retreating;
   }
   if (e.aiState == AIState::Retreating) {
@@ -1196,7 +1233,7 @@ void EntityManager::updateBomber(Entity &e, float dt, const Planet &planet,
     }
     (void)targetingFriendly; // reserved for future strafe-specific tuning
   }
-  float infectMul = isInfected ? Config::INFECT_SPEED_PENALTY : 1.0f;
+  float infectMul = isInfected ? e.aiSpeedPenaltyAfterInfect : 1.0f;
 
   Vector3 toPlayer = Vector3Subtract(targetPos, e.pos);
   Vector3 toPlayerH = {toPlayer.x, 0.0f, toPlayer.z};
@@ -1208,8 +1245,8 @@ void EntityManager::updateBomber(Entity &e, float dt, const Planet &planet,
   // infected bombers (their AIState is locked to Infected — they
   // commit to the new fight per design §5.3).
   bool wantEvade = !isInfected && (e.hullMax > 0.0f) &&
-                   ((e.hullHP / e.hullMax) < Config::AI_EVADE_HEALTH);
-  if (wantEvade && dist < Config::AI_PURSUE_RANGE * 1.5f) {
+                   ((e.hullHP / e.hullMax) < e.aiEvadeAtHPFrac);
+  if (wantEvade && dist < e.aiDetectionRange * 1.5f) {
     e.aiState = AIState::Evade;
   } else if (e.aiState == AIState::Evade && !wantEvade) {
     e.aiState = AIState::Pursue;
@@ -1218,7 +1255,7 @@ void EntityManager::updateBomber(Entity &e, float dt, const Planet &planet,
   float evadeScale = 1.0f;
   if (e.aiState == AIState::Evade && e.hullMax > 0.0f) {
     float hpFrac = e.hullHP / e.hullMax;
-    float bandT = 1.0f - (hpFrac / Config::AI_EVADE_HEALTH);
+    float bandT = 1.0f - (hpFrac / e.aiEvadeAtHPFrac);
     if (bandT < 0.0f) bandT = 0.0f;
     if (bandT > 1.0f) bandT = 1.0f;
     evadeScale = 0.60f - 0.35f * bandT; // 0.60 → 0.25, mirrors Fighter
@@ -1243,15 +1280,15 @@ void EntityManager::updateBomber(Entity &e, float dt, const Planet &planet,
   // Infected and use the willFire flag below for firing condition.
   Vector3 fwd = {sinf(e.yaw), 0.0f, cosf(e.yaw)};
   if (e.aiState != AIState::Evade && !isInfected) {
-    if (dist < Config::AI_ATTACK_RANGE) {
+    if (dist < e.aiAttackRange) {
       e.aiState = AIState::Attack;
-    } else if (dist < Config::AI_PURSUE_RANGE) {
+    } else if (dist < e.aiDetectionRange) {
       e.aiState = AIState::Pursue;
     }
   }
   bool willFire = (e.aiState == AIState::Attack) ||
                   (isInfected && hasTarget &&
-                   dist < Config::AI_ATTACK_RANGE);
+                   dist < e.aiAttackRange);
 
   // Bombers ease the throttle in ATTACK so the slow projectiles get
   // a stable firing platform; full thrust during PURSUE to close.
@@ -1532,11 +1569,11 @@ int EntityManager::liveDroneCount() const {
 // ====================================================================
 void EntityManager::updateSeeder(Entity &e, float dt, const Planet &planet,
                                  const Player &player) {
-  // Slice A — retreat. Seeders are fragile (50 HP) so the band between
-  // RETREAT_HP_THRESHOLD and zero is narrow, but a wounded seeder
+  // Slice A — retreat. Seeders are fragile (50 HP) so the band
+  // between aiRetreatHPFrac and zero is narrow, but a wounded seeder
   // visibly peels off rather than continuing to drift in orbit.
   if (e.hullMax > 0.0f &&
-      (e.hullHP / e.hullMax) < Config::RETREAT_HP_THRESHOLD) {
+      (e.hullHP / e.hullMax) < e.aiRetreatHPFrac) {
     e.aiState = AIState::Retreating;
   }
   if (e.aiState == AIState::Retreating) {
@@ -1734,7 +1771,7 @@ void EntityManager::updateGroundTurret(Entity &e, float dt,
   // until hull crawls back above TANK_EVADE_RECOVERY (won't happen
   // without a heal — by design, badly damaged tanks try to retreat).
   bool wantEvade = (e.hullMax > 0.0f) &&
-                   ((e.hullHP / e.hullMax) < Config::AI_EVADE_HEALTH);
+                   ((e.hullHP / e.hullMax) < e.aiEvadeAtHPFrac);
   if (wantEvade) {
     e.aiState = AIState::Evade;
   } else if (e.aiState == AIState::Evade &&

@@ -197,6 +197,26 @@ struct Entity {
   Vector3 spawnPos = {0, 0, 0};
   float smokeTimer = 0.0f;
 
+  // F.4 — per-entity AI cached from sidecar at spawn (falls back to
+  // Config::AI_* constants when no profile is loaded). AI tick paths
+  // read these instead of Config so live edits via the inspector
+  // take effect on the next spawn. evadeAtHPFrac defaults to 0
+  // signalling "use Config::AI_EVADE_HEALTH"; retreatHPFrac same.
+  float aiDetectionRange = 0.0f;
+  float aiAttackRange = 0.0f;
+  float aiEvadeAtHPFrac = 0.0f;
+  float aiRetreatHPFrac = 0.0f;
+  float aiSpeedPenaltyAfterInfect = 0.80f;
+  float infectionRebootDuration = 3.0f; // sec — set in tryInfect()
+
+  // F.5 — per-entity FX cached from sidecar. smokeAtHPFrac is the
+  // hull-fraction threshold below which damage smoke emits;
+  // deathExplosionScale multiplies the kill-burst (not yet wired
+  // into emitKillExplosion's call sites — surface stored for the
+  // future migration).
+  float smokeAtHPFrac = 0.0f;
+  float deathExplosionScale = 1.0f;
+
   // Slice B.4 — infection state. canBeInfected is set at spawn by
   // entity type (Fighter / Bomber = true; Drone / Turret / Tank /
   // friendly = false). Once an entity has been infected, this flag

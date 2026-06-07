@@ -1,6 +1,7 @@
 #include "HullTool.hpp"
 
 #include "Inspector.hpp"
+#include "InspectorFont.hpp"
 #include "mesh/SidecarProfile.hpp"
 #include "raylib.h"
 #include "rlgl.h"
@@ -98,13 +99,13 @@ void HullTool::renderHud(const Inspector &insp, int &yCursor) const {
   const ProfileView &v = insp.profile().view;
 
   if (!v.hullPresent) {
-    DrawText("hull (no hull section in sidecar  |  press N to add)",
+    drawText("hull (no hull section in sidecar  |  press N to add)",
              10, yCursor, 14, {200, 180, 140, 240});
     yCursor += 22;
     return;
   }
 
-  DrawText("hull (./, to cycle  |  ↑/↓ fine  |  Shift+↑/↓ coarse)",
+  drawText("hull (./, to cycle  |  ↑/↓ fine  |  Shift+↑/↓ coarse)",
            10, yCursor, 14, {160, 180, 200, 220});
   yCursor += 22;
 
@@ -116,7 +117,7 @@ void HullTool::renderHud(const Inspector &insp, int &yCursor) const {
     std::snprintf(buf, sizeof(buf), "%s %s = %.3f",
                   focused ? "►" : "  ", fieldLabel(i), fieldAt(
                       const_cast<ProfileView &>(v), i));
-    DrawText(buf, 14, yCursor, 14, col);
+    drawText(buf, 14, yCursor, 14, col);
     yCursor += 18;
   }
 }

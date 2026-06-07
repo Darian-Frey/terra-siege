@@ -1,6 +1,7 @@
 #include "VertexTool.hpp"
 
 #include "Inspector.hpp"
+#include "InspectorFont.hpp"
 #include "mesh/ObjLoader.hpp"
 #include "raymath.h"
 
@@ -129,9 +130,9 @@ void VertexTool::renderHud(const Inspector &insp, int &yCursor) const {
     Vector3 v = insp.mesh().vertices[m_selected];
     std::snprintf(buf, sizeof(buf), "v%d: (%.3f, %.3f, %.3f)",
                   m_selected, v.x, v.y, v.z);
-    DrawText(buf, 10, yCursor, 14, {220, 230, 250, 240});
+    drawText(buf, 10, yCursor, 14, {220, 230, 250, 240});
   } else {
-    DrawText("click a vertex to select  |  hold X/Y/Z while dragging "
+    drawText("click a vertex to select  |  hold X/Y/Z while dragging "
              "to axis-lock",
              10, yCursor, 14, {160, 180, 200, 200});
   }
@@ -141,7 +142,7 @@ void VertexTool::renderHud(const Inspector &insp, int &yCursor) const {
     const char *axisName = (m_axisLock == 0) ? "X"
                           : (m_axisLock == 1) ? "Y" : "Z";
     std::snprintf(buf, sizeof(buf), "axis-lock: %s", axisName);
-    DrawText(buf, 10, yCursor, 14, {255, 220, 80, 240});
+    drawText(buf, 10, yCursor, 14, {255, 220, 80, 240});
     yCursor += 20;
   }
 }

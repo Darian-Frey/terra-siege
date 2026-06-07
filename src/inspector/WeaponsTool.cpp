@@ -1,6 +1,7 @@
 #include "WeaponsTool.hpp"
 
 #include "Inspector.hpp"
+#include "InspectorFont.hpp"
 #include "mesh/SidecarProfile.hpp"
 #include "raylib.h"
 
@@ -150,13 +151,13 @@ void WeaponsTool::render3D(const Inspector & /*insp*/) const {
 void WeaponsTool::renderHud(const Inspector &insp, int &yCursor) const {
   const ProfileView &v = insp.profile().view;
 
-  DrawText("weapons (A add  |  Shift+Del delete  |  [/] browse  |  "
+  drawText("weapons (A add  |  Shift+Del delete  |  [/] browse  |  "
            "./, field  |  ↑/↓ edit)",
            10, yCursor, 14, {160, 180, 200, 220});
   yCursor += 22;
 
   if (v.weapons.empty()) {
-    DrawText("(no weapons defined — press A to add one)",
+    drawText("(no weapons defined — press A to add one)",
              14, yCursor, 14, {200, 180, 140, 240});
     yCursor += 20;
     return;
@@ -166,7 +167,7 @@ void WeaponsTool::renderHud(const Inspector &insp, int &yCursor) const {
   int n = static_cast<int>(v.weapons.size());
   std::snprintf(buf, sizeof(buf), "weapon %d / %d",
                 m_sel + 1, n);
-  DrawText(buf, 14, yCursor, 14, {200, 220, 240, 230});
+  drawText(buf, 14, yCursor, 14, {200, 220, 240, 230});
   yCursor += 18;
 
   if (m_sel < 0 || m_sel >= n) return;
@@ -180,7 +181,7 @@ void WeaponsTool::renderHud(const Inspector &insp, int &yCursor) const {
                   focused ? "►" : "  ", fieldLabel(idx),
                   textVal.empty() ? "(empty)" : textVal.c_str(),
                   focused ? "_" : "");
-    DrawText(buf, 14, yCursor, 14, col);
+    drawText(buf, 14, yCursor, 14, col);
     yCursor += 18;
   };
   auto frow = [&](int idx, float value) {
@@ -189,7 +190,7 @@ void WeaponsTool::renderHud(const Inspector &insp, int &yCursor) const {
                         : Color{220, 230, 250, 230};
     std::snprintf(buf, sizeof(buf), "%s %s = %.3f",
                   focused ? "►" : "  ", fieldLabel(idx), value);
-    DrawText(buf, 14, yCursor, 14, col);
+    drawText(buf, 14, yCursor, 14, col);
     yCursor += 18;
   };
   auto irow = [&](int idx, int value) {
@@ -203,7 +204,7 @@ void WeaponsTool::renderHud(const Inspector &insp, int &yCursor) const {
       std::snprintf(buf, sizeof(buf), "%s %s = %d",
                     focused ? "►" : "  ", fieldLabel(idx), value);
     }
-    DrawText(buf, 14, yCursor, 14, col);
+    drawText(buf, 14, yCursor, 14, col);
     yCursor += 18;
   };
   row(0, w.name);

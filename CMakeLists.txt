@@ -206,6 +206,12 @@ add_executable(terra-siege-inspect
     src/inspector/Inspector.hpp
     src/inspector/InspectorConfig.cpp
     src/inspector/InspectorConfig.hpp
+    src/inspector/InspectorFont.cpp
+    src/inspector/InspectorFont.hpp
+    src/inspector/AITool.cpp
+    src/inspector/AITool.hpp
+    src/inspector/FXTool.cpp
+    src/inspector/FXTool.hpp
     src/inspector/HardpointsTool.cpp
     src/inspector/HardpointsTool.hpp
     src/inspector/HullTool.cpp

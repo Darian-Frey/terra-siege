@@ -340,6 +340,88 @@ TEST_CASE("F.3 hardpoints add + delete round-trip") {
   std::filesystem::remove(path);
 }
 
+TEST_CASE("F.4 AI block round-trip + present flag") {
+  auto path = writeTemp(R"({
+    "ai": { "profile": "pursue-attack-evade",
+            "targetPref": "player",
+            "detectionRange": 350,
+            "attackRange": 180,
+            "evadeAtHPFrac": 0.25,
+            "retreatAtHPFrac": 0.40 }
+  })",
+                        ".meta.json");
+  EntityProfile prof;
+  REQUIRE(loadProfile(path, prof));
+  CHECK(prof.view.aiPresent);
+  CHECK(prof.view.aiProfile == "pursue-attack-evade");
+  CHECK(prof.view.targetPref == "player");
+  CHECK(prof.view.detectionRange == doctest::Approx(350.0f));
+  CHECK(prof.view.retreatAtHPFrac == doctest::Approx(0.40f));
+
+  // Edit + save.
+  prof.view.attackRange = 220.0f;
+  prof.view.targetPref = "nearest";
+  REQUIRE(saveProfile(path, prof));
+
+  EntityProfile reread;
+  REQUIRE(loadProfile(path, reread));
+  CHECK(reread.view.attackRange == doctest::Approx(220.0f));
+  CHECK(reread.view.targetPref == "nearest");
+  std::filesystem::remove(path);
+}
+
+TEST_CASE("F.4 infection block parses + round-trips") {
+  auto path = writeTemp(R"({
+    "infection": { "canBeInfected": true,
+                   "rebootDuration": 3.0,
+                   "speedPenaltyAfter": 0.80 }
+  })",
+                        ".meta.json");
+  EntityProfile prof;
+  REQUIRE(loadProfile(path, prof));
+  CHECK(prof.view.infectionPresent);
+  CHECK(prof.view.canBeInfected);
+  CHECK(prof.view.rebootDuration == doctest::Approx(3.0f));
+  CHECK(prof.view.speedPenaltyAfter == doctest::Approx(0.80f));
+
+  prof.view.canBeInfected = false;
+  prof.view.rebootDuration = 5.0f;
+  REQUIRE(saveProfile(path, prof));
+
+  EntityProfile reread;
+  REQUIRE(loadProfile(path, reread));
+  CHECK_FALSE(reread.view.canBeInfected);
+  CHECK(reread.view.rebootDuration == doctest::Approx(5.0f));
+  std::filesystem::remove(path);
+}
+
+TEST_CASE("F.5 fx extras (smoke / explosion / glow RGB) round-trip") {
+  auto path = writeTemp(R"({
+    "fx": { "smokeAtHPFrac": 0.50,
+            "deathExplosionScale": 1.4,
+            "engineGlowColour": [120, 200, 240] }
+  })",
+                        ".meta.json");
+  EntityProfile prof;
+  REQUIRE(loadProfile(path, prof));
+  CHECK(prof.view.fxPresent);
+  CHECK(prof.view.smokeAtHPFrac == doctest::Approx(0.50f));
+  CHECK(prof.view.deathExplosionScale == doctest::Approx(1.4f));
+  CHECK(static_cast<int>(prof.view.engineGlowR) == 120);
+  CHECK(static_cast<int>(prof.view.engineGlowG) == 200);
+  CHECK(static_cast<int>(prof.view.engineGlowB) == 240);
+
+  prof.view.deathExplosionScale = 2.0f;
+  prof.view.engineGlowR = 255;
+  REQUIRE(saveProfile(path, prof));
+
+  EntityProfile reread;
+  REQUIRE(loadProfile(path, reread));
+  CHECK(reread.view.deathExplosionScale == doctest::Approx(2.0f));
+  CHECK(static_cast<int>(reread.view.engineGlowR) == 255);
+  std::filesystem::remove(path);
+}
+
 TEST_CASE("wrong-type fields warn but don't fail the load") {
   auto path = writeTemp(R"({
     "scale": "not a number",

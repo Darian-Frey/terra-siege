@@ -1,6 +1,7 @@
 #include "ShieldsTool.hpp"
 
 #include "Inspector.hpp"
+#include "InspectorFont.hpp"
 #include "mesh/SidecarProfile.hpp"
 #include "raylib.h"
 #include "raymath.h"
@@ -133,14 +134,14 @@ void ShieldsTool::renderHud(const Inspector &insp, int &yCursor) const {
   const ProfileView &v = insp.profile().view;
 
   if (!v.shieldsPresent) {
-    DrawText(
+    drawText(
         "shields (no shields section  |  press N to add)",
         10, yCursor, 14, {200, 180, 140, 240});
     yCursor += 22;
     return;
   }
 
-  DrawText("shields (./, to cycle  |  ↑/↓ adjust or cycle model)",
+  drawText("shields (./, to cycle  |  ↑/↓ adjust or cycle model)",
            10, yCursor, 14, {160, 180, 200, 220});
   yCursor += 22;
 
@@ -152,7 +153,7 @@ void ShieldsTool::renderHud(const Inspector &insp, int &yCursor) const {
                         : Color{220, 230, 250, 230};
     std::snprintf(buf, sizeof(buf), "%s model = %s",
                   focused ? "►" : "  ", v.shieldModel.c_str());
-    DrawText(buf, 14, yCursor, 14, col);
+    drawText(buf, 14, yCursor, 14, col);
     yCursor += 18;
   }
   // Numeric rows.
@@ -164,7 +165,7 @@ void ShieldsTool::renderHud(const Inspector &insp, int &yCursor) const {
     std::snprintf(buf, sizeof(buf), "%s %s = %.3f",
                   focused ? "►" : "  ", fieldLabel(i),
                   f ? *f : 0.0f);
-    DrawText(buf, 14, yCursor, 14, col);
+    drawText(buf, 14, yCursor, 14, col);
     yCursor += 18;
   }
 }

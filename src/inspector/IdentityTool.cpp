@@ -1,6 +1,7 @@
 #include "IdentityTool.hpp"
 
 #include "Inspector.hpp"
+#include "InspectorFont.hpp"
 #include "mesh/SidecarProfile.hpp"
 #include "raylib.h"
 
@@ -71,7 +72,7 @@ void IdentityTool::render3D(const Inspector & /*insp*/) const {
 
 void IdentityTool::renderHud(const Inspector &insp, int &yCursor) const {
   const ProfileView &v = insp.profile().view;
-  DrawText("identity (./, to cycle  |  type to edit text  |  "
+  drawText("identity (./, to cycle  |  type to edit text  |  "
            "↑/↓ cycles class)",
            10, yCursor, 14, {160, 180, 200, 220});
   yCursor += 22;
@@ -85,7 +86,7 @@ void IdentityTool::renderHud(const Inspector &insp, int &yCursor) const {
                   focused ? "►" : "  ", label,
                   value.empty() ? "(empty)" : value.c_str(),
                   focused ? "_" : "");
-    DrawText(buf, 14, yCursor, 14, col);
+    drawText(buf, 14, yCursor, 14, col);
     yCursor += 18;
   };
   row(0, "displayName", v.displayName);

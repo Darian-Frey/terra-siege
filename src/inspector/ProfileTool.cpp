@@ -1,6 +1,7 @@
 #include "ProfileTool.hpp"
 
 #include "Inspector.hpp"
+#include "InspectorFont.hpp"
 #include "mesh/SidecarProfile.hpp"
 #include "raylib.h"
 #include "raymath.h"
@@ -94,10 +95,10 @@ void ProfileTool::renderHud(const Inspector &insp, int &yCursor) const {
   const ProfileView &v = insp.profile().view;
 
   char buf[128];
-  DrawText("profile (",  10, yCursor, 14, {220, 230, 250, 240});
-  DrawText("./, to cycle  |  ↑/↓ ±0.05  |  Shift+↑/↓ ±1.0",
+  drawText("profile (",  10, yCursor, 14, {220, 230, 250, 240});
+  drawText("./, to cycle  |  ↑/↓ ±0.05  |  Shift+↑/↓ ±1.0",
            74, yCursor, 14, {160, 180, 200, 220});
-  DrawText(")", 462, yCursor, 14, {220, 230, 250, 240});
+  drawText(")", 462, yCursor, 14, {220, 230, 250, 240});
   yCursor += 22;
 
   auto row = [&](int idx, float value) {
@@ -106,7 +107,7 @@ void ProfileTool::renderHud(const Inspector &insp, int &yCursor) const {
                         : Color{220, 230, 250, 230};
     std::snprintf(buf, sizeof(buf), "%s %s = %.4f",
                   focused ? "►" : "  ", fieldLabel(idx), value);
-    DrawText(buf, 14, yCursor, 14, col);
+    drawText(buf, 14, yCursor, 14, col);
     yCursor += 18;
   };
   row(0, v.forward.x);
