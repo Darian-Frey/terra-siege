@@ -1,5 +1,6 @@
 #pragma once
 
+#include "audio/AudioManager.hpp"
 #include "core/Particles.hpp"
 #include "core/Settings.hpp"
 #include "entity/EntityManager.hpp"
@@ -232,6 +233,14 @@ private:
   // after MeshRegistry from the same assets/meshes/ directory; missing
   // sidecars are fine (the consumer falls back to Config defaults).
   tsmesh::EntityProfileRegistry m_profileRegistry;
+
+  // Engine Phase 5 — procedural SFX. Initialised in init() after
+  // raylib's audio device is up; listener pose is refreshed each frame
+  // from the active camera before any entity-side play3D() runs.
+  AudioManager m_audio;
+  // Beam-tick stagger so the looped sound doesn't fire every tick.
+  // Holds the time since the last BeamTick triggered.
+  float m_beamSfxCooldown = 0.0f;
 
   // Camera
   Camera3D m_camera = {};

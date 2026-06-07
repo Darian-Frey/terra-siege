@@ -10,6 +10,7 @@
 class Planet;
 class Player;
 class ParticleSystem;
+class AudioManager;
 namespace tsmesh {
 class MeshRegistry;
 class EntityProfileRegistry;
@@ -42,6 +43,11 @@ public:
   void setProfileRegistry(const tsmesh::EntityProfileRegistry *r) {
     m_profileRegistry = r;
   }
+
+  // Engine Phase 5 — sets the audio sink used for hit/kill/fire SFX.
+  // Non-owning. Defaults to nullptr so unit tests / inspector that
+  // don't wire one still run silently.
+  void setAudio(AudioManager *a) { m_audio = a; }
 
   // Dev-only — kill every alive enemy without triggering kill bursts
   // or scoring. Used by the F7 skip-wave hotkey to advance through the
@@ -155,6 +161,7 @@ private:
   // F.2 — optional sidecar registry. Non-owning. Defaults to nullptr
   // so unit tests / tools that don't wire one in still work.
   const tsmesh::EntityProfileRegistry *m_profileRegistry = nullptr;
+  AudioManager *m_audio = nullptr; // non-owning; nullptr → silent
 
   // Per-entity update bodies
   void updateFighter(Entity &e, float dt, const Planet &planet,

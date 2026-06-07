@@ -1,5 +1,6 @@
 #include "EntityManager.hpp"
 #include "Player.hpp"
+#include "audio/AudioManager.hpp"
 #include "core/Particles.hpp"
 #include "mesh/EntityProfileRegistry.hpp"
 #include "mesh/MeshRegistry.hpp"
@@ -631,6 +632,7 @@ void EntityManager::applyShieldHit(Entity &target, float shieldDmg,
     shieldfx::pushImpact(target.shieldImpactDir, target.shieldImpactTimer,
                          Config::SHIELD_IMPACT_SLOTS,
                          shieldHitDirLocal(target, hitPos));
+    if (m_audio) m_audio->play3D(SfxId::ShieldFlash, hitPos, 0.7f);
   }
 
   // Hull drain — always, even while shields are up.
@@ -1161,6 +1163,7 @@ void EntityManager::fireFighterShot(Entity &e, Vector3 targetPos,
   spawnProjectile(spawn, vel, Config::FIGHTER_FIRE_DAMAGE,
                   Config::FIGHTER_PROJ_RANGE,
                   Config::FIGHTER_PROJ_SPEED, owner);
+  if (m_audio) m_audio->play3D(SfxId::CannonShot, spawn, 0.5f);
 }
 
 // ====================================================================
@@ -1355,6 +1358,7 @@ void EntityManager::fireBomberShot(Entity &e, Vector3 targetPos,
   spawnProjectile(spawn, vel, Config::BOMBER_FIRE_DAMAGE,
                   Config::BOMBER_PROJ_RANGE, Config::BOMBER_PROJ_SPEED,
                   owner);
+  if (m_audio) m_audio->play3D(SfxId::PlasmaShot, spawn, 0.7f);
 }
 
 // ====================================================================
@@ -1546,6 +1550,8 @@ void EntityManager::fireDroneShot(Entity &e, Vector3 targetPos) {
   spawnProjectile(spawn, vel, Config::DRONE_FIRE_DAMAGE,
                   Config::DRONE_PROJ_RANGE, Config::DRONE_PROJ_SPEED,
                   ProjectileOwner::Enemy);
+  // Drone fire — UI blip sized down, lots of these flying around.
+  if (m_audio) m_audio->play3D(SfxId::UIBlip, spawn, 0.35f);
 }
 
 int EntityManager::liveDroneCount() const {
@@ -2542,6 +2548,9 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
       // bleeds to hull.
       emitHitBurst(p.pos, particles);
       player.applyDamage(p.damage, p.pos);
+      // Distinct bassy thud so the player FEELS the hit. Played 2D
+      // (centered, full volume) since it's the player's own event.
+      if (m_audio) m_audio->play2D(SfxId::PlayerHit, 1.0f);
       p.alive = false;
       --m_liveProjectiles;
       return;
@@ -2634,6 +2643,7 @@ void EntityManager::applyDamage(Entity &target, float damage,
         shieldfx::pushImpact(target.shieldImpactDir, target.shieldImpactTimer,
                              Config::SHIELD_IMPACT_SLOTS,
                              shieldHitDirLocal(target, hitPos));
+        if (m_audio) m_audio->play3D(SfxId::ShieldFlash, hitPos, 0.7f);
         return;
       }
       damage -= target.sectorHP[s];
@@ -2647,6 +2657,7 @@ void EntityManager::applyDamage(Entity &target, float damage,
       shieldfx::pushImpact(target.shieldImpactDir, target.shieldImpactTimer,
                            Config::SHIELD_IMPACT_SLOTS,
                            shieldHitDirLocal(target, hitPos));
+      if (m_audio) m_audio->play3D(SfxId::ShieldFlash, hitPos, 0.7f);
       return;
     }
     damage -= target.shieldHP;
@@ -2656,6 +2667,7 @@ void EntityManager::applyDamage(Entity &target, float damage,
     shieldfx::pushImpact(target.shieldImpactDir, target.shieldImpactTimer,
                          Config::SHIELD_IMPACT_SLOTS,
                          shieldHitDirLocal(target, hitPos));
+    if (m_audio) m_audio->play3D(SfxId::ShieldFlash, hitPos, 0.7f);
   }
 
   target.hullHP -= damage;
@@ -2675,6 +2687,7 @@ void EntityManager::applyDamage(Entity &target, float damage,
 // stationary at the hit point.
 // ====================================================================
 void EntityManager::emitHitBurst(Vector3 pos, ParticleSystem &particles) {
+  if (m_audio) m_audio->play3D(SfxId::Hit, pos, 0.55f);
   const int N = 8;
   for (int i = 0; i < N; ++i) {
     // Pseudo-random radial direction. Using the entity counter as a
@@ -2694,6 +2707,7 @@ void EntityManager::emitHitBurst(Vector3 pos, ParticleSystem &particles) {
 
 void EntityManager::emitKillExplosion(Vector3 pos,
                                       ParticleSystem &particles) {
+  if (m_audio) m_audio->play3D(SfxId::KillExplosion, pos);
   const int N = 36;
   for (int i = 0; i < N; ++i) {
     float a = (i * 0.5236f); // 30° increments around full circle

@@ -80,6 +80,14 @@ bool Settings::load(const std::string &path) {
       if (defaultView > 4) defaultView = 4;
     } else if (key == "wireframe_hud")
       wireframeHUD = parseBool(val);
+    else if (key == "master_volume") {
+      try {
+        masterVolume = std::stof(val);
+      } catch (...) {
+      }
+      if (masterVolume < 0.0f) masterVolume = 0.0f;
+      if (masterVolume > 1.0f) masterVolume = 1.0f;
+    }
   }
   return true;
 }
@@ -98,5 +106,7 @@ bool Settings::save(const std::string &path) const {
   f << "default_view = " << defaultView
     << "  # 0=Chase 1=Velocity 2=Tactical 3=ThreatLock 4=Classic\n";
   f << "wireframe_hud = " << (wireframeHUD ? "true" : "false") << "\n";
+  f << "master_volume = " << masterVolume
+    << "  # 0..1; 0 = silent\n";
   return true;
 }

@@ -186,6 +186,13 @@ void GameState::init() {
   // falling back to Config::* defaults when one is absent.
   m_profileRegistry.loadAll(meshesDir);
   m_em.setProfileRegistry(&m_profileRegistry);
+
+  // Engine Phase 5 — synthesise SFX in-engine (no external assets).
+  // Failure is silent: m_audio.isReady() stays false and every play
+  // call is a no-op. Master volume comes from persisted settings.
+  m_audio.init();
+  m_audio.setMasterVolume(m_settings.masterVolume);
+  m_em.setAudio(&m_audio);
   loadWorld(12345u); // stable default seed — DEV_MODE F5 rerolls
   double t1 = GetTime();
   TraceLog(LOG_INFO, "Terrain generation: %.2f seconds (%d x %d heightmap)",
@@ -937,10 +944,12 @@ void GameState::update(float dt) {
                                Config::CANNON_RANGE, // share cannon range
                                Config::PLASMA_SPEED, ProjectileOwner::Player,
                                ProjectileKind::Plasma, Config::PLASMA_SPLASH);
+          m_audio.play3D(SfxId::PlasmaShot, spos);
         } else {
           m_em.spawnProjectile(spos, svel, Config::CANNON_DAMAGE,
                                Config::CANNON_RANGE, Config::CANNON_SPEED,
                                ProjectileOwner::Player);
+          m_audio.play3D(SfxId::CannonShot, spos);
         }
       }
 
@@ -959,6 +968,7 @@ void GameState::update(float dt) {
                              ProjectileOwner::Player, ProjectileKind::Missile,
                              Config::PLASMA_SPLASH, // missile detonates with splash
                              lockId, Config::MISSILE_TURN_RATE);
+        m_audio.play3D(SfxId::MissileLaunch, mpos);
       }
 
       // Cluster Missile — fires a single carrier that splits into 4
@@ -978,6 +988,7 @@ void GameState::update(float dt) {
                              ProjectileKind::ClusterParent,
                              0.0f, // no splash on the carrier itself
                              lockId, Config::MISSILE_TURN_RATE);
+        m_audio.play3D(SfxId::MissileLaunch, cpos);
       }
 
       // Depth Charge — heavy gravity bomb. spawnProjectile with the
@@ -991,6 +1002,7 @@ void GameState::update(float dt) {
                              ProjectileOwner::Player,
                              ProjectileKind::DepthCharge,
                              Config::DEPTH_CHARGE_RADIUS);
+        m_audio.play3D(SfxId::MissileLaunch, dpos, 0.8f);
       }
 
       // Shield Missile — PN-guided like a standard missile but on
@@ -1014,6 +1026,7 @@ void GameState::update(float dt) {
                              0.0f, // no splash
                              lockId,
                              Config::SHIELD_MISSILE_TURN_RATE);
+        m_audio.play3D(SfxId::MissileLaunch, sm_pos);
       }
 
       // Infectious Missile — PN-guided like a standard missile; on
@@ -1035,6 +1048,7 @@ void GameState::update(float dt) {
                              0.0f, // no splash
                              lockId,
                              Config::INFECT_MISSILE_TURN_RATE);
+        m_audio.play3D(SfxId::MissileLaunch, im_pos);
       }
 
       // Beam-class fire — continuous raycast while held. Player
@@ -1043,6 +1057,9 @@ void GameState::update(float dt) {
       // does shield-first-overflow via applyDamage, Shield Laser
       // drains shields + hull independently via shieldLaserRaycast.
       Vector3 borigin, bdir;
+      // Tick the beam SFX stagger every frame so retriggering picks
+      // up cleanly even when the player tap-fires the beam.
+      m_beamSfxCooldown -= dt;
       if (m_player.beamIsFiringThisTick(borigin, bdir)) {
         Vector3 hitPos;
         uint32_t hitId = 0;
@@ -1058,6 +1075,13 @@ void GameState::update(float dt) {
                                    Config::BEAM_DAMAGE_PS * dt,
                                    m_particles, hitPos);
         }
+        // Retrigger the beam tick every ~55 ms — matches the 60 ms
+        // synth length with a 5 ms overlap so the sound reads as
+        // continuous rather than a stutter.
+        if (m_beamSfxCooldown <= 0.0f) {
+          m_audio.play3D(SfxId::BeamTick, borigin, 0.7f);
+          m_beamSfxCooldown = 0.055f;
+        }
         // Stash for the render path — drawn after the 3D world.
         m_beamActive = true;
         m_beamLineFrom = borigin;
@@ -1065,6 +1089,9 @@ void GameState::update(float dt) {
         m_beamHitId = hitId;
       } else {
         m_beamActive = false;
+        // Snap the cooldown to zero when not firing so the next press
+        // gets an immediate tick.
+        if (m_beamSfxCooldown < 0.0f) m_beamSfxCooldown = 0.0f;
       }
 
       // Auto Turret — passive subsystem. When enabled, scan for the
@@ -1141,6 +1168,16 @@ void GameState::update(float dt) {
         }
       }
 
+      // Refresh the audio listener pose for positional SFX before
+      // entity update (so any play3D inside fires this frame against
+      // the right camera).
+      {
+        Vector3 fwd = Vector3Normalize(
+            Vector3Subtract(m_camera.target, m_camera.position));
+        Vector3 worldUp{0, 1, 0};
+        Vector3 right = Vector3Normalize(Vector3CrossProduct(fwd, worldUp));
+        m_audio.setListener(m_camera.position, fwd, right);
+      }
       m_em.update(dt, m_planet, m_player, m_particles);
       m_radar.update(dt, m_em, m_player.position(), m_player.yaw(),
                      static_cast<float>(GetTime()));
@@ -2684,6 +2721,7 @@ void GameState::shutdown() {
   m_player.unload();
   m_planet.unload();
   m_meshRegistry.unloadAll();
+  m_audio.unload();
   if (m_hudFontLoaded) {
     UnloadFont(m_hudFont);
     m_hudFontLoaded = false;

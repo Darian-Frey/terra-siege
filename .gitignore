@@ -46,4 +46,11 @@ desktop.ini
 
 # Dev-mode flight telemetry / debug captures
 tests/logs/
-notes   
+notes
+
+# Local SFX-authoring toolchain (rFXGen + its raylib build). Lives in
+# tools/ so it never pollutes the system; never committed because it's
+# huge + platform-specific. See gen_sfx.sh for the authoring pipeline.
+# The .rfx parameter files (assets/sfx/rfx/) ARE committed — they're
+# hand-authored source-of-truth; gen_sfx.sh bakes them to WAVs.
+tools/
