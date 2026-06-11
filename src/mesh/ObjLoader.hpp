@@ -114,4 +114,29 @@ bool saveObjMaterials(const std::filesystem::path &path,
                       const std::vector<int> &facePalette,
                       bool isDirty);
 
+// Save the full mesh — verts + face section — for cases where topology
+// changed (vertex add/delete, face add/delete). Inspector Phase D.
+//
+// Layout of the resulting OBJ:
+//   * Any leading header lines from the original (comments, o, g, s
+//     directives that appeared BEFORE any geometry) are preserved
+//     verbatim. If the file is empty / doesn't exist (start-from-
+//     primitive flow), a minimal generated header is emitted instead.
+//   * Then ALL vertices are written as `v x y z` from the in-memory
+//     state — count may differ from the original.
+//   * Then the face section: `usemtl cNN` at palette boundaries +
+//     `f a b c` lines in mesh order.
+//   * Any trailing lines from the original AFTER the last f line are
+//     preserved verbatim with edit-marker dedupe.
+//
+// Vn/vt directives from the original are dropped — the loader
+// recomputes face normals every time, so preserved vn data would have
+// been stale anyway. Tex coords (vt) we never preserved.
+//
+// If `isDirty` is false the file is NOT written.
+bool saveObjMesh(const std::filesystem::path &path,
+                 const std::vector<Vector3> &vertices,
+                 const std::vector<int32_t> &indices,
+                 const std::vector<int> &facePalette, bool isDirty);
+
 } // namespace tsmesh

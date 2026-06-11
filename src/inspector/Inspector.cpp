@@ -10,6 +10,7 @@
 #include "PrimitivesTool.hpp"
 #include "ProfileTool.hpp"
 #include "ShieldsTool.hpp"
+#include "TopologyTool.hpp"
 #include "VertexTool.hpp"
 #include "WeaponsTool.hpp"
 #include "raymath.h"
@@ -69,6 +70,7 @@ Inspector::Inspector() {
   m_tools.push_back(std::make_unique<VertexTool>());
   m_tools.push_back(std::make_unique<PrimitivesTool>());  // E
   m_tools.push_back(std::make_unique<MaterialsTool>());   // C
+  m_tools.push_back(std::make_unique<TopologyTool>());    // D
   m_tools.push_back(std::make_unique<ProfileTool>());     // F.1
   m_tools.push_back(std::make_unique<IdentityTool>());    // F.2
   m_tools.push_back(std::make_unique<HullTool>());        // F.2

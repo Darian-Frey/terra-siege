@@ -231,6 +231,8 @@ add_executable(terra-siege-inspect
     src/inspector/ShieldsTool.cpp
     src/inspector/ShieldsTool.hpp
     src/inspector/Tool.hpp
+    src/inspector/TopologyTool.cpp
+    src/inspector/TopologyTool.hpp
     src/inspector/VertexTool.cpp
     src/inspector/VertexTool.hpp
     src/inspector/WeaponsTool.cpp
