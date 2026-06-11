@@ -115,6 +115,10 @@ public:
   // Debug / HUD
   int liveEnemyCount() const { return m_liveEnemies; }
   int liveProjectileCount() const { return m_liveProjectiles; }
+  // Slice C C.3 — generic live counter by EntityType. Used by the
+  // Base-mode HUD to show remaining lander count + by win-condition
+  // detection (C.7) once the session-result screen ships.
+  int liveEnemyOfType(EntityType t) const;
 
   // Friendly-side queries. Used by Radar (booster range boost), Bomber
   // AI (nearest friendly target preference), and GameState (game-over
@@ -208,6 +212,15 @@ private:
   // but slower drift speed and much higher altitude.
   void updateCarrier(Entity &e, float dt, const Planet &planet,
                      const Player &player);
+
+  // Lander — Slice C C.3. Grounded boss-tier enemy "base" for Base
+  // mode. Stationary; 4-sector shields like Carrier but sturdier.
+  // Spawns drones around itself on a slow steady drip; multiple
+  // landers compound. Subsequent sub-slices add Fighter / Collector /
+  // Builder production (C.3 follow-ups) and the wreckage node drop
+  // on death (C.4 / resource layer).
+  void updateLander(Entity &e, float dt, const Planet &planet,
+                    const Player &player);
 
   // Friendly units — ground installations the player defends.
   // Collector roams between waypoints; RepairStation heals the player

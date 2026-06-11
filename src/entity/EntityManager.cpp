@@ -335,6 +335,42 @@ Entity *EntityManager::spawnEnemy(EntityType type, Vector3 pos) {
     // fireTimer doubles as drone-deploy cooldown (same as Seeder).
     e->fireTimer = Config::CARRIER_FIRST_DROP_DELAY;
     break;
+  case EntityType::Lander:
+    // Slice C C.3 — grounded enemy base, the new boss-tier target
+    // for Base mode. Stationary (or close to it — no movement AI in
+    // first cut). 4-sector directional shield like Carrier; sector
+    // HP is the per-sector value, total shield = 4× sectorHP.
+    if (prof && prof->view.hullPresent) {
+      e->hullMax = prof->view.hullHP;
+      e->radius = prof->view.hullCollisionRadius;
+    } else {
+      e->hullMax = Config::LANDER_HULL_HP;
+      e->radius = Config::LANDER_HIT_RADIUS;
+    }
+    {
+      float sectorHP = Config::LANDER_SHIELD_PER_SECTOR;
+      float sectorRate = Config::LANDER_SHIELD_RATE;
+      float sectorDelay = Config::LANDER_SHIELD_DELAY;
+      if (prof && prof->view.shieldsPresent) {
+        sectorHP = prof->view.shieldHP;
+        sectorRate = prof->view.shieldRegen;
+        sectorDelay = prof->view.shieldDelay;
+      }
+      e->shieldRate = sectorRate;
+      e->shieldDelay = sectorDelay;
+      for (int i = 0; i < 4; ++i) {
+        e->sectorMax[i] = sectorHP;
+        e->sectorHP[i] = sectorHP;
+        e->sectorTimer[i] = 0.0f;
+      }
+    }
+    e->hullHP = e->hullMax;
+    e->shieldMax = 0.0f;
+    e->shieldHP = 0.0f;
+    // fireTimer = next drone-deploy cooldown.
+    e->fireTimer = Config::LANDER_FIRST_DROP_DELAY;
+    e->aiState = AIState::Idle;
+    break;
   case EntityType::GroundTurret:
     // Stationary ground threat. yaw is the barrel direction (starts
     // pointing forward by convention; updateGroundTurret rotates it
@@ -927,6 +963,7 @@ void EntityManager::update(float dt, const Planet &planet, Player &player,
     case EntityType::Bomber:
     case EntityType::Seeder:
     case EntityType::Carrier:
+    case EntityType::Lander:
       tickDamageSmoke(e, particles, dt);
       break;
     default:
@@ -948,6 +985,9 @@ void EntityManager::update(float dt, const Planet &planet, Player &player,
       break;
     case EntityType::Carrier:
       updateCarrier(e, dt, planet, player);
+      break;
+    case EntityType::Lander:
+      updateLander(e, dt, planet, player);
       break;
     case EntityType::GroundTurret:
       updateGroundTurret(e, dt, planet, player);
@@ -1562,6 +1602,14 @@ int EntityManager::liveDroneCount() const {
   return n;
 }
 
+int EntityManager::liveEnemyOfType(EntityType t) const {
+  int n = 0;
+  for (const Entity &e : m_entities) {
+    if (e.alive && e.type == t) ++n;
+  }
+  return n;
+}
+
 // ====================================================================
 // Seeder — high-altitude drone dispenser. Drifts in a loose orbit
 // around the player and drops a fresh drone every SEEDER_DEPLOY_INTERVAL
@@ -1743,6 +1791,44 @@ void EntityManager::updateCarrier(Entity &e, float dt, const Planet &planet,
     Vector3 dropPos = {e.pos.x, e.pos.y - 6.0f, e.pos.z};
     spawnEnemy(EntityType::Drone, dropPos);
     e.fireTimer = Config::CARRIER_DEPLOY_INTERVAL;
+  }
+}
+
+// ====================================================================
+// Lander — Slice C C.3. Stationary grounded boss anchored to the
+// terrain. Tick-down the deploy timer; when it fires AND the player
+// is within engagement range AND we're under the global drone cap,
+// spawn a Drone next to the lander.
+//
+// No movement AI — landers sit where placed. Subsequent C.3 sub-
+// slices add Fighter / Collector / Builder production (each with
+// its own timer) and the wreckage node drop on destruction.
+// ====================================================================
+void EntityManager::updateLander(Entity &e, float dt, const Planet &planet,
+                                 const Player &player) {
+  // Stick to terrain — landers are grounded entities.
+  float ground = planet.heightAt(e.pos.x, e.pos.z);
+  e.pos.y = ground + 0.6f;
+  e.vel = {0, 0, 0};
+
+  // Detect the player for the deploy gate.
+  Vector3 toPlayer = Vector3Subtract(player.position(), e.pos);
+  float dist = Vector3Length(toPlayer);
+
+  // Drone deploy — slow steady drip. Cooldown ticks always; we just
+  // wait for the player to be in range AND drone counts to permit.
+  e.fireTimer -= dt;
+  if (e.fireTimer <= 0.0f && dist < Config::LANDER_DEPLOY_RANGE &&
+      liveDroneCount() < Config::DRONE_GLOBAL_CAP) {
+    // Spawn at the lander's edge, slightly above the deck, jittered
+    // around the perimeter so multiple drones don't stack.
+    float angle = static_cast<float>(GetTime() * 0.7f) +
+                  static_cast<float>(reinterpret_cast<uintptr_t>(&e) % 64) *
+                      0.1f;
+    Vector3 spawn = {e.pos.x + cosf(angle) * 6.0f, e.pos.y + 4.0f,
+                     e.pos.z + sinf(angle) * 6.0f};
+    spawnEnemy(EntityType::Drone, spawn);
+    e.fireTimer = Config::LANDER_DEPLOY_INTERVAL;
   }
 }
 
@@ -2893,6 +2979,44 @@ void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
     // which would otherwise show the bar edge-on at certain headings).
     if (e.hullMax > 0.0f) {
       drawHpBar(e.pos, 3.5f, 8.0f, e.hullHP / e.hullMax,
+                {80, 220, 100, 220}, camPos);
+    }
+    break;
+  }
+  case EntityType::Lander: {
+    // Industrial chunky silhouette per base_mode_v2.md ("Bulky
+    // industrial — Carrier-scale silhouette, more square than the
+    // curved Carrier"). All cubes, deliberately squared-off.
+    if (registry && registry->has(EntityType::Lander)) {
+      registry->draw(EntityType::Lander, e.pos, e.yaw, 1.0f, WHITE);
+    } else {
+      Color hull = {90, 110, 80, 255};   // olive-industrial
+      Color deck = {60, 75, 55, 255};    // darker deck
+      Color tower = {130, 150, 110, 255}; // raised superstructure
+      Color foot = {50, 50, 50, 255};    // landing skid
+      if (e.damageFlashTimer > 0.0f) {
+        hull = deck = tower = foot = {255, 255, 255, 255};
+      }
+      rlPushMatrix();
+      rlTranslatef(e.pos.x, e.pos.y, e.pos.z);
+      rlRotatef(e.yaw * RAD2DEG, 0.0f, 1.0f, 0.0f);
+      // Wide chunky base body — Carrier-scale but more square.
+      DrawCubeV({0.0f, 2.0f, 0.0f}, {14.0f, 4.0f, 14.0f}, hull);
+      // Deck plate on top.
+      DrawCubeV({0.0f, 4.4f, 0.0f}, {10.0f, 0.8f, 10.0f}, deck);
+      // Central tower / production silo.
+      DrawCubeV({0.0f, 6.2f, 0.0f}, {4.0f, 3.0f, 4.0f}, tower);
+      // Four landing skids at the corners.
+      float sx = 5.5f, sz = 5.5f;
+      DrawCubeV({sx, -0.4f, sz}, {1.5f, 1.4f, 1.5f}, foot);
+      DrawCubeV({-sx, -0.4f, sz}, {1.5f, 1.4f, 1.5f}, foot);
+      DrawCubeV({sx, -0.4f, -sz}, {1.5f, 1.4f, 1.5f}, foot);
+      DrawCubeV({-sx, -0.4f, -sz}, {1.5f, 1.4f, 1.5f}, foot);
+      rlPopMatrix();
+    }
+    // Hull bar — same billboarded style as Carrier.
+    if (e.hullMax > 0.0f) {
+      drawHpBar(e.pos, 8.0f, 10.0f, e.hullHP / e.hullMax,
                 {80, 220, 100, 220}, camPos);
     }
     break;

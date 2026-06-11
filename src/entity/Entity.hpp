@@ -25,6 +25,7 @@ enum class EntityType : uint8_t {
   Fighter,
   Bomber,
   Carrier,
+  Lander, // Slice C C.3 — grounded enemy base, spawns drones, 4-sector shields
   GroundTurret,
   // Friendlies
   Collector,

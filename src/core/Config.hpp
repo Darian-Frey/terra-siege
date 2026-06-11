@@ -510,6 +510,30 @@ constexpr float CARRIER_DEPLOY_INTERVAL = 1.26f; // sec between drone drops
 constexpr float CARRIER_DEPLOY_RANGE = 320.0f;   // wide engagement
 constexpr float CARRIER_FIRST_DROP_DELAY = 3.0f; // grace after spawn
 
+// Lander — Slice C C.3. Grounded enemy "base" that anchors the
+// asymmetric defender mode. Sturdier than Carrier and stationary (a
+// real boss-tier target), spawns drone swarms around itself as the
+// pressure mechanic. Drops a Wreckage node on death in later sub-
+// slices (deferred until the resource layer ships).
+//
+// Note vs spec: base_mode_v2.md drafted hull "~600 TUNE" with intent
+// "significantly larger than Carrier". Actual Carrier hull is 1500,
+// so we scale up here rather than down — the intent is "real
+// commitment to take down", not "softer than Carrier".
+constexpr float LANDER_HULL_TOTAL = 2400.0f;
+constexpr float LANDER_SHIELD_PER_SECTOR = 350.0f;
+constexpr float LANDER_HULL_HP =
+    LANDER_HULL_TOTAL - (LANDER_SHIELD_PER_SECTOR * 4.0f); // 1000 raw hull
+constexpr float LANDER_SHIELD_RATE = 18.0f;       // HP/sec recharge per sector
+constexpr float LANDER_SHIELD_DELAY = 6.0f;       // sec since last hit
+constexpr float LANDER_HIT_RADIUS = 8.0f;         // chunkier than Carrier
+// Drone deploy — slow steady drip so a single lander doesn't
+// overwhelm. Multiple landers in Base mode compound.
+constexpr float LANDER_DEPLOY_INTERVAL = 6.0f;    // sec between drone drops
+constexpr float LANDER_DEPLOY_RANGE = 450.0f;     // detection range for spawning
+constexpr float LANDER_DRONE_CAP = 4;             // max simultaneous drones per lander
+constexpr float LANDER_FIRST_DROP_DELAY = 8.0f;   // grace after world spawn
+
 // Bomber — heavy bruiser. Slower than Fighter on every axis (turn,
 // thrust, top speed) but heavier hull + shield (TTK 5s) and a slow
 // punishing fire pattern: ~31 DPS in chunky 25-damage shots that the

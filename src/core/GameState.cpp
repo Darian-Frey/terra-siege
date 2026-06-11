@@ -411,6 +411,51 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
       m_em.spawnEnemy(EntityType::RepairStation, pos);
       placed.push_back(pos);
     }
+
+    // Slice C C.3 — drop in N grounded landers. Spec table:
+    //   Easy 3 / Normal 5 / Hard 7 landers. Difficulty presets come
+    //   in C.8; for first cut hit Normal (5). Place far enough from
+    //   the friendly cluster that the player has to fly out to
+    //   engage; rejection-sample against placed positions so they
+    //   don't stack on each other.
+    constexpr int kLanderCount = 5;
+    constexpr float kLanderMinDist = 350.0f;
+    constexpr float kLanderFromPlayer = 600.0f;
+    std::vector<Vector3> landerPlaced;
+    float worldSize = m_planet.worldSize();
+    for (int i = 0; i < kLanderCount; ++i) {
+      Vector3 lpos{0, 0, 0};
+      for (int attempt = 0; attempt < 64; ++attempt) {
+        float a = randF(0.0f, 6.28318f);
+        // Push them out beyond the friendly ring so engagement
+        // requires committing to fly across the map.
+        float r = kLanderFromPlayer +
+                  randF(0.0f, worldSize * 0.2f);
+        float x = playerStart.x + r * sinf(a);
+        float z = playerStart.z + r * cosf(a);
+        // Wrap into world bounds (terrain wraps toroidally).
+        while (x < 0.0f) x += worldSize;
+        while (x > worldSize) x -= worldSize;
+        while (z < 0.0f) z += worldSize;
+        while (z > worldSize) z -= worldSize;
+        bool ok = true;
+        for (const Vector3 &q : landerPlaced) {
+          float dx = q.x - x, dz = q.z - z;
+          if (dx * dx + dz * dz < kLanderMinDist * kLanderMinDist) {
+            ok = false; break;
+          }
+        }
+        if (!ok) continue;
+        float y = m_planet.heightAt(x, z);
+        // Skip if it'd land underwater.
+        if (y < Config::SEA_LEVEL * Config::TERRAIN_HEIGHT_MAX + 2.0f)
+          continue;
+        lpos = {x, y + 0.6f, z};
+        break;
+      }
+      m_em.spawnEnemy(EntityType::Lander, lpos);
+      landerPlaced.push_back(lpos);
+    }
     return;
   }
 
@@ -1885,14 +1930,24 @@ void GameState::drawHUD() const {
   // banner since waves don't run. Landers (C.3) will eventually
   // own a "X landers remaining / Y infected bases" status line here.
   if (m_gameMode == GameMode::Base) {
+    // Slice C C.3 — live lander counter replaces the placeholder
+    // banner. Win-condition arithmetic (C.7) hooks here once the
+    // session-result screen ships.
+    int landersAlive = m_em.liveEnemyOfType(EntityType::Lander);
     char buf[96];
-    snprintf(buf, sizeof(buf), "BASE DEFENCE — landers not yet implemented");
+    snprintf(buf, sizeof(buf), "BASE DEFENCE  LANDERS %d", landersAlive);
     int tw = measureHudText(buf, 16);
     int bxp = sw / 2 - (tw + 24) / 2;
     int byp = 64;
-    DrawRectangle(bxp, byp, tw + 24, 22, {30, 40, 60, 200});
-    DrawRectangleLines(bxp, byp, tw + 24, 22, {120, 160, 200, 200});
-    drawHudText(buf, bxp + 12, byp + 4, 16, {180, 220, 255, 240});
+    Color bannerCol = landersAlive > 0 ? Color{60, 30, 30, 200}
+                                       : Color{30, 60, 30, 200};
+    Color bannerEdge = landersAlive > 0 ? Color{200, 120, 100, 220}
+                                        : Color{120, 200, 140, 220};
+    DrawRectangle(bxp, byp, tw + 24, 22, bannerCol);
+    DrawRectangleLines(bxp, byp, tw + 24, 22, bannerEdge);
+    Color textCol = landersAlive > 0 ? Color{255, 200, 180, 240}
+                                     : Color{180, 240, 200, 240};
+    drawHudText(buf, bxp + 12, byp + 4, 16, textCol);
 
     // Friendlies counter still shows in Base mode — useful since
     // friendly attrition is the loss curve.
