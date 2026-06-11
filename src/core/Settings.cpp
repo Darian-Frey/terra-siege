@@ -87,6 +87,13 @@ bool Settings::load(const std::string &path) {
       }
       if (masterVolume < 0.0f) masterVolume = 0.0f;
       if (masterVolume > 1.0f) masterVolume = 1.0f;
+    } else if (key == "last_game_mode") {
+      try {
+        lastGameMode = std::stoi(val);
+      } catch (...) {
+      }
+      if (lastGameMode < 0) lastGameMode = 0;
+      if (lastGameMode > 1) lastGameMode = 1;
     }
   }
   return true;
@@ -108,5 +115,7 @@ bool Settings::save(const std::string &path) const {
   f << "wireframe_hud = " << (wireframeHUD ? "true" : "false") << "\n";
   f << "master_volume = " << masterVolume
     << "  # 0..1; 0 = silent\n";
+  f << "last_game_mode = " << lastGameMode
+    << "  # 0=Wave (endless waves) 1=Base (defender mode)\n";
   return true;
 }

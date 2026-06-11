@@ -220,6 +220,8 @@ void GameState::init() {
   m_settings.load(m_settingsPath);
   applyLiveSettings();
   m_cameraView = static_cast<CameraView>(m_settings.defaultView);
+  m_gameMode = (m_settings.lastGameMode == 1) ? GameMode::Base
+                                              : GameMode::Wave;
 
   // Land in MainMenu. The world is already generated and visible
   // behind the menu overlay so the user sees what they'll be flying.
@@ -365,6 +367,54 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
     return Vector3{x, y, z};
   };
 
+  // Slice C C.1 — Base mode places a NETWORK of friendly bases per
+  // base_mode_v2.md ("All friendly bases pre-placed; radar network
+  // live and fully connected"). Wave mode keeps the original single-
+  // Base + collectors + repairs + boosters layout.
+  //
+  // No autonomous economy in Base mode — collectors are skipped
+  // (lander-side collectors handle resource gathering once landers
+  // ship in C.3; friendly side is "infrastructure under attack").
+  if (m_gameMode == GameMode::Base) {
+    // Anchor base — same as Wave mode: visible from spawn.
+    Vector3 anchorPos;
+    {
+      float a = randF(0.0f, 6.28318f);
+      float r = 40.0f;
+      float x = playerStart.x + r * sinf(a);
+      float z = playerStart.z + r * cosf(a);
+      float y = m_planet.heightAt(x, z) + 0.6f;
+      anchorPos = {x, y, z};
+      m_em.spawnEnemy(EntityType::Base, anchorPos);
+      placed.push_back(anchorPos);
+    }
+    // Additional bases — first cut hits 8 (= base_mode_v2 Hard preset).
+    // Difficulty-driven counts come in C.8.
+    constexpr int kBaseExtra = 7;
+    for (int i = 0; i < kBaseExtra; ++i) {
+      Vector3 pos = pickSpot();
+      m_em.spawnEnemy(EntityType::Base, pos);
+      placed.push_back(pos);
+    }
+    // Radar boosters fill the network — enough that the bases form a
+    // connected detection graph (C.4 will formalise the topology).
+    for (int i = 0; i < Config::FRIENDLY_BOOSTER_COUNT * 2; ++i) {
+      Vector3 pos = pickSpot();
+      m_em.spawnEnemy(EntityType::RadarBooster, pos);
+      placed.push_back(pos);
+    }
+    // A few repair stations — friendly bases also repair the player
+    // on dock, but the existing RepairStation entity is the simpler
+    // path for in-flight ammo top-up around the network.
+    for (int i = 0; i < Config::FRIENDLY_REPAIR_COUNT; ++i) {
+      Vector3 pos = pickSpot();
+      m_em.spawnEnemy(EntityType::RepairStation, pos);
+      placed.push_back(pos);
+    }
+    return;
+  }
+
+  // ---- Wave mode (original layout) ----
   // Base first — collectors look for it on their first update tick,
   // so it has to exist by the time they spawn. Anchor it close to
   // the player start so the player has a clear "home" reference.
@@ -1185,8 +1235,11 @@ void GameState::update(float dt) {
       m_radar.update(dt, m_em, m_player.position(), m_player.yaw(),
                      static_cast<float>(GetTime()));
       // WaveManager spawns enemies on a stagger and drives the
-      // wave-clear / intermission pacing.
-      m_waves.update(dt, m_em, m_player, m_planet);
+      // wave-clear / intermission pacing. Slice C C.1 — gated to Wave
+      // mode only. Base mode has no waves; landers (C.3) will own
+      // their own production timers when they ship.
+      if (m_gameMode == GameMode::Wave)
+        m_waves.update(dt, m_em, m_player, m_planet);
 
       // Death flow — when the player loses all hull they keep falling
       // (input + assist gated off in Player) until the wreck comes to
@@ -1827,7 +1880,38 @@ void GameState::drawHUD() const {
   // enemies-this-wave. Sits clear of the heading-tape (which is
   // ~50px wide centered, this bar is wider). Intermission is
   // highlighted brighter so a "next wave coming" alert is obvious.
-  {
+  //
+  // Slice C C.1 — in Base mode, replace the wave bar with a mode
+  // banner since waves don't run. Landers (C.3) will eventually
+  // own a "X landers remaining / Y infected bases" status line here.
+  if (m_gameMode == GameMode::Base) {
+    char buf[96];
+    snprintf(buf, sizeof(buf), "BASE DEFENCE — landers not yet implemented");
+    int tw = measureHudText(buf, 16);
+    int bxp = sw / 2 - (tw + 24) / 2;
+    int byp = 64;
+    DrawRectangle(bxp, byp, tw + 24, 22, {30, 40, 60, 200});
+    DrawRectangleLines(bxp, byp, tw + 24, 22, {120, 160, 200, 200});
+    drawHudText(buf, bxp + 12, byp + 4, 16, {180, 220, 255, 240});
+
+    // Friendlies counter still shows in Base mode — useful since
+    // friendly attrition is the loss curve.
+    if (m_friendlyTotalAtStart > 0) {
+      int alive = m_em.liveFriendlyCount();
+      char fbuf[48];
+      snprintf(fbuf, sizeof(fbuf), "BASES %d / %d", alive,
+               m_friendlyTotalAtStart);
+      int fw = measureHudText(fbuf, 14);
+      int fx = sw / 2 - (fw + 20) / 2;
+      int fy = byp + 28;
+      Color flagCol = {220, 230, 250, 230};
+      if (alive < m_friendlyTotalAtStart / 2)
+        flagCol = {255, 150, 120, 240};
+      DrawRectangle(fx, fy, fw + 20, 20, {0, 0, 0, 140});
+      DrawRectangleLines(fx, fy, fw + 20, 20, {120, 150, 180, 160});
+      drawHudText(fbuf, fx + 10, fy + 3, 14, flagCol);
+    }
+  } else {
     char buf[64];
     Color barCol = {0, 0, 0, 140};
     Color textCol = {220, 230, 250, 230};
@@ -2458,12 +2542,37 @@ void GameState::drawMainMenu() {
     return;
   }
 
-  // Buttons
+  // Buttons — Slice C C.1 puts the mode picker right on the main menu
+  // (no separate Mode-Select screen). The currently-selected mode
+  // pre-fills from Settings::lastGameMode so the user doesn't have
+  // to re-pick after every relaunch.
   const float bw = 280.0f, bh = 50.0f;
   float bx = sw / 2 - bw / 2;
-  float by = sh / 2 - 30;
+  float by = sh / 2 - 60;
 
-  if (drawMenuButton({bx, by, bw, bh}, "START GAME", mouse, clickEdge))
+  // Mode picker — two adjacent buttons. The selected mode is shown
+  // with a brighter button colour (handled by drawMenuButton —
+  // existing hover colouring also drifts toward yellow).
+  const char *waveLbl = (m_gameMode == GameMode::Wave)
+                            ? "WAVE MODE  [ ACTIVE ]"
+                            : "WAVE MODE";
+  const char *baseLbl = (m_gameMode == GameMode::Base)
+                            ? "BASE DEFENCE  [ ACTIVE ]"
+                            : "BASE DEFENCE";
+  if (drawMenuButton({bx, by, bw, bh}, waveLbl, mouse, clickEdge)) {
+    m_gameMode = GameMode::Wave;
+    m_settings.lastGameMode = 0;
+    m_settings.save(m_settingsPath);
+  }
+  by += bh + 14;
+  if (drawMenuButton({bx, by, bw, bh}, baseLbl, mouse, clickEdge)) {
+    m_gameMode = GameMode::Base;
+    m_settings.lastGameMode = 1;
+    m_settings.save(m_settingsPath);
+  }
+  by += bh + 14;
+
+  if (drawMenuButton({bx, by, bw, bh}, "LAUNCH", mouse, clickEdge))
     enterLoadoutSelect();
   by += bh + 14;
   if (drawMenuButton({bx, by, bw, bh}, "SETTINGS", mouse, clickEdge))

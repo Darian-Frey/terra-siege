@@ -21,6 +21,10 @@ struct Settings {
   int defaultView = 0;     // matches CameraView enum (0=Chase…4=Classic)
   bool wireframeHUD = true;
   float masterVolume = 0.7f; // 0..1, applied to AudioManager at boot
+  // Slice C — last game mode picked from the main menu. Persisted
+  // so the user doesn't have to re-pick after every relaunch.
+  // 0 = Wave, 1 = Base; matches GameMode enum.
+  int lastGameMode = 0;
 
   // Returns true on successful read; missing file is not an error
   // (defaults remain in place, file will be created on first save).

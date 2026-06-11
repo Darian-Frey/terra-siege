@@ -33,6 +33,14 @@ enum class AppState {
 };
 enum class CamMode { Follow, FreeRoam }; // F1 toggles in dev mode
 
+// Slice C — gameplay mode selector. Wave is the original endless-waves
+// gameplay (Slice A/B + Phase 3-5h waves). Base is the asymmetric
+// defender mode per base_mode_v2.md — friendly infrastructure under
+// invasion by grounded landers (landers themselves arrive in C.3).
+// Selected from the main menu before LoadoutSelect; persists to
+// Settings so the last choice loads on next launch.
+enum class GameMode { Wave = 0, Base = 1 };
+
 // Five-view player camera system. Selected with keys 1–5 while in
 // Follow CamMode. Do NOT rename to CameraMode (raylib typedef collision)
 // nor to CamMode (already used for the dev Follow/FreeRoam toggle).
@@ -146,6 +154,10 @@ private:
   // State
   AppState m_state = AppState::MainMenu;
   CamMode m_camMode = CamMode::Follow;
+  // Slice C — selected from the main menu before LoadoutSelect.
+  // Wave mode = original gameplay (WaveManager-driven). Base mode =
+  // C.1 shell (no waves, just the infrastructure; landers arrive in C.3).
+  GameMode m_gameMode = GameMode::Wave;
   uint32_t m_seed = 0;
 
   // Five-view camera state
