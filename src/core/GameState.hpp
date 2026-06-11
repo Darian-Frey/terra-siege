@@ -41,6 +41,17 @@ enum class CamMode { Follow, FreeRoam }; // F1 toggles in dev mode
 // Settings so the last choice loads on next launch.
 enum class GameMode { Wave = 0, Base = 1 };
 
+// Slice C C.7 — outcome of the session-result screen. Set when we
+// transition out of Playing into GameOver / Victory, consumed by
+// drawSessionResult to choose title, tint, and stats wording. `None`
+// means we're still mid-round (or never started).
+enum class SessionResult {
+  None = 0,
+  Victory,          // Base mode: all landers cleared (C.7 trigger)
+  PlayerDestroyed,  // Player wreck settled — existing rule
+  FriendliesLost,   // All friendly units lost — existing rule
+};
+
 // Five-view player camera system. Selected with keys 1–5 while in
 // Follow CamMode. Do NOT rename to CameraMode (raylib typedef collision)
 // nor to CamMode (already used for the dev Follow/FreeRoam toggle).
@@ -102,6 +113,12 @@ private:
   void drawPauseMenu();
   void drawSettingsPanel();
   void drawLoadoutSelect();
+  // Slice C C.7 — shared post-game overlay used by both the
+  // GameOver and Victory state branches. Renders the frozen world
+  // as a backdrop, then the tinted overlay + title + stats panel +
+  // Restart / Change Loadout / Main Menu buttons. Branches on
+  // m_sessionResult for title text, tint, and stats wording.
+  void drawSessionResult();
 
   // State transitions
   void enterMainMenu();
@@ -185,6 +202,23 @@ private:
   // hits the ground — then we fire the final explosion and switch
   // to GameOver. Reset on every transition into Playing.
   bool m_playerDeathHandled = false;
+
+  // Slice C C.7 — session-result tracking. Set when we transition
+  // out of Playing; consumed by drawSessionResult() to render the
+  // appropriate post-game screen (Victory / Destroyed / Friendlies
+  // Lost) with the right title, tint, and stat lines.
+  SessionResult m_sessionResult = SessionResult::None;
+  // Snapshot of total landers at game start (Base mode). Compared to
+  // liveEnemyOfType(Lander) for the win-condition gate AND the
+  // session-result stat line. 0 outside Base mode.
+  int m_landerTotalAtStart = 0;
+  // GetTime() captured at enterPlaying so the result screen can
+  // print elapsed session time. Double for precision over long runs.
+  double m_sessionStartTime = 0.0;
+  // Latched elapsed time at session end, so the result screen shows
+  // the actual round duration instead of ticking while the player
+  // sits on the screen.
+  double m_sessionEndTime = 0.0;
 
   // Per-key was-down state for keyPressedEdge(). Sized large enough
   // for raylib's KEY_KB_MENU (348) plus headroom.

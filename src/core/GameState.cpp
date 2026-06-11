@@ -1300,6 +1300,8 @@ void GameState::update(float dt) {
         if (spd < 1.0f) {
           m_em.emitKillExplosion(ppos, m_particles);
           m_playerDeathHandled = true;
+          m_sessionResult = SessionResult::PlayerDestroyed;
+          m_sessionEndTime = GetTime();
           m_state = AppState::GameOver;
           setCursorForGameplay(false);
           break;
@@ -1313,7 +1315,25 @@ void GameState::update(float dt) {
       if (!m_friendliesLostHandled && m_friendlyTotalAtStart > 0 &&
           m_em.liveFriendlyCount() == 0 && m_player.isAlive()) {
         m_friendliesLostHandled = true;
+        m_sessionResult = SessionResult::FriendliesLost;
+        m_sessionEndTime = GetTime();
         m_state = AppState::GameOver;
+        setCursorForGameplay(false);
+        break;
+      }
+
+      // Slice C C.7 — Base mode victory gate. All landers destroyed
+      // AND no infected bases left (vacuously true until C.6 ships
+      // the infection v2 mechanic). The result-screen path mirrors
+      // the GameOver transitions.
+      if (m_gameMode == GameMode::Base &&
+          m_sessionResult == SessionResult::None &&
+          m_landerTotalAtStart > 0 &&
+          m_em.liveEnemyOfType(EntityType::Lander) == 0 &&
+          m_player.isAlive() && m_em.liveFriendlyCount() > 0) {
+        m_sessionResult = SessionResult::Victory;
+        m_sessionEndTime = GetTime();
+        m_state = AppState::Victory;
         setCursorForGameplay(false);
         break;
       }
@@ -1445,60 +1465,156 @@ void GameState::render(float alpha) {
       drawPauseMenu();
     break;
   }
-  case AppState::GameOver: {
-    // Render the wreckage scene as a frozen backdrop, then a tinted
-    // overlay + restart / main-menu buttons. Same camera path as
-    // Playing so the player sees their final position.
-    ClearBackground({55, 80, 140, 255});
-    BeginMode3D(m_camera);
-    {
-      rlMatrixMode(RL_PROJECTION);
-      rlLoadIdentity();
-      double aspect = static_cast<double>(GetScreenWidth()) /
-                      static_cast<double>(GetScreenHeight());
-      double top = 0.05 * tan(m_camera.fovy * 0.5 * DEG2RAD);
-      double right = top * aspect;
-      rlFrustum(-right, right, -top, top, 0.05, 3000.0);
-      rlMatrixMode(RL_MODELVIEW);
-    }
-    m_planet.draw(m_camera.position);
-    m_decorations.render(m_planet, m_camera.position);
-    m_player.renderGroundShadow(m_planet);
-    m_player.render(&m_meshRegistry); // wreck stays visible at the crash site
-    m_em.render(m_camera, &m_meshRegistry);
-    m_particles.render(m_camera);
-    EndMode3D();
-
-    int sw = GetScreenWidth();
-    int sh = GetScreenHeight();
-    Vector2 mouse = GetMousePosition();
-    bool clickNow = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
-    bool clickEdge = clickNow && !m_lastClickState;
-
-    DrawRectangle(0, 0, sw, sh, {30, 0, 0, 180});
-    const char *title = "DESTROYED";
-    int tw = measureHudText(title, 64);
-    drawHudText(title, sw / 2 - tw / 2, sh / 4, 64, {255, 100, 80, 255});
-
-    const float bw = 280.0f, bh = 50.0f;
-    float bx = sw / 2 - bw / 2;
-    float by = sh / 2 - 30;
-    if (drawMenuButton({bx, by, bw, bh}, "RESTART", mouse, clickEdge))
-      enterPlaying();
-    by += bh + 14;
-    if (drawMenuButton({bx, by, bw, bh}, "CHANGE LOADOUT", mouse, clickEdge))
-      enterLoadoutSelect();
-    by += bh + 14;
-    if (drawMenuButton({bx, by, bw, bh}, "MAIN MENU", mouse, clickEdge))
-      enterMainMenu();
-    m_lastClickState = clickNow;
-    break;
-  }
+  case AppState::GameOver:
   case AppState::Victory:
-    ClearBackground(BLACK);
-    drawHudText("VICTORY", 40, 40, 28, GREEN);
+    drawSessionResult();
     break;
   }
+}
+
+// ====================================================================
+// Slice C C.7 — shared post-game overlay for both GameOver and Victory.
+// Renders the frozen world as a backdrop (so the player sees where
+// they ended up), then a tinted overlay + title + stats panel +
+// Restart / Change Loadout / Main Menu buttons.
+//
+// Branches on m_sessionResult for:
+//   * title text
+//   * overlay tint (red for destroyed/lost, blue-green for victory)
+//   * which stat lines are shown (lander count only meaningful in
+//     Base mode, friendly-loss is universal)
+// ====================================================================
+void GameState::drawSessionResult() {
+  // Frozen 3D backdrop — same camera path as Playing.
+  ClearBackground({55, 80, 140, 255});
+  BeginMode3D(m_camera);
+  {
+    rlMatrixMode(RL_PROJECTION);
+    rlLoadIdentity();
+    double aspect = static_cast<double>(GetScreenWidth()) /
+                    static_cast<double>(GetScreenHeight());
+    double top = 0.05 * tan(m_camera.fovy * 0.5 * DEG2RAD);
+    double right = top * aspect;
+    rlFrustum(-right, right, -top, top, 0.05, 3000.0);
+    rlMatrixMode(RL_MODELVIEW);
+  }
+  m_planet.draw(m_camera.position);
+  m_decorations.render(m_planet, m_camera.position);
+  m_player.renderGroundShadow(m_planet);
+  m_player.render(&m_meshRegistry);
+  m_em.render(m_camera, &m_meshRegistry);
+  m_particles.render(m_camera);
+  EndMode3D();
+
+  int sw = GetScreenWidth();
+  int sh = GetScreenHeight();
+  Vector2 mouse = GetMousePosition();
+  bool clickNow = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+  bool clickEdge = clickNow && !m_lastClickState;
+
+  // Tint + title per result.
+  const char *title = "GAME OVER";
+  Color overlay = {30, 0, 0, 180};
+  Color titleCol = {255, 100, 80, 255};
+  switch (m_sessionResult) {
+  case SessionResult::Victory:
+    title = "VICTORY";
+    overlay = {0, 30, 20, 180};
+    titleCol = {120, 240, 160, 255};
+    break;
+  case SessionResult::PlayerDestroyed:
+    title = "DESTROYED";
+    break;
+  case SessionResult::FriendliesLost:
+    title = "ALL BASES LOST";
+    break;
+  case SessionResult::None:
+  default:
+    // Shouldn't really happen — we only land here from Playing
+    // transitions that set m_sessionResult.
+    break;
+  }
+  DrawRectangle(0, 0, sw, sh, overlay);
+  int tw = measureHudText(title, 64);
+  drawHudText(title, sw / 2 - tw / 2, sh / 4, 64, titleCol);
+
+  // Sub-title — which mode finished.
+  const char *modeTag = (m_gameMode == GameMode::Base) ? "BASE DEFENCE"
+                                                       : "WAVE MODE";
+  int mtw = measureHudText(modeTag, 18);
+  drawHudText(modeTag, sw / 2 - mtw / 2, sh / 4 + 70, 18,
+              {200, 220, 240, 200});
+
+  // ---- Stats panel ----
+  // Compact key:value lines under the title. Time always shown;
+  // mode-specific stats follow.
+  double elapsed = m_sessionEndTime - m_sessionStartTime;
+  if (elapsed < 0.0) elapsed = 0.0;
+  int mins = static_cast<int>(elapsed) / 60;
+  int secs = static_cast<int>(elapsed) % 60;
+
+  int statsX = sw / 2 - 160;
+  int statsY = sh / 4 + 110;
+  const int lineH = 22;
+  Color label = {180, 200, 220, 220};
+  Color value = {230, 240, 250, 240};
+  auto statLine = [&](const char *l, const char *v) {
+    drawHudText(l, statsX, statsY, 16, label);
+    int vw = measureHudText(v, 16);
+    drawHudText(v, statsX + 320 - vw, statsY, 16, value);
+    statsY += lineH;
+  };
+  char tbuf[32];
+  snprintf(tbuf, sizeof(tbuf), "%d:%02d", mins, secs);
+  statLine("Time", tbuf);
+
+  if (m_gameMode == GameMode::Base && m_landerTotalAtStart > 0) {
+    int landersAlive = m_em.liveEnemyOfType(EntityType::Lander);
+    int killed = m_landerTotalAtStart - landersAlive;
+    char lbuf[48];
+    snprintf(lbuf, sizeof(lbuf), "%d / %d", killed, m_landerTotalAtStart);
+    statLine("Landers destroyed", lbuf);
+  }
+  if (m_friendlyTotalAtStart > 0) {
+    int alive = m_em.liveFriendlyCount();
+    int lost = m_friendlyTotalAtStart - alive;
+    char fbuf[48];
+    if (m_sessionResult == SessionResult::Victory) {
+      snprintf(fbuf, sizeof(fbuf), "%d / %d saved", alive,
+               m_friendlyTotalAtStart);
+    } else {
+      snprintf(fbuf, sizeof(fbuf), "%d lost of %d", lost,
+               m_friendlyTotalAtStart);
+    }
+    statLine("Friendlies", fbuf);
+  }
+  // Score (Wave mode only — collector delivery score).
+  if (m_gameMode == GameMode::Wave) {
+    int deliveries = m_em.deliveryCount();
+    if (deliveries > 0) {
+      char sbuf[32];
+      snprintf(sbuf, sizeof(sbuf), "%d",
+               deliveries * Config::COLLECTOR_DELIVERY_SCORE);
+      statLine("Score", sbuf);
+    }
+    char wbuf[16];
+    snprintf(wbuf, sizeof(wbuf), "%d", m_waves.currentWave());
+    statLine("Wave reached", wbuf);
+  }
+
+  // ---- Buttons ----
+  const float bw = 280.0f, bh = 50.0f;
+  float bx = sw / 2 - bw / 2;
+  float by = statsY + 36;
+  if (drawMenuButton({bx, by, bw, bh}, "RESTART", mouse, clickEdge))
+    enterPlaying();
+  by += bh + 14;
+  if (drawMenuButton({bx, by, bw, bh}, "CHANGE LOADOUT", mouse, clickEdge))
+    enterLoadoutSelect();
+  by += bh + 14;
+  if (drawMenuButton({bx, by, bw, bh}, "MAIN MENU", mouse, clickEdge))
+    enterMainMenu();
+  m_lastClickState = clickNow;
 }
 
 // ================================================================
@@ -2517,14 +2633,21 @@ void GameState::resetCombat() {
   // all-friendlies-dead game over would fire on tick 1.
   spawnFriendliesForRound(startPos);
   m_friendlyTotalAtStart = m_em.liveFriendlyCount();
+  // Slice C C.7 — snapshot lander total for the result-screen stat
+  // line + the Base-mode victory gate. Zero in Wave mode (no landers
+  // spawn there), which is fine — Wave has no Victory transition.
+  m_landerTotalAtStart = m_em.liveEnemyOfType(EntityType::Lander);
 
   applyLiveSettings();
   m_cameraView = static_cast<CameraView>(m_settings.defaultView);
   resetCameraZoom();
 
-  // Fresh life — re-arm the death pipeline.
+  // Fresh life — re-arm the death pipeline + result tracking.
   m_playerDeathHandled = false;
   m_friendliesLostHandled = false;
+  m_sessionResult = SessionResult::None;
+  m_sessionStartTime = GetTime();
+  m_sessionEndTime = m_sessionStartTime;
 }
 
 void GameState::enterMainMenu() {
