@@ -56,8 +56,7 @@ A single build produces two executables (`terra-siege` and `terra-siege-inspect`
 | `CameraView` | Five player views (Chase / Velocity / Tactical / ThreatLock / Classic) | Use for view switching |
 | `FlightMode` | **Removed** in the flight rebuild (single Newtonian model) | Do not re-add |
 | `CraftType` | **Removed** in the flight rebuild (one hovercraft mesh) | Do not re-add |
-| `smooth()` (Heightmap) | Pending removal — sine-wave terrain rebuild is the only rebuild spec not yet shipped | Live in current code; do not assume removed |
-| `applyRadialFalloff()` (Heightmap) | Same as `smooth()` — planned removal pending sine-wave rebuild | Live in current code |
+| `diamondSquare()` / `smooth()` / `applyRadialFalloff()` (Heightmap) | **Already retired.** Current generator is tileable Perlin gradient fBM + ridged-fBM mountain layer + coupled 2D domain warp ([Heightmap.hpp](src/world/Heightmap.hpp)) | Sine-wave Fourier synthesis was tried and rejected — visible parallel ridge bands per [Config.hpp:685-691](src/core/Config.hpp#L685). `project-status/archive/terrain_rebuild.md` spec is **obsolete**, do not implement |
 
 ---
 
@@ -87,7 +86,8 @@ terra-siege/
     │   ├── Particles.hpp/cpp     # 2000-slot pool, gravity + bounce flags
     │   └── Settings.hpp/cpp      # Persistent settings (~/.config/terra-siege)
     ├── world/
-    │   ├── Heightmap.hpp/cpp     # Diamond-Square + smoothing + rivers + lakes
+    │   ├── Heightmap.hpp/cpp     # Tileable Perlin gradient fBM + ridged mountain layer + 2D warp + rivers + lakes
+    │   ├── Decorations.hpp/cpp   # Phase 3.5 — trees / rocks / antennas / crash sites, biome- and noise-gated
     │   ├── TerrainChunk.hpp/cpp  # Flat-shaded mesh builder, WaterType colouring
     │   ├── Planet.hpp/cpp        # Chunk orchestration, heightAt() query
     │   └── SkyDome.hpp/cpp       # Stub
@@ -202,11 +202,13 @@ This applies to all five views.
 
 For the live phase table see [README.md — Status](README.md#status). High level:
 
-- **Phases 1, 1.5, 2** ✅ — terrain (Diamond-Square + rivers + lakes), Newtonian flight, ship + five-view camera, ground shadow, exhaust particles, settings persistence
+- **Phases 1, 1.5, 2** ✅ — terrain (tileable Perlin gradient fBM + ridged mountain layer + rivers + lakes), Newtonian flight, ship + five-view camera, ground shadow, exhaust particles, settings persistence
 - **Phase 3** ✅ through **5h** — enemy roster (Drone, Fighter, Seeder, Ground Turret, Bomber, Carrier, Tank), full weapon roster (Cannon, Plasma, Beam, Missile, Cluster, Depth Charge, Auto Turret, EMP, Shield Booster), wave manager with pre-flight loadout, friendly units (Collector, Repair Station, Radar Booster, Base), bomber strafe AI, collector economy loop, ground tank + base auto-turret + friendly-fire filter
+- **Phase 3.5** ✅ — atmospheric terrain: trees / rocks / antennas / crash sites, noise-mask placement, biome-gated
 - **Phase 4 (partial)** — player directional shields + pie HUD; radar tier 1 / 2 / 3
-- **OBJ pipeline + terra-siege-inspect** — full migration of entity meshes; inspector with `Tool` registry, orbit camera, vertex pick/drag
-- **Phase 5 / 6** — not started
+- **Phase 5 first cut** ✅ — procedural SFX: positional audio, layered synth (saw/sub/noise), bit-crush + soft-clip, per-shot pitch variance. Day/night, weather, post-FX not yet started
+- **OBJ pipeline + terra-siege-inspect** — full migration of entity meshes; inspector with `Tool` registry, orbit camera, vertex pick/drag with shared undo, primitive insertion (Phase E), sidecar profile tools F.1–F.5
+- **Slice C — Base Mode v2** — not started (the headline asymmetric mode, per [base_mode_v2.md](base_mode_v2.md))
 
 What's next is tracked in [ROADMAP.md](ROADMAP.md): three parallel tracks (Engine remaining phases / Features A→B→C slicing / Tooling Phase A → F.*).
 
@@ -278,8 +280,8 @@ Removed: F5 (craft cycle) and F6 (flight mode toggle) — gone with the flight r
 FIXED_DT             = 1/120s   // physics tick rate
 MAX_FRAME_TIME       = 0.05s    // spiral-of-death guard
 
-// World — current Diamond-Square parameters
-HEIGHTMAP_SIZE       = 1025     // (sine-wave rebuild planned: see archive/terrain_rebuild.md)
+// World — tileable Perlin gradient fBM
+HEIGHTMAP_SIZE       = 1025
 CHUNK_COUNT          = 16
 TERRAIN_SCALE        = 4.0f
 TERRAIN_HEIGHT_MAX   = 55.0f
@@ -349,7 +351,7 @@ Visual target: "modernised but stylistically similar" to the 1988 original.
 
 These have bitten development before — preserve unless you understand why:
 
-- **`Planet::heightAt()` will need modular (wrapped) coordinates** after the planned toroidal-wrap terrain rebuild. Current code uses unwrapped; revisit when sine-wave terrain lands.
+- **`Heightmap::sample()` already wraps toroidally** — see [Heightmap.hpp](src/world/Heightmap.hpp). Negative or out-of-range queries are valid and tile seamlessly via the noise lattice. `Planet::heightAt()` is the engine-side bilinear sample on top.
 - **`rlFrustum` far-plane override at 3000** in `GameState::render()`. Do not remove — raylib's default 1000-unit far plane clips the world.
 - **Loading-screen `ProgressCb`** in `Planet::generate()` must be preserved across any terrain regen — startup time is non-trivial.
 - **Ghost-blip pool (Radar)** — pre-allocated at 32 slots. No heap allocation.
@@ -380,6 +382,4 @@ These have bitten development before — preserve unless you understand why:
 - Earlier CLAUDE.md variants (phase-2-era and rebuild-era)
 - `VIRUS_REMAKE_ARCHITECTURE.md` — original architectural rationale
 - `project-roadmap.md` — Phase 2 flight-modes design (shipped)
-- Rebuild specs: `flight_mode_rebuild.md` (shipped), `terrain_rebuild.md` (NOT shipped — Diamond-Square still in code), `camera_system.md` (shipped), `combat_tuning.md` (shipped), `radar_system.md` (shipped), `REBUILD_ROADMAP.md`, `readme_rebuild.md`
-
-The terrain rebuild (sine-wave Fourier synthesis) is the one rebuild spec that has *not* been implemented — current code is still Diamond-Square. Revisit when there's appetite to land it.
+- Rebuild specs: `flight_mode_rebuild.md` (shipped), `terrain_rebuild.md` (**obsolete** — sine-wave Fourier synthesis was tried and rejected for visible parallel ridge bands; the rebuild was achieved by a different route, tileable Perlin gradient fBM, which superseded both Diamond-Square and sine waves), `camera_system.md` (shipped), `combat_tuning.md` (shipped), `radar_system.md` (shipped), `REBUILD_ROADMAP.md`, `readme_rebuild.md`

@@ -6,6 +6,7 @@
 #include "InspectorFont.hpp"
 #include "HullTool.hpp"
 #include "IdentityTool.hpp"
+#include "MaterialsTool.hpp"
 #include "PrimitivesTool.hpp"
 #include "ProfileTool.hpp"
 #include "ShieldsTool.hpp"
@@ -67,6 +68,7 @@ bool copyFileBytes(const std::filesystem::path &src,
 Inspector::Inspector() {
   m_tools.push_back(std::make_unique<VertexTool>());
   m_tools.push_back(std::make_unique<PrimitivesTool>());  // E
+  m_tools.push_back(std::make_unique<MaterialsTool>());   // C
   m_tools.push_back(std::make_unique<ProfileTool>());     // F.1
   m_tools.push_back(std::make_unique<IdentityTool>());    // F.2
   m_tools.push_back(std::make_unique<HullTool>());        // F.2

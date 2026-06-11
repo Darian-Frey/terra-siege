@@ -95,4 +95,23 @@ std::vector<std::string> readObjLines(const std::filesystem::path &path);
 bool saveObjVertices(const std::filesystem::path &path,
                      const std::vector<Vector3> &newVerts, bool isDirty);
 
+// Save material assignments back to an OBJ (Inspector Phase C).
+// Unlike saveObjVertices, this REPLACES the entire face section
+// (from the first usemtl/f line through the last f line), regenerating
+// triangle lines + usemtl directives from the in-memory state.
+// Everything BEFORE the face section (comments, verts, vn, vt, o, g, s)
+// and everything AFTER the last face line is preserved verbatim.
+//
+// Triangles are emitted in mesh order (matches load order), so the
+// original file ordering is preserved up to face-group labels (which
+// are lost — the rebuilder doesn't preserve `o`/`g` lines that
+// intermix with face lines).
+//
+// If `isDirty` is false the file is NOT written. T-06-equivalent
+// contract for the materials path.
+bool saveObjMaterials(const std::filesystem::path &path,
+                      const std::vector<int32_t> &indices,
+                      const std::vector<int> &facePalette,
+                      bool isDirty);
+
 } // namespace tsmesh

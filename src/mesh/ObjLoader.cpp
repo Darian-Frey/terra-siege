@@ -325,6 +325,135 @@ std::string timestampLine() {
 
 } // anonymous namespace
 
+// True if `line` starts with one of the face-section directives we
+// need to recognise when finding the section's bounds.
+static bool startsWithToken(const std::string &line, const char *token) {
+  size_t n = std::strlen(token);
+  if (line.size() < n) return false;
+  if (std::strncmp(line.c_str(), token, n) != 0) return false;
+  return line.size() == n || line[n] == ' ' || line[n] == '\t';
+}
+
+bool saveObjMaterials(const std::filesystem::path &path,
+                      const std::vector<int32_t> &indices,
+                      const std::vector<int> &facePalette, bool isDirty) {
+  if (!isDirty) return true;
+  if (indices.size() % 3 != 0) {
+    std::fprintf(stderr,
+                 "[ObjLoader] saveObjMaterials: indices count %zu not a "
+                 "multiple of 3; refusing to save\n",
+                 indices.size());
+    return false;
+  }
+  size_t triCount = indices.size() / 3;
+  if (facePalette.size() != triCount) {
+    std::fprintf(stderr,
+                 "[ObjLoader] saveObjMaterials: facePalette size %zu does "
+                 "not match triangle count %zu; refusing to save\n",
+                 facePalette.size(), triCount);
+    return false;
+  }
+
+  std::vector<std::string> lines = readObjLines(path);
+  if (lines.empty()) return false;
+
+  // Find the face section's bounds.
+  //   start = first line that is `usemtl ...` or `f ...`
+  //   end   = one past the last line that is `f ...`
+  // Anything before `start` is preserved (verts, normals, comments, o/g).
+  // Anything after `end` is preserved (trailing edit markers, etc.).
+  size_t faceStart = lines.size();
+  for (size_t i = 0; i < lines.size(); ++i) {
+    if (startsWithToken(lines[i], "usemtl") ||
+        startsWithToken(lines[i], "f")) {
+      faceStart = i;
+      break;
+    }
+  }
+  size_t faceEnd = faceStart;
+  for (size_t i = lines.size(); i-- > 0;) {
+    if (startsWithToken(lines[i], "f")) {
+      faceEnd = i + 1;
+      break;
+    }
+  }
+  if (faceStart == lines.size() || faceEnd <= faceStart) {
+    std::fprintf(stderr,
+                 "[ObjLoader] saveObjMaterials: no face section detected\n");
+    return false;
+  }
+
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  if (!out.is_open()) return false;
+
+  // -------- Prefix: everything before the face section --------
+  for (size_t i = 0; i < faceStart; ++i) {
+    out.write(lines[i].data(), static_cast<std::streamsize>(lines[i].size()));
+    out.put('\n');
+  }
+
+  // -------- Regenerated face section --------
+  // Emit triangles in mesh order. Insert `usemtl cNN` whenever the
+  // palette index changes. OBJ uses 1-based vertex indices.
+  int currentPalette = -2; // -2 = "haven't emitted any yet"
+  for (size_t t = 0; t < triCount; ++t) {
+    int p = facePalette[t];
+    if (p != currentPalette) {
+      char mbuf[32];
+      if (p < 0 || p >= 32) {
+        // Loader treats unrecognised materials as fallback; preserve
+        // that by emitting an obviously-invalid name. Round-trip
+        // produces the same fallback palette index on next load.
+        std::snprintf(mbuf, sizeof(mbuf), "usemtl fallback");
+      } else {
+        std::snprintf(mbuf, sizeof(mbuf), "usemtl c%02d", p);
+      }
+      out.write(mbuf, static_cast<std::streamsize>(std::strlen(mbuf)));
+      out.put('\n');
+      currentPalette = p;
+    }
+    int a = indices[t * 3 + 0] + 1;
+    int b = indices[t * 3 + 1] + 1;
+    int c = indices[t * 3 + 2] + 1;
+    char fbuf[64];
+    std::snprintf(fbuf, sizeof(fbuf), "f %d %d %d", a, b, c);
+    out.write(fbuf, static_cast<std::streamsize>(std::strlen(fbuf)));
+    out.put('\n');
+  }
+
+  // -------- Suffix: everything after the original face section --------
+  // Update or append the edit-marker comment here so it ends up
+  // outside the face section (consistent with saveObjVertices).
+  std::vector<std::string> suffix(lines.begin() + faceEnd, lines.end());
+  std::string marker = timestampLine();
+  bool replaced = false;
+  for (std::string &line : suffix) {
+    if (isEditMarker(line)) {
+      line = marker;
+      replaced = true;
+      break;
+    }
+  }
+  // If the marker wasn't in the suffix, check the prefix — saveObjVertices
+  // might have written it before the face section. Append a new one at
+  // the end only if neither prefix nor suffix already has it.
+  if (!replaced) {
+    for (size_t i = 0; i < faceStart; ++i) {
+      if (isEditMarker(lines[i])) {
+        replaced = true; // existing marker in prefix is fine; skip append
+        break;
+      }
+    }
+  }
+  if (!replaced) suffix.push_back(marker);
+
+  for (const std::string &line : suffix) {
+    out.write(line.data(), static_cast<std::streamsize>(line.size()));
+    out.put('\n');
+  }
+  return out.good();
+}
+
 bool saveObjVertices(const std::filesystem::path &path,
                      const std::vector<Vector3> &newVerts, bool isDirty) {
   // T-06: no edits → no write. The file's on-disk bytes must be
