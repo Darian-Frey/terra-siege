@@ -115,10 +115,57 @@ constexpr float FOG_FAR = 2000.0f;
 // ----------------------------------------------------------------
 // Weapons — primary
 // ----------------------------------------------------------------
+// Cannon constants are retained as the REFERENCE DPS for TTK-derived
+// HP math (CANNON_DPS below). The Cannon weapon itself was removed
+// from the player loadout in the Slice C weapons rebuild — the
+// red/blue laser pair replaces it as the unconditional baseline.
+// Existing TTKs continue to make sense because laser DPS matches
+// CANNON_DPS at the favoured target type.
 constexpr float CANNON_FIRE_RATE = 0.08f; // sec between shots
 constexpr float CANNON_SPEED = 120.0f;
 constexpr float CANNON_DAMAGE = 8.0f;
 constexpr float CANNON_RANGE = 200.0f;
+
+// ----------------------------------------------------------------
+// Slice C — red/blue laser pair (replaces Cannon + Shield Laser).
+//
+// LMB held = rapid auto-fire of the currently-selected colour. Q
+// selects red, E selects blue. Red is Hull-typed, blue is Shield-
+// typed; the WRONG_TYPE_MULT in Entity.hpp's damage_curve namespace
+// is the single tuning knob for "how bad is the wrong colour?".
+//
+// Shift+LMB held = charge mode. Battery drains continuously into a
+// charge meter; release fires a charged shot at proportional damage.
+// 100% charge = 100% battery drain = LASER_CHARGE_DAMAGE_MULT × a
+// rapid shot.
+//
+// Battery is SHARED across red, blue, and the charged mode. Drains
+// per rapid shot AND continuously during charge. Recharges only
+// while not firing and not charging.
+//
+// Spread is two-step: tight (RAPID @ ≤ KNEE m), wide (RAPID @ > KNEE m).
+// No interpolation — sharp transition.
+// ----------------------------------------------------------------
+constexpr float LASER_FIRE_RATE = 0.125f;  // sec between shots = 8 RoF
+constexpr float LASER_SPEED = 220.0f;      // tracer projectile speed
+constexpr float LASER_DAMAGE = 12.5f;      // per shot, base. 12.5 × 8 = 100 DPS
+                                           // matches CANNON_DPS at favoured type
+constexpr float LASER_RANGE = 600.0f;      // matches Cannon's effective reach
+constexpr float LASER_BATTERY_MAX = 100.0f;
+// Sustain @ full burn: 3 seconds. 3s × 8 RoF = 24 shots; 24 × cost = MAX.
+constexpr float LASER_BATTERY_PER_SHOT = LASER_BATTERY_MAX / 24.0f; // ≈4.17
+// Recharge 100% in 2.5 seconds while not firing AND not charging.
+constexpr float LASER_BATTERY_RECHARGE_PS = LASER_BATTERY_MAX / 2.5f; // 40/sec
+// Charge mode — drains the whole battery over CHARGE_TIME seconds
+// from full. Partial charge = partial damage on release.
+constexpr float LASER_CHARGE_TIME = 1.0f;
+constexpr float LASER_CHARGE_DAMAGE_MULT = 8.0f; // 100% charge = 8× rapid shot
+// Two-step spread cone — sharp transition at the knee.
+constexpr float LASER_SPREAD_KNEE_DIST = 150.0f; // metres
+constexpr float LASER_SPREAD_TIGHT_DEG = 1.5f;
+constexpr float LASER_SPREAD_WIDE_DEG = 8.0f;
+// Charged shot has zero spread (focused projectile).
+constexpr float LASER_CHARGED_SPREAD_DEG = 0.0f;
 
 constexpr float PLASMA_FIRE_RATE = 0.25f;
 constexpr float PLASMA_SPEED = 80.0f;

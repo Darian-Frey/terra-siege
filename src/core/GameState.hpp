@@ -248,7 +248,7 @@ private:
   // begins. Persists across restarts so "Restart" from GameOver
   // can skip the picker and re-use the last loadout.
   struct Loadout {
-    Player::PrimaryWeapon primary = Player::PrimaryWeapon::Cannon;
+    Player::PrimaryWeapon primary = Player::PrimaryWeapon::LaserPair;
     Player::SecondaryWeapon secondary = Player::SecondaryWeapon::Missile;
     Player::SpecialWeapon special = Player::SpecialWeapon::EMP;
     bool autoTurret = false;

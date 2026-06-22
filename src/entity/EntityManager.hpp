@@ -63,7 +63,8 @@ public:
                           ProjectileKind kind = ProjectileKind::Cannon,
                           float splashRadius = 0.0f,
                           uint32_t seekTargetId = 0,
-                          float turnRate = 0.0f);
+                          float turnRate = 0.0f,
+                          DamageType damageType = DamageType::Neutral);
 
   // Find the nearest live enemy entity within a forward cone from origin
   // (cosine threshold, dot(forward, toEnemyNormalised) >= cosHalfAngle).
@@ -71,6 +72,12 @@ public:
   // Used by GameState to acquire a missile lock at fire time.
   uint32_t acquireTarget(Vector3 origin, Vector3 forward,
                          float cosHalfAngle, float maxRange) const;
+
+  // Slice C — distance to nearest enemy in forward cone, or maxRange+1
+  // if no target. Used by the laser spread cone to pick tight vs wide
+  // spread at fire time without exposing entity-by-id lookup.
+  float nearestEnemyDistanceInCone(Vector3 origin, Vector3 forward,
+                                   float cosHalfAngle, float maxRange) const;
 
   // EMP area effect — set stunTimer = duration on every live enemy
   // within radius of pos. Called by GameState when the player's EMP
@@ -254,8 +261,17 @@ private:
   // impact point; used to determine which directional sector takes
   // damage on multi-sector enemies (Carrier). For single-shield
   // entities the hitPos is ignored and the scalar shield drains as before.
+  //
+  // Slice C — `dt` is the damage type (Neutral / Hull / Shield). For
+  // Neutral (the historical default) the shield-stage and hull-stage
+  // damage are unmodified. For Hull-typed (red laser) the shield-
+  // stage drain is multiplied by damage_curve::WRONG_TYPE_MULT and
+  // hull stage is full. For Shield-typed (blue laser) the inverse.
+  // Multipliers apply PER STAGE so an overflow shot doesn't get a
+  // free pass on the wrong half.
   void applyDamage(Entity &target, float damage, Vector3 hitPos,
-                   ParticleSystem &particles);
+                   ParticleSystem &particles,
+                   DamageType dt = DamageType::Neutral);
 
   // Shield-priority damage application (Slice B.2/B.3). Drains shields
   // (sectored or scalar) by shieldDmg directly — NO overflow to hull.

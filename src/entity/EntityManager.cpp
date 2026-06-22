@@ -457,7 +457,8 @@ Entity *EntityManager::spawnProjectile(Vector3 pos, Vector3 vel, float damage,
                                        ProjectileKind kind,
                                        float splashRadius,
                                        uint32_t seekTargetId,
-                                       float turnRate) {
+                                       float turnRate,
+                                       DamageType damageType) {
   Entity *p = allocProjectile();
   if (!p) return nullptr;
 
@@ -472,6 +473,7 @@ Entity *EntityManager::spawnProjectile(Vector3 pos, Vector3 vel, float damage,
   p->radius = Config::HIT_RADIUS_PROJECTILE;
   p->owner = owner;
   p->kind = kind;
+  p->damageType = damageType;
   p->splashRadius = splashRadius;
   p->seekTargetId = seekTargetId;
   p->turnRate = turnRate;
@@ -504,6 +506,23 @@ uint32_t EntityManager::acquireTarget(Vector3 origin, Vector3 forward,
     }
   }
   return best;
+}
+
+float EntityManager::nearestEnemyDistanceInCone(Vector3 origin, Vector3 forward,
+                                                float cosHalfAngle,
+                                                float maxRange) const {
+  float bestDist = maxRange + 1.0f;
+  for (const Entity &e : m_entities) {
+    if (!isAutoAimTarget(e)) continue;
+    Vector3 d = Vector3Subtract(e.pos, origin);
+    float dist = Vector3Length(d);
+    if (dist < 0.01f || dist > maxRange) continue;
+    Vector3 dn = Vector3Scale(d, 1.0f / dist);
+    float cosAngle = Vector3DotProduct(forward, dn);
+    if (cosAngle < cosHalfAngle) continue;
+    if (dist < bestDist) bestDist = dist;
+  }
+  return bestDist;
 }
 
 // Beam Laser raycast — sphere-cast against each live enemy, find the
@@ -2611,7 +2630,12 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
           // Dud (shields up / can't be infected) — just the
           // emitHitBurst above is the feedback.
         } else {
-          applyDamage(e, p.damage, p.pos, particles);
+          // Slice C — pass the projectile's damageType so the
+          // shield/hull multiplier kicks in for red/blue lasers.
+          // Every existing weapon (Cannon — historical — Plasma,
+          // Beam, Missile, Cluster) defaults damageType to Neutral
+          // at fire time, preserving prior behaviour.
+          applyDamage(e, p.damage, p.pos, particles, p.damageType);
           // Splash weapons (Plasma, Missile) blast everyone else in
           // radius for the same damage figure — simple model, can
           // graduate to falloff later if it feels too generous.
@@ -2713,9 +2737,18 @@ int EntityManager::damageSectorFromHit(const Entity &target,
 
 void EntityManager::applyDamage(Entity &target, float damage,
                                 Vector3 hitPos,
-                                ParticleSystem &particles) {
+                                ParticleSystem &particles,
+                                DamageType dt) {
   target.timeSinceHit = 0.0f;
   target.damageFlashTimer = 0.12f;
+
+  // Slice C — per-stage damage-type multipliers. Hull-typed shots
+  // (red laser) lose damage on the shield stage; Shield-typed (blue)
+  // lose it on the hull stage. Neutral is unaffected.
+  float vsShield = 1.0f;
+  float vsHull = 1.0f;
+  if (dt == DamageType::Hull) vsShield = damage_curve::WRONG_TYPE_MULT;
+  else if (dt == DamageType::Shield) vsHull = damage_curve::WRONG_TYPE_MULT;
 
   bool shieldEngaged = false;
   if (hasDirectionalShield(target)) {
@@ -2724,29 +2757,38 @@ void EntityManager::applyDamage(Entity &target, float damage,
     target.sectorTimer[s] = 0.0f;
     if (target.sectorHP[s] > 0.0f) {
       shieldEngaged = true;
-      if (damage <= target.sectorHP[s]) {
-        target.sectorHP[s] -= damage;
+      float wantDrain = damage * vsShield;
+      if (wantDrain <= target.sectorHP[s]) {
+        target.sectorHP[s] -= wantDrain;
         shieldfx::pushImpact(target.shieldImpactDir, target.shieldImpactTimer,
                              Config::SHIELD_IMPACT_SLOTS,
                              shieldHitDirLocal(target, hitPos));
         if (m_audio) m_audio->play3D(SfxId::ShieldFlash, hitPos, 0.7f);
         return;
       }
-      damage -= target.sectorHP[s];
+      // Shield consumed; convert the absorbed portion back to base
+      // damage so the remainder routes through the hull stage with
+      // the proper Hull-stage multiplier.
+      float absorbedBase =
+          (vsShield > 0.0001f) ? (target.sectorHP[s] / vsShield) : 0.0f;
+      damage -= absorbedBase;
       target.sectorHP[s] = 0.0f;
     }
   } else if (target.shieldHP > 0.0f) {
     // Scalar (single-sector) path — drain shieldHP first.
     shieldEngaged = true;
-    if (damage <= target.shieldHP) {
-      target.shieldHP -= damage;
+    float wantDrain = damage * vsShield;
+    if (wantDrain <= target.shieldHP) {
+      target.shieldHP -= wantDrain;
       shieldfx::pushImpact(target.shieldImpactDir, target.shieldImpactTimer,
                            Config::SHIELD_IMPACT_SLOTS,
                            shieldHitDirLocal(target, hitPos));
       if (m_audio) m_audio->play3D(SfxId::ShieldFlash, hitPos, 0.7f);
       return;
     }
-    damage -= target.shieldHP;
+    float absorbedBase =
+        (vsShield > 0.0001f) ? (target.shieldHP / vsShield) : 0.0f;
+    damage -= absorbedBase;
     target.shieldHP = 0.0f;
   }
   if (shieldEngaged) {
@@ -2756,7 +2798,7 @@ void EntityManager::applyDamage(Entity &target, float damage,
     if (m_audio) m_audio->play3D(SfxId::ShieldFlash, hitPos, 0.7f);
   }
 
-  target.hullHP -= damage;
+  target.hullHP -= damage * vsHull;
   if (target.hullHP <= 0.0f) {
     target.hullHP = 0.0f;
     target.alive = false;
@@ -3276,6 +3318,33 @@ void EntityManager::renderProjectile(const Entity &p) const {
       tip.z += dir.z * 0.8f / speed;
     }
     DrawCubeV(tip, {0.4f, 0.4f, 0.4f}, {120, 255, 100, 255});
+    break;
+  }
+  case ProjectileKind::Laser: {
+    // Slice C — red/blue laser tracer. Colour picks from damageType
+    // so the projectile in flight always matches the gun that fired
+    // it. Slightly elongated along travel direction reads as "beam"
+    // even though it's a discrete projectile.
+    Color body = (p.damageType == DamageType::Shield)
+                     ? Color{120, 200, 255, 255}
+                     : Color{255, 110, 90, 255};
+    Color glow = (p.damageType == DamageType::Shield)
+                     ? Color{120, 200, 255, 110}
+                     : Color{255, 110, 90, 110};
+    DrawCubeV(p.pos, {0.4f, 0.4f, 1.2f}, body);
+    DrawCubeV(p.pos, {0.8f, 0.8f, 1.4f}, glow);
+    break;
+  }
+  case ProjectileKind::ChargedLaser: {
+    // Fatter, brighter heavy shot. Same colour mapping as Laser.
+    Color body = (p.damageType == DamageType::Shield)
+                     ? Color{160, 220, 255, 255}
+                     : Color{255, 160, 120, 255};
+    Color glow = (p.damageType == DamageType::Shield)
+                     ? Color{160, 220, 255, 130}
+                     : Color{255, 160, 120, 130};
+    DrawCubeV(p.pos, {1.0f, 1.0f, 2.2f}, body);
+    DrawCubeV(p.pos, {1.6f, 1.6f, 2.6f}, glow);
     break;
   }
   case ProjectileKind::Cannon:

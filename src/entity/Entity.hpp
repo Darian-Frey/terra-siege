@@ -41,6 +41,31 @@ enum class ProjectileOwner : uint8_t {
   Enemy = 1,
 };
 
+// Damage typing — Slice C weapons rebuild. Lasers are split into a
+// red (Hull-strong, Shield-weak) and blue (Shield-strong, Hull-weak)
+// pair; this enum drives the per-stage multiplier in applyDamage.
+//   * Neutral applies full damage to both shield and hull (the
+//     historical behaviour — Cannon / Plasma / Beam / Missile /
+//     Cluster all keep this).
+//   * Hull applies full to hull, WRONG_TYPE_MULT to shield.
+//   * Shield applies full to shield, WRONG_TYPE_MULT to hull.
+// Multipliers apply per overflow stage so a Hull-typed shot that
+// overflows from shield to hull doesn't get a free pass on either
+// half — the shield portion bleeds at 25%, the hull portion lands
+// at 100%.
+enum class DamageType : uint8_t {
+  Neutral = 0,
+  Hull = 1,
+  Shield = 2,
+};
+
+// Single source of truth for the wrong-type damage curve. Tuning
+// is one constant: change here, every red/blue laser interaction
+// rebalances consistently.
+namespace damage_curve {
+constexpr float WRONG_TYPE_MULT = 0.25f;
+}
+
 // Projectile sub-type — switches behaviour inside updateProjectile.
 // Cannon = straight-line tracer (default).
 // Plasma = straight-line + splash radius damage on impact.
@@ -71,6 +96,18 @@ enum class ProjectileKind : uint8_t {
   // machine), failure (shields up or canBeInfected = false) duds with
   // a small visual puff. Player has to strip shields first.
   InfectiousMissile,
+  // Slice C weapons rebuild — red/blue lasers. Same straight-line
+  // tracer behaviour as Cannon (which this projectile kind replaces
+  // for the player), but the colour comes from the projectile's
+  // damageType field (Hull = red, Shield = blue). Spread is applied
+  // at fire time in the Player path, so the projectile itself is
+  // just a straight line.
+  Laser,
+  // Charged laser shot (the absorbed Shield Laser). Same shape as a
+  // Laser projectile but fatter, brighter, and only fires on
+  // Shift+LMB release. damageType still picks red/blue colour and
+  // wrong-type penalty applies.
+  ChargedLaser,
 };
 
 // AI state machine — Drones and projectiles ignore this. The
@@ -174,6 +211,13 @@ struct Entity {
   float damage = 0.0f;        // damage dealt on contact
   ProjectileOwner owner = ProjectileOwner::Player;
   ProjectileKind kind = ProjectileKind::Cannon;
+  // Slice C — damage typing. Set at fire time from the weapon's spec;
+  // consumed by applyDamage's per-stage multiplier. Default Neutral
+  // preserves the historical "full damage everywhere" behaviour for
+  // every existing weapon (Cannon / Plasma / Beam / Missile / Cluster
+  // / Shield Missile / etc.) — only the new red/blue lasers set this
+  // to Hull or Shield.
+  DamageType damageType = DamageType::Neutral;
   float splashRadius = 0.0f;  // 0 = no splash (Plasma sets this on fire)
   float turnRate = 0.0f;      // rad/s; 0 = straight-line projectile
   uint32_t seekTargetId = 0;  // for Missile: tracked target entity id

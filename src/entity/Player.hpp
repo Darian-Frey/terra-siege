@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Config.hpp"
+#include "entity/Entity.hpp"
 #include "raylib.h"
 #include "raymath.h"
 #include <cstdint>
@@ -104,12 +105,22 @@ public:
 
   // Weapon slot enums — three slots (Primary / Secondary / Special)
   // plus an independent Auto Turret toggle. Cycled with Tab / Z / X.
+  //
+  // Slice C weapons rebuild: Cannon and ShieldLaser are gone. The
+  // LaserPair (red+blue) is the new always-available baseline. Q
+  // selects red (Hull-typed), E selects blue (Shield-typed). Shift+
+  // LMB charges; release fires a heavy charged shot. Cannon's slot
+  // value is preserved as a legacy mapping target so old persisted
+  // loadouts don't crash — it's silently redirected to LaserPair on
+  // load.
   enum class PrimaryWeapon : uint8_t {
-    Cannon = 0,
+    LaserPair = 0,
     Plasma = 1,
     Beam = 2,
-    ShieldLaser = 3, // Slice B.2 — 4th primary, strips shields
   };
+  // Slice C — which laser colour is currently selected. Internal to
+  // the LaserPair primary; toggled with Q/E.
+  enum class LaserColour : uint8_t { Red = 0, Blue = 1 };
   enum class SecondaryWeapon : uint8_t {
     Missile = 0,
     Cluster = 1,
@@ -149,11 +160,29 @@ public:
   float shieldBoosterCooldown() const { return m_shieldBoosterCooldown; }
   float shieldBoosterMaxCooldown() const;
 
+  // Slice C — laser pair accessors for HUD + GameState fire path.
+  LaserColour activeLaser() const { return m_activeLaser; }
+  float laserBattery() const { return m_laserBattery; }
+  float laserBatteryMax() const { return Config::LASER_BATTERY_MAX; }
+  float laserBatteryFrac() const {
+    float m = laserBatteryMax();
+    return m > 0.0f ? m_laserBattery / m : 0.0f;
+  }
+  bool isCharging() const { return m_chargeRequested; }
+  float chargeAmount() const { return m_chargeAmount; }
+
   // Pending-shot accessors — GameState calls each tick. Returns true
   // when a shot should be spawned, fills the out parameters, and
   // clears the request flag. Each weapon has its own queue slot so
   // multiple weapons can fire on the same tick (rare, but harmless).
-  bool consumePendingShot(Vector3 &outPos, Vector3 &outVel); // primary
+  bool consumePendingShot(Vector3 &outPos, Vector3 &outVel,
+                          DamageType &outDmgType); // primary
+  // Charged laser release — out params include the damage multiplier
+  // (chargeAmount × LASER_CHARGE_DAMAGE_MULT) so the spawn site can
+  // size the projectile damage correctly.
+  bool consumePendingChargedShot(Vector3 &outPos, Vector3 &outVel,
+                                 DamageType &outDmgType,
+                                 float &outDamageMult);
   bool consumePendingMissile(Vector3 &outPos, Vector3 &outVel);
   bool consumePendingDepthCharge(Vector3 &outPos, Vector3 &outVel);
   // Cluster — single carrier missile spawn. The carrier splits into
@@ -225,16 +254,45 @@ private:
   bool m_invertPitch = false;
   int m_assistLevel = Config::FLIGHT_ASSIST_DEFAULT;
 
-  // Primary fire (Cannon or Plasma — toggled with Q). handleInput
-  // sets m_fireRequested while LMB/SPACE is held; update ticks
-  // m_cannonTimer down and arms a pending shot when the timer hits
-  // zero. The fire-rate constant is chosen per primary weapon.
+  // Primary fire — LMB held = rapid auto-fire. handleInput sets
+  // m_fireRequested while LMB is held; update ticks m_cannonTimer
+  // down (legacy name — same field used by all discrete-shot
+  // primaries) and arms a pending shot when the timer hits zero.
+  // Per-weapon fire rate / damage / energy cost chosen in update().
   bool m_fireRequested = false;
   bool m_pendingShot = false;
   float m_cannonTimer = 0.0f;
   Vector3 m_shotPos = {};
   Vector3 m_shotVel = {};
-  PrimaryWeapon m_primaryWeapon = PrimaryWeapon::Cannon;
+  PrimaryWeapon m_primaryWeapon = PrimaryWeapon::LaserPair;
+
+  // Slice C — laser pair state. Active colour is toggled by Q/E.
+  // Shift+LMB held = charge mode; release fires a charged shot
+  // with damage proportional to charge accumulated. Shared battery
+  // covers rapid fire AND charge.
+  LaserColour m_activeLaser = LaserColour::Red;
+  float m_laserBattery = Config::LASER_BATTERY_MAX;
+  bool m_chargeRequested = false;   // Shift+LMB held this tick
+  bool m_chargeWasRequested = false; // last tick (edge detect for release-fires)
+  float m_chargeAmount = 0.0f;       // 0..1 — fraction of full charge
+  // Pending charged shot — populated on Shift+LMB release. Separate
+  // from m_pendingShot so a rapid burst and a charged release can
+  // coexist on the same tick if input ever permits it.
+  bool m_pendingChargedShot = false;
+  Vector3 m_chargedShotPos = {};
+  Vector3 m_chargedShotVel = {};
+  // The damageType the charged shot should carry — sampled at fire
+  // time from m_activeLaser so the in-flight projectile knows
+  // which target type it favours.
+  DamageType m_chargedShotDmgType = DamageType::Neutral;
+  // Captured charge fraction × LASER_CHARGE_DAMAGE_MULT at release
+  // time. The release path zeroes m_chargeAmount immediately, so the
+  // consumer reads this snapshot instead.
+  float m_pendingChargedShotMult = 0.0f;
+  // Sampled at rapid-fire time, same idea — so the spawn site in
+  // GameState doesn't have to re-read m_activeLaser (avoids races
+  // with input changing between physics ticks).
+  DamageType m_rapidShotDmgType = DamageType::Neutral;
 
   // Secondary slot. RMB fires whichever secondary is active. Each
   // variant tracks its own ammo. Cluster fires 4 pending shots in

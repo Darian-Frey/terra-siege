@@ -1032,23 +1032,87 @@ void GameState::update(float dt) {
       m_particles.update(dt, m_planet);
 
       // ---- Player weapon spawns ----
-      // Primary (Cannon or Plasma) — Player picks the projectile speed
-      // already; we pick kind/damage/range/splash here so the spawn
-      // is fully described in one place.
+      // Primary (LaserPair / Plasma) — Player picks the projectile
+      // speed; we pick kind/damage/range/splash and apply two-step
+      // spread for the laser path.
       Vector3 spos, svel;
-      if (m_player.consumePendingShot(spos, svel)) {
+      DamageType sdt = DamageType::Neutral;
+      if (m_player.consumePendingShot(spos, svel, sdt)) {
         if (m_player.primaryWeapon() == Player::PrimaryWeapon::Plasma) {
           m_em.spawnProjectile(spos, svel, Config::PLASMA_DAMAGE,
                                Config::CANNON_RANGE, // share cannon range
                                Config::PLASMA_SPEED, ProjectileOwner::Player,
-                               ProjectileKind::Plasma, Config::PLASMA_SPLASH);
+                               ProjectileKind::Plasma, Config::PLASMA_SPLASH,
+                               /*seekTargetId=*/0, /*turnRate=*/0.0f,
+                               /*damageType=*/DamageType::Neutral);
           m_audio.play3D(SfxId::PlasmaShot, spos);
         } else {
-          m_em.spawnProjectile(spos, svel, Config::CANNON_DAMAGE,
-                               Config::CANNON_RANGE, Config::CANNON_SPEED,
-                               ProjectileOwner::Player);
+          // Slice C — laser rapid shot. Apply two-step spread cone:
+          // tight under LASER_SPREAD_KNEE_DIST, wide beyond. Distance
+          // to the nearest enemy in the forward cone (or maxRange+1
+          // if none) drives the bucket — no enemy nearby → wide.
+          float targetDist = m_em.nearestEnemyDistanceInCone(
+              spos, m_player.forward(), /*cosHalfAngle=*/0.85f,
+              Config::LASER_RANGE);
+          float spreadDeg = (targetDist <= Config::LASER_SPREAD_KNEE_DIST)
+                                ? Config::LASER_SPREAD_TIGHT_DEG
+                                : Config::LASER_SPREAD_WIDE_DEG;
+          float spreadRad = spreadDeg * (3.14159265f / 180.0f);
+          // Random angle within the cone — uniform circular dart in
+          // the plane perpendicular to forward, scaled to the cone
+          // half-angle.
+          float a = static_cast<float>(GetRandomValue(0, 6283)) * 0.001f;
+          float r = static_cast<float>(GetRandomValue(0, 1000)) * 0.001f;
+          // sqrt(r) for uniform-in-disc sampling so the spread
+          // doesn't bunch at the centre.
+          float rho = sqrtf(r) * spreadRad;
+          Vector3 fwd = m_player.forward();
+          Vector3 right = m_player.right();
+          Vector3 up = m_player.up();
+          // Offset velocity by the spread direction (sin/cos in the
+          // perpendicular plane), preserving magnitude.
+          float lateral = sinf(rho);
+          float forwardKeep = cosf(rho);
+          Vector3 spreadDir = Vector3Add(
+              Vector3Scale(fwd, forwardKeep),
+              Vector3Add(Vector3Scale(right, lateral * cosf(a)),
+                         Vector3Scale(up, lateral * sinf(a))));
+          // Re-construct the velocity from the spread direction at
+          // the original LASER_SPEED, then add the ship's velocity.
+          Vector3 ownVel = Vector3Subtract(svel, m_player.velocity());
+          float speed = Vector3Length(ownVel);
+          if (speed < 1e-3f) speed = Config::LASER_SPEED;
+          svel = Vector3Add(Vector3Scale(spreadDir, speed),
+                            m_player.velocity());
+          m_em.spawnProjectile(spos, svel, Config::LASER_DAMAGE,
+                               Config::LASER_RANGE, Config::LASER_SPEED,
+                               ProjectileOwner::Player,
+                               ProjectileKind::Laser,
+                               /*splashRadius=*/0.0f,
+                               /*seekTargetId=*/0, /*turnRate=*/0.0f,
+                               sdt);
+          // Reuse the CannonShot SFX slot for now — Phase 5 audio
+          // refresh can split red/blue tones from one synth helper.
           m_audio.play3D(SfxId::CannonShot, spos);
         }
+      }
+
+      // Charged-laser release (Slice C). Damage = LASER_DAMAGE ×
+      // chargeMult (chargeAmount × LASER_CHARGE_DAMAGE_MULT). Tight
+      // focused projectile — no spread.
+      Vector3 cspos, csvel;
+      DamageType cdt = DamageType::Neutral;
+      float chargeMult = 0.0f;
+      if (m_player.consumePendingChargedShot(cspos, csvel, cdt, chargeMult)) {
+        float chargedDmg = Config::LASER_DAMAGE * chargeMult;
+        m_em.spawnProjectile(cspos, csvel, chargedDmg, Config::LASER_RANGE,
+                             Config::LASER_SPEED * 1.4f,
+                             ProjectileOwner::Player,
+                             ProjectileKind::ChargedLaser,
+                             /*splashRadius=*/0.0f,
+                             /*seekTargetId=*/0, /*turnRate=*/0.0f,
+                             cdt);
+        m_audio.play3D(SfxId::PlasmaShot, cspos); // heavy thump for now
       }
 
       // Secondary — Missile. Acquire the nearest in-cone target at fire
@@ -1161,18 +1225,12 @@ void GameState::update(float dt) {
       if (m_player.beamIsFiringThisTick(borigin, bdir)) {
         Vector3 hitPos;
         uint32_t hitId = 0;
-        if (m_player.primaryWeapon() ==
-            Player::PrimaryWeapon::ShieldLaser) {
-          hitId = m_em.shieldLaserRaycast(
-              borigin, bdir, Config::SHIELD_LASER_RANGE,
-              Config::SHIELD_LASER_SHIELD_DRAIN_PS * dt,
-              Config::SHIELD_LASER_HULL_DRAIN_PS * dt, m_particles,
-              hitPos);
-        } else {
-          hitId = m_em.beamRaycast(borigin, bdir, Config::BEAM_RANGE,
-                                   Config::BEAM_DAMAGE_PS * dt,
-                                   m_particles, hitPos);
-        }
+        // Slice C — ShieldLaser primary was folded into the blue
+        // laser's charged mode. Beam is the only continuous-fire
+        // primary left that runs through this raycast path.
+        hitId = m_em.beamRaycast(borigin, bdir, Config::BEAM_RANGE,
+                                 Config::BEAM_DAMAGE_PS * dt,
+                                 m_particles, hitPos);
         // Retrigger the beam tick every ~55 ms — matches the 60 ms
         // synth length with a 5 ms overlap so the sound reads as
         // continuous rather than a stutter.
@@ -1816,9 +1874,20 @@ void GameState::drawHUD() const {
                   {0, 0, 0, 130});
 
     // ---- Primary row ----
-    const char *primaryName = "CANNON";
-    Color primaryCol = {255, 230, 80, 255};
+    // Slice C — LaserPair shows "RED LASER" / "BLUE LASER" based on
+    // the active colour, with a shared-battery bar to the right.
+    const char *primaryName = "RED LASER";
+    Color primaryCol = {255, 90, 80, 255};
     switch (m_player.primaryWeapon()) {
+    case Player::PrimaryWeapon::LaserPair:
+      if (m_player.activeLaser() == Player::LaserColour::Blue) {
+        primaryName = "BLUE LASER";
+        primaryCol = {100, 170, 255, 255};
+      } else {
+        primaryName = "RED LASER";
+        primaryCol = {255, 90, 80, 255};
+      }
+      break;
     case Player::PrimaryWeapon::Plasma:
       primaryName = "PLASMA";
       primaryCol = {220, 140, 240, 255};
@@ -1827,22 +1896,38 @@ void GameState::drawHUD() const {
       primaryName = "BEAM";
       primaryCol = {120, 220, 255, 255};
       break;
-    case Player::PrimaryWeapon::ShieldLaser:
-      primaryName = "SHLD LASER";
-      primaryCol = {80, 180, 255, 255};
-      break;
     default:
       break;
     }
     drawHudText("PRI", wx, wy, 11, col);
     drawHudText(primaryName, wx + 32, wy, 13, primaryCol);
-    // Shared primary-energy bar — visible whenever the active weapon
-    // costs energy (Plasma / Beam / ShieldLaser). Cannon is free so
-    // no bar shown for it.
+    // Energy / battery bar — LaserPair shows the shared laser
+    // battery, Plasma/Beam show the legacy primary energy pool.
+    if (m_player.primaryWeapon() == Player::PrimaryWeapon::LaserPair) {
+      float frac = m_player.laserBatteryFrac();
+      if (frac < 0.0f) frac = 0.0f;
+      if (frac > 1.0f) frac = 1.0f;
+      int barW = 60, barH = 6;
+      int barX = wx + 90, barY = wy + 6;
+      DrawRectangle(barX, barY, barW, barH, {40, 40, 50, 220});
+      // Battery bar adopts the active colour so the HUD reads at a
+      // glance which laser is firing.
+      Color e = (m_player.activeLaser() == Player::LaserColour::Blue)
+                    ? Color{100, 170, 255, 240}
+                    : Color{255, 100, 90, 240};
+      DrawRectangle(barX, barY, static_cast<int>(barW * frac), barH, e);
+      // Charge fill overlaid — small bright bar growing on top of
+      // the battery bar while Shift+LMB is held.
+      if (m_player.isCharging() && m_player.chargeAmount() > 0.0f) {
+        float cf = m_player.chargeAmount();
+        if (cf > 1.0f) cf = 1.0f;
+        DrawRectangle(barX, barY - 4, static_cast<int>(barW * cf), 2,
+                      {255, 255, 200, 240});
+      }
+    }
     bool primaryUsesEnergy =
         m_player.primaryWeapon() == Player::PrimaryWeapon::Plasma ||
-        m_player.primaryWeapon() == Player::PrimaryWeapon::Beam ||
-        m_player.primaryWeapon() == Player::PrimaryWeapon::ShieldLaser;
+        m_player.primaryWeapon() == Player::PrimaryWeapon::Beam;
     if (primaryUsesEnergy) {
       float frac = m_player.primaryEnergy() / m_player.primaryEnergyMax();
       if (frac < 0.0f) frac = 0.0f;
@@ -2952,11 +3037,13 @@ void GameState::drawLoadoutSelect() {
     return hit;
   };
 
-  // Primary row — Cannon / Plasma / Beam / Shield Laser.
+  // Primary row — Slice C: LaserPair (red/blue, Q/E switch in-flight,
+  // Shift+LMB charge) / Plasma / Beam. Cannon is gone; Shield Laser
+  // is folded into the blue laser's charged mode.
   {
-    const char *opts[4] = {"CANNON", "PLASMA", "BEAM", "SHLD LASER"};
+    const char *opts[3] = {"LASER PAIR", "PLASMA", "BEAM"};
     int sel = static_cast<int>(m_loadout.primary);
-    int hit = drawSlotRow(py + 78, "PRIMARY", opts, 4, sel);
+    int hit = drawSlotRow(py + 78, "PRIMARY", opts, 3, sel);
     if (hit >= 0)
       m_loadout.primary = static_cast<Player::PrimaryWeapon>(hit);
   }

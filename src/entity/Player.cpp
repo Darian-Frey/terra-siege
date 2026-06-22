@@ -27,7 +27,14 @@ void Player::init(Vector3 startPos, int flightAssistLevel) {
   m_assistLevel = flightAssistLevel < 0   ? 0
                   : flightAssistLevel > 3 ? 3
                                           : flightAssistLevel;
-  m_primaryWeapon = PrimaryWeapon::Cannon;
+  m_primaryWeapon = PrimaryWeapon::LaserPair;
+  m_activeLaser = LaserColour::Red;
+  m_laserBattery = Config::LASER_BATTERY_MAX;
+  m_chargeAmount = 0.0f;
+  m_chargeRequested = false;
+  m_chargeWasRequested = false;
+  m_pendingChargedShot = false;
+  m_pendingChargedShotMult = 0.0f;
   m_secondaryWeapon = SecondaryWeapon::Missile;
   m_specialWeapon = SpecialWeapon::EMP;
   m_missileAmmo = Config::MISSILE_AMMO_MAX;
@@ -276,34 +283,41 @@ void Player::handleInput(float dt) {
   yawDelta *= yawSign;
   m_yaw += yawDelta;
 
-  // ---- Roll (Q/E only — mouse roll is reserved for later) ----
-  float rollDelta = 0.0f;
-  if (IsKeyDown(KEY_Q))
-    rollDelta -= Config::NEWTON_ROLL_RATE * dt;
-  if (IsKeyDown(KEY_E))
-    rollDelta += Config::NEWTON_ROLL_RATE * dt;
-  m_roll += rollDelta;
-  if (m_roll > Config::NEWTON_ROLL_MAX)
-    m_roll = Config::NEWTON_ROLL_MAX;
-  if (m_roll < -Config::NEWTON_ROLL_MAX)
-    m_roll = -Config::NEWTON_ROLL_MAX;
+  // ---- Roll (Q/E retired — reused for laser-colour select below.
+  //          Roll is still applied via the auto-level flight assist
+  //          and the implicit mouse roll component; mid-combat tilt
+  //          isn't a needed input for the new laser-pair gameplay) ----
 
   // ---- Thrust (W only — LMB now fires cannon) ----
   // Mouse-only philosophy keeps thrust off the mouse buttons so the
   // player can fire while thrusting without input conflicts.
   m_thrusting = IsKeyDown(KEY_W) && m_thrustCharge > 0.0f;
 
-  // ---- Primary fire request — LMB or SPACE ----
-  // For Cannon / Plasma this is "held = fire pulses". For Beam, it's
-  // "held = beam on, energy draining". update() decides which model
-  // to use based on m_primaryWeapon.
-  m_fireRequested =
-      IsMouseButtonDown(MOUSE_BUTTON_LEFT) || IsKeyDown(KEY_SPACE);
+  // ---- Primary fire + charge requests ----
+  // Slice C: LMB held alone = rapid auto-fire. Shift+LMB held =
+  // charge mode (rapid fire suppressed, battery drains into charge).
+  // Releasing Shift+LMB while charged fires the heavy shot. Space
+  // keeps working as a rapid-fire alias (no Shift modifier supported
+  // for charging via Space — the design's chargeable path is LMB
+  // only, Space is convenience).
+  bool shiftHeld = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+  bool lmbDown = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+  bool spaceDown = IsKeyDown(KEY_SPACE);
+  m_chargeRequested = lmbDown && shiftHeld;
+  // Rapid-fire request — LMB without Shift, OR Space (legacy alias).
+  m_fireRequested = (lmbDown && !shiftHeld) || spaceDown;
 
-  // ---- Primary cycle — Tab (Cannon → Plasma → Beam → ShieldLaser → Cannon) ----
+  // ---- Laser colour select — Q = red, E = blue ----
+  // Hull-typed (red) is the workhorse vs unshielded targets.
+  // Shield-typed (blue) is the shield-stripper. Dedicated keys give
+  // muscle-memory "key → state" mapping over "press to toggle".
+  if (IsKeyPressed(KEY_Q)) m_activeLaser = LaserColour::Red;
+  if (IsKeyPressed(KEY_E)) m_activeLaser = LaserColour::Blue;
+
+  // ---- Primary cycle — Tab (LaserPair → Plasma → Beam → LaserPair) ----
   bool tabDown = IsKeyDown(KEY_TAB);
   if (tabDown && !m_tabWasDown) {
-    int next = (static_cast<int>(m_primaryWeapon) + 1) % 4;
+    int next = (static_cast<int>(m_primaryWeapon) + 1) % 3;
     m_primaryWeapon = static_cast<PrimaryWeapon>(next);
     // Switching off a beam mid-fire kills the visual + damage
     // immediately on the next tick; flag flips false in update.
@@ -524,18 +538,12 @@ void Player::update(float dt, const Planet &planet) {
   // automatically once they cross SHIELD_FLASH_DURATION.
   shieldfx::tickImpacts(m_shieldImpactTimer, Config::SHIELD_IMPACT_SLOTS, dt);
 
-  // Primary — branch by weapon. Cannon + Plasma share the
-  // m_cannonTimer (single discrete-fire cooldown); Beam uses its
-  // own energy meter and is continuous-fire while held.
+  // Primary — branch by weapon. LaserPair, Plasma, Beam.
   if (m_cannonTimer > 0.0f) m_cannonTimer -= dt;
   if (m_cannonTimer < 0.0f) m_cannonTimer = 0.0f;
 
-  // Shared primary energy pool (Slice B.1/B.2). Cannon is free;
-  // Plasma deducts a discrete cost per shot; Beam and Shield Laser
-  // drain continuously while held at their own rates. Recharge runs
-  // every tick neither continuous-beam weapon is firing.
-  bool isBeamLike = (m_primaryWeapon == PrimaryWeapon::Beam ||
-                     m_primaryWeapon == PrimaryWeapon::ShieldLaser);
+  // -------- Beam path (continuous, drains m_primaryEnergy) --------
+  bool isBeamLike = (m_primaryWeapon == PrimaryWeapon::Beam);
   bool wantBeam = isBeamLike && m_fireRequested && m_health > 0.0f &&
                   m_primaryEnergy > 0.0f;
   if (wantBeam) {
@@ -543,41 +551,103 @@ void Player::update(float dt, const Planet &planet) {
     m_beamOrigin = Vector3Add(m_pos, Vector3Scale(fwd, 2.4f));
     m_beamDir = fwd;
     m_beamFiring = true;
-    float drain = (m_primaryWeapon == PrimaryWeapon::ShieldLaser)
-                      ? Config::SHIELD_LASER_ENERGY_PS
-                      : Config::BEAM_ENERGY_DRAIN_PS;
-    m_primaryEnergy -= drain * dt;
+    m_primaryEnergy -= Config::BEAM_ENERGY_DRAIN_PS * dt;
     if (m_primaryEnergy < 0.0f) m_primaryEnergy = 0.0f;
   } else {
     m_beamFiring = false;
+    // Beam-pool recharge — separate from the laser battery.
     m_primaryEnergy += Config::PRIMARY_ENERGY_RECHARGE * dt;
     if (m_primaryEnergy > Config::PRIMARY_ENERGY_MAX)
       m_primaryEnergy = Config::PRIMARY_ENERGY_MAX;
   }
 
-  // Cannon / Plasma — discrete projectile firing on the shared timer.
-  // Plasma additionally requires PLASMA_ENERGY_PER_SHOT in the pool;
-  // if the player drained it on a beam they need to wait for recharge
-  // before Plasma will fire again. Beam-class weapons (Beam,
-  // ShieldLaser) handle their own firing above.
-  bool wantPrimary = m_fireRequested && m_cannonTimer <= 0.0f &&
-                     m_health > 0.0f && !isBeamLike;
-  if (wantPrimary && m_primaryWeapon == PrimaryWeapon::Plasma &&
-      m_primaryEnergy < Config::PLASMA_ENERGY_PER_SHOT) {
-    wantPrimary = false;
-  }
-  if (wantPrimary) {
-    Vector3 fwd = forward();
-    m_shotPos = Vector3Add(m_pos, Vector3Scale(fwd, 3.0f));
-    float spd = (m_primaryWeapon == PrimaryWeapon::Plasma)
-                    ? Config::PLASMA_SPEED
-                    : Config::CANNON_SPEED;
-    m_shotVel = Vector3Add(Vector3Scale(fwd, spd), m_vel);
-    m_pendingShot = true;
-    m_cannonTimer = (m_primaryWeapon == PrimaryWeapon::Plasma)
-                        ? Config::PLASMA_FIRE_RATE
-                        : Config::CANNON_FIRE_RATE;
-    if (m_primaryWeapon == PrimaryWeapon::Plasma) {
+  // -------- LaserPair — rapid fire + charge mode (Slice C) --------
+  // Battery is shared between rapid fire and charging. Drains on
+  // each rapid shot; drains continuously while charging; recharges
+  // only when neither happening this tick.
+  if (m_primaryWeapon == PrimaryWeapon::LaserPair) {
+    DamageType dt_typed = (m_activeLaser == LaserColour::Red)
+                              ? DamageType::Hull
+                              : DamageType::Shield;
+
+    bool batteryDraining = false; // suppresses recharge this tick
+
+    // Charge mode — Shift+LMB held. Drain continuously, accumulate
+    // m_chargeAmount up to 1.0. Releasing fires the charged shot
+    // (handled by edge detection below).
+    if (m_chargeRequested && m_health > 0.0f && m_laserBattery > 0.0f) {
+      float drainPerSec = Config::LASER_BATTERY_MAX / Config::LASER_CHARGE_TIME;
+      float drain = drainPerSec * dt;
+      if (drain > m_laserBattery) drain = m_laserBattery;
+      m_laserBattery -= drain;
+      m_chargeAmount += drain / Config::LASER_BATTERY_MAX;
+      if (m_chargeAmount > 1.0f) m_chargeAmount = 1.0f;
+      batteryDraining = true;
+    }
+
+    // Charge release edge — Shift+LMB transitioned from held to
+    // not-held this tick AND we have charge accumulated. Fire the
+    // charged shot.
+    if (!m_chargeRequested && m_chargeWasRequested && m_chargeAmount > 0.0f &&
+        m_health > 0.0f) {
+      Vector3 fwd = forward();
+      m_chargedShotPos = Vector3Add(m_pos, Vector3Scale(fwd, 3.0f));
+      // Charged shots get a speed boost — punch through the air faster.
+      m_chargedShotVel =
+          Vector3Add(Vector3Scale(fwd, Config::LASER_SPEED * 1.4f), m_vel);
+      m_chargedShotDmgType = dt_typed;
+      // Snapshot the damage multiplier — chargeAmount × MAX_MULT so a
+      // 50% charge fires for half the heavy damage. Consumer reads
+      // this directly (chargeAmount is zeroed below).
+      m_pendingChargedShotMult =
+          m_chargeAmount * Config::LASER_CHARGE_DAMAGE_MULT;
+      m_pendingChargedShot = true;
+      // Charge state resets after release so the next Shift+LMB
+      // starts fresh.
+      m_chargeAmount = 0.0f;
+    }
+    m_chargeWasRequested = m_chargeRequested;
+
+    // Rapid fire — LMB without Shift. Gated on battery + per-shot
+    // cooldown. Spread is applied at the spawn site in GameState
+    // since it needs to know the target distance; here we just
+    // queue the un-spread shot and pass the damage type.
+    bool wantRapid = m_fireRequested && !m_chargeRequested &&
+                     m_cannonTimer <= 0.0f && m_health > 0.0f &&
+                     m_laserBattery >= Config::LASER_BATTERY_PER_SHOT;
+    if (wantRapid) {
+      Vector3 fwd = forward();
+      m_shotPos = Vector3Add(m_pos, Vector3Scale(fwd, 3.0f));
+      m_shotVel = Vector3Add(Vector3Scale(fwd, Config::LASER_SPEED), m_vel);
+      m_pendingShot = true;
+      m_rapidShotDmgType = dt_typed;
+      m_cannonTimer = Config::LASER_FIRE_RATE;
+      m_laserBattery -= Config::LASER_BATTERY_PER_SHOT;
+      if (m_laserBattery < 0.0f) m_laserBattery = 0.0f;
+      batteryDraining = true;
+    }
+
+    // Recharge only when neither firing nor charging this tick.
+    if (!batteryDraining) {
+      m_laserBattery += Config::LASER_BATTERY_RECHARGE_PS * dt;
+      if (m_laserBattery > Config::LASER_BATTERY_MAX)
+        m_laserBattery = Config::LASER_BATTERY_MAX;
+    }
+  } else {
+    // Other primaries (Plasma) keep the discrete-fire path.
+    bool wantPrimary = m_fireRequested && m_cannonTimer <= 0.0f &&
+                       m_health > 0.0f && !isBeamLike;
+    if (wantPrimary && m_primaryWeapon == PrimaryWeapon::Plasma &&
+        m_primaryEnergy < Config::PLASMA_ENERGY_PER_SHOT) {
+      wantPrimary = false;
+    }
+    if (wantPrimary && m_primaryWeapon == PrimaryWeapon::Plasma) {
+      Vector3 fwd = forward();
+      m_shotPos = Vector3Add(m_pos, Vector3Scale(fwd, 3.0f));
+      m_shotVel = Vector3Add(Vector3Scale(fwd, Config::PLASMA_SPEED), m_vel);
+      m_pendingShot = true;
+      m_rapidShotDmgType = DamageType::Neutral;
+      m_cannonTimer = Config::PLASMA_FIRE_RATE;
       m_primaryEnergy -= Config::PLASMA_ENERGY_PER_SHOT;
       if (m_primaryEnergy < 0.0f) m_primaryEnergy = 0.0f;
     }
@@ -725,12 +795,38 @@ void Player::update(float dt, const Planet &planet) {
 }
 
 // Consume any pending shot — GameState calls this after update() and
-// hands the resulting position+velocity to EntityManager.
-bool Player::consumePendingShot(Vector3 &outPos, Vector3 &outVel) {
+// hands the resulting position+velocity to EntityManager. Slice C —
+// also returns the damage type sampled at fire time (Hull / Shield
+// for lasers; Neutral for Plasma) so the projectile inherits its
+// favoured-target curve.
+bool Player::consumePendingShot(Vector3 &outPos, Vector3 &outVel,
+                                DamageType &outDmgType) {
   if (!m_pendingShot) return false;
   outPos = m_shotPos;
   outVel = m_shotVel;
+  outDmgType = m_rapidShotDmgType;
   m_pendingShot = false;
+  return true;
+}
+
+bool Player::consumePendingChargedShot(Vector3 &outPos, Vector3 &outVel,
+                                       DamageType &outDmgType,
+                                       float &outDamageMult) {
+  if (!m_pendingChargedShot) return false;
+  outPos = m_chargedShotPos;
+  outVel = m_chargedShotVel;
+  outDmgType = m_chargedShotDmgType;
+  // Damage scales with charge fraction × max charged multiplier.
+  // m_chargeAmount was already 0'd by the release path, so use a
+  // captured value: m_chargedShotPos/Vel/DmgType are populated only
+  // on a real release, so the damage multiplier captured at release
+  // is stored implicitly in the caller's reading. Recompute from
+  // the LASER_CHARGE_DAMAGE_MULT constant + a unit charge (the
+  // partial-charge curve is applied at release time by snapshotting
+  // chargeAmount into the multiplier — but we cleared chargeAmount.
+  // Fix: store the multiplier at release time).
+  outDamageMult = m_pendingChargedShotMult;
+  m_pendingChargedShot = false;
   return true;
 }
 
