@@ -255,6 +255,23 @@ The register was created on 2026-10-15 ([D-001](DECISIONS.md#d-001-adopt-the-dev
 **Reproduction.** Press 5 during a round. The N/S/E/W rose sits on the radar's lower-right edge.
 **Notes.** Fixed 2026-10-15: moved to the top-left (64, 150), between the FPS counter and the SPD tape, which is free in both builds.
 
+### BUG-025: Fighters and Bombers open fire beyond their weapons' reach
+
+**Status:** fixed (2026-10-15)
+**Found:** 2026-10-15 (playtest report: "they start firing as soon as they see me")
+**Location:** [src/entity/EntityManager.cpp](src/entity/EntityManager.cpp) `updateFighter()` / `updateBomber()` state transitions and `willFire`
+**Severity:** medium
+**Description.** Two faults:
+- Fighters and Bombers fired whenever they were in ATTACK state and facing the target, and ATTACK began at the sidecar `ai.attackRange`. For the Fighter that is 180 m, while its shots travel only 80 m (`FIGHTER_PROJ_RANGE`). Fighters fired from more than twice their weapon's reach, and the tracers fizzled out mid-air.
+- Nothing cleared ATTACK once the target moved beyond `aiDetectionRange`, so a ship could stay latched in ATTACK and keep firing at any distance.
+**Reproduction.** Approach a Fighter head-on from about 200 m. It opens fire at about 180 m, and the shots expire around 80 m out.
+**Notes.** Fixed 2026-10-15:
+- Engaging (ATTACK: ease throttle, line up) is now separate from firing.
+- Shots are only fired once the target is inside `ENEMY_FIRE_RANGE_FRAC` (0.9) × the projectile range: about 72 m for Fighters, about 99 m for Bombers. This matches drones (45 m fire / 50 m shots).
+- Outside `aiAttackRange`, ships drop back to PURSUE.
+- Drones, tanks and turrets were already range-gated correctly.
+- Fighter `ai.attackRange` (180 m) is still well beyond its weapon reach, so Fighters ease throttle and line up from 180 m and close for about 100 m before firing. Lowering it in `fighter.meta.json` is a tuning call.
+
 ## Won't Fix
 
 _None._

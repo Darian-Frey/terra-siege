@@ -1134,24 +1134,24 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
   // pointing at a different target.
   Vector3 fwd = {sinf(e.yaw), 0.0f, cosf(e.yaw)};
   if (e.aiState != AIState::Evade && !isInfected) {
-    if (dist < e.aiAttackRange) {
-      e.aiState = AIState::Attack;
-    } else if (dist < e.aiDetectionRange) {
-      e.aiState = AIState::Pursue;
-    }
+    // Beyond detection range the ship drops back to Pursue rather than
+    // staying latched in Attack.
+    e.aiState = (dist < e.aiAttackRange) ? AIState::Attack : AIState::Pursue;
   }
   // Infected ships keep AIState::Infected but use the Attack-style
-  // firing condition below — handled by the willFire flag. Gated on
-  // hasTarget so an infected ship with no live enemy doesn't waste
-  // shots at the player position (its projectiles wouldn't damage
-  // the player anyway, but the visual would read wrong).
-  bool willFire = (e.aiState == AIState::Attack) ||
-                  (isInfected && hasTarget &&
-                   dist < e.aiAttackRange);
+  // engagement below. Gated on hasTarget so an infected ship with no
+  // live enemy doesn't waste shots at the player position.
+  bool engaging = (e.aiState == AIState::Attack) ||
+                  (isInfected && hasTarget && dist < e.aiAttackRange);
+  // Commit (ease throttle, line up) from aiAttackRange, but only pull
+  // the trigger once the shots can actually reach the target.
+  bool willFire =
+      engaging &&
+      dist < Config::FIGHTER_PROJ_RANGE * Config::ENEMY_FIRE_RANGE_FRAC;
 
   // Thrust — composed: eased on ATTACK; further reduced by evadeScale
   // and infection penalty.
-  float thrustScale = willFire ? 0.4f : 1.0f;
+  float thrustScale = engaging ? 0.4f : 1.0f;
   thrustScale *= evadeScale * infectMul;
   e.vel.x += fwd.x * Config::FIGHTER_THRUST * thrustScale * dt;
   e.vel.z += fwd.z * Config::FIGHTER_THRUST * thrustScale * dt;
@@ -1342,20 +1342,18 @@ void EntityManager::updateBomber(Entity &e, float dt, const Planet &planet,
   // Infected and use the willFire flag below for firing condition.
   Vector3 fwd = {sinf(e.yaw), 0.0f, cosf(e.yaw)};
   if (e.aiState != AIState::Evade && !isInfected) {
-    if (dist < e.aiAttackRange) {
-      e.aiState = AIState::Attack;
-    } else if (dist < e.aiDetectionRange) {
-      e.aiState = AIState::Pursue;
-    }
+    e.aiState = (dist < e.aiAttackRange) ? AIState::Attack : AIState::Pursue;
   }
-  bool willFire = (e.aiState == AIState::Attack) ||
-                  (isInfected && hasTarget &&
-                   dist < e.aiAttackRange);
+  bool engaging = (e.aiState == AIState::Attack) ||
+                  (isInfected && hasTarget && dist < e.aiAttackRange);
+  bool willFire =
+      engaging &&
+      dist < Config::BOMBER_PROJ_RANGE * Config::ENEMY_FIRE_RANGE_FRAC;
 
   // Bombers ease the throttle in ATTACK so the slow projectiles get
   // a stable firing platform; full thrust during PURSUE to close.
   // Infection penalty applied multiplicatively on top of evadeScale.
-  float thrustScale = willFire ? 0.35f : 1.0f;
+  float thrustScale = engaging ? 0.35f : 1.0f;
   thrustScale *= evadeScale * infectMul;
   e.vel.x += fwd.x * Config::BOMBER_THRUST * thrustScale * dt;
   e.vel.z += fwd.z * Config::BOMBER_THRUST * thrustScale * dt;

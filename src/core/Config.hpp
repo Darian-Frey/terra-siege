@@ -368,6 +368,11 @@ constexpr float RADAR_CLASSIC_VIEW_SCALE =
 // ----------------------------------------------------------------
 constexpr float AI_PURSUE_RANGE = 180.0f;
 constexpr float AI_ATTACK_RANGE = 60.0f;
+// Enemies only open fire once the target is inside this fraction of
+// their projectile's range, so shots can reach a moving target instead
+// of fizzling out mid-air. aiAttackRange still governs when a ship
+// commits (eases throttle, lines up); this governs the trigger.
+constexpr float ENEMY_FIRE_RANGE_FRAC = 0.9f;
 constexpr float AI_EVADE_HEALTH = 0.25f; // fraction
 constexpr float SPATIAL_CELL_SIZE = 60.0f;
 
