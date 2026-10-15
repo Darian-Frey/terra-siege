@@ -2858,11 +2858,13 @@ void EntityManager::emitKillExplosion(Vector3 pos,
 // Render — placeholder primitive geometry. Replace with procedural
 // flat-shaded meshes when each enemy type lands its own visual pass.
 // ====================================================================
-void EntityManager::render(Camera3D camera,
+void EntityManager::render(Camera3D camera, const Planet &planet,
                            const tsmesh::MeshRegistry *registry) const {
   for (const auto &e : m_entities) {
     if (!e.alive) continue;
-    renderEnemy(e, camera, registry);
+    Entity shown = e;
+    shown.pos = planet.nearestCopy(e.pos, camera.position);
+    renderEnemy(shown, camera, registry);
   }
   // Shield-impact caps for every shielded enemy — emitted after all
   // bodies so the translucent geometry composites over the meshes.
@@ -2872,7 +2874,8 @@ void EntityManager::render(Camera3D camera,
     float r = e.radius * Config::SHIELD_VIS_RADIUS_SCALE;
     shieldfx::renderImpacts(e.shieldImpactDir, e.shieldImpactTimer,
                             Config::SHIELD_IMPACT_SLOTS,
-                            e.pos, r, e.yaw);
+                            planet.nearestCopy(e.pos, camera.position),
+                            r, e.yaw);
   }
   for (const auto &p : m_projectiles) {
     if (!p.alive) continue;

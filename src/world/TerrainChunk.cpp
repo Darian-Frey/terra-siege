@@ -11,13 +11,13 @@ Color TerrainChunk::landColor(float h) const {
   float landH = (h - Config::SEA_LEVEL) / (1.0f - Config::SEA_LEVEL);
   if (landH < 0.0f) landH = 0.0f;
 
-  if (landH < 0.08f)
+  if (landH < Config::BIOME_SAND_MAX)
     return {210, 190, 120, 255}; // sand / beach
-  else if (landH < 0.40f)
+  else if (landH < Config::BIOME_GRASS_MAX)
     return {100, 155, 65, 255}; // grassland
-  else if (landH < 0.65f)
+  else if (landH < Config::BIOME_ROCK_MAX)
     return {145, 125, 95, 255}; // rock
-  else if (landH < 0.82f)
+  else if (landH < Config::BIOME_HIGH_MAX)
     return {120, 115, 115, 255}; // high rock
   else
     return {240, 245, 255, 255}; // snow

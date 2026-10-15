@@ -662,13 +662,18 @@ constexpr float REPAIR_STATION_HIT_RADIUS = 3.0f;
 constexpr float RADAR_BOOSTER_HULL = 80.0f;
 constexpr float RADAR_BOOSTER_HIT_RADIUS = 2.8f;
 
-// World spawn — total friendlies placed at round start, scattered
-// inside the SPAWN_RING radius from the player's start position.
+// World spawn — total friendlies placed at round start. The home Base
+// and its collectors sit beside the player; everything else is
+// scattered over grassland across the whole world.
 constexpr int FRIENDLY_COLLECTOR_COUNT = 2;
 constexpr int FRIENDLY_REPAIR_COUNT = 1;
 constexpr int FRIENDLY_BOOSTER_COUNT = 1;
-constexpr float FRIENDLY_SPAWN_RING = 220.0f;    // metres from player start
+constexpr float FRIENDLY_SPAWN_RING = 220.0f;    // fallback radius from player start
 constexpr float FRIENDLY_SPAWN_MIN_DIST = 40.0f; // keep them separated
+// World-wide placement keeps friendlies apart so they spread across
+// the map rather than clumping on one patch of grass.
+constexpr float FRIENDLY_SPAWN_SPREAD_DIST = 500.0f;
+constexpr float FRIENDLY_SPAWN_MAX_SLOPE = 0.30f; // rise per metre
 
 // Bomber engagement of friendlies — preference threshold. If the
 // nearest friendly is closer than (dist to player × FRIENDLY_PRIORITY),
@@ -761,6 +766,13 @@ constexpr float AUDIO_MAX_DISTANCE = 300.0f;
 // (HEIGHTMAP_SIZE - 1) evenly so all octaves wrap exactly.
 // ----------------------------------------------------------------
 constexpr float SEA_LEVEL = 0.30f; // fraction of HEIGHT_MAX — ~30% ocean
+
+// Land biome bands, as a fraction of the land range above SEA_LEVEL.
+// Shared by terrain colouring, decoration placement and friendly spawns.
+constexpr float BIOME_SAND_MAX = 0.08f;
+constexpr float BIOME_GRASS_MAX = 0.40f;
+constexpr float BIOME_ROCK_MAX = 0.65f;
+constexpr float BIOME_HIGH_MAX = 0.82f;
 
 constexpr int FBM_OCTAVES = 7; // octaves accumulated for each cell
 constexpr int FBM_LARGEST_CELL =

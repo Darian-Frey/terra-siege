@@ -62,10 +62,10 @@ float landBiome(const Planet &planet, float x, float z) {
 //   rock   = 0.40 .. 0.65   (the "brown" mountain colour)
 //   high   = 0.65 .. 0.82
 //   snow   = 0.82 .. 1.00
-constexpr float kSandMax  = 0.08f;
-constexpr float kGrassMax = 0.40f;
-constexpr float kRockMax  = 0.65f;
-constexpr float kHighMax  = 0.82f;
+constexpr float kSandMax  = Config::BIOME_SAND_MAX;
+constexpr float kGrassMax = Config::BIOME_GRASS_MAX;
+constexpr float kRockMax  = Config::BIOME_ROCK_MAX;
+constexpr float kHighMax  = Config::BIOME_HIGH_MAX;
 
 // 2D value noise — single-octave, smoothstep-interpolated. Used as a
 // forest mask. Algorithm per Red Blob Games + Potter Programming:
@@ -401,10 +401,16 @@ void Decorations::render(const Planet &planet, Vector3 cameraPos) const {
   constexpr float kRenderRadius = 800.0f;
   constexpr float kRenderRadius2 = kRenderRadius * kRenderRadius;
 
-  for (const Decoration &d : m_items) {
-    float dx = d.pos.x - cameraPos.x;
-    float dz = d.pos.z - cameraPos.z;
+  // Decorations are placed once in [0, worldSize); draw each at the
+  // toroidal copy nearest the camera so they tile with the terrain
+  // after the (unwrapped) player crosses a world edge.
+  for (const Decoration &item : m_items) {
+    Vector3 p = planet.nearestCopy(item.pos, cameraPos);
+    float dx = p.x - cameraPos.x;
+    float dz = p.z - cameraPos.z;
     if (dx * dx + dz * dz > kRenderRadius2) continue;
+    Decoration d = item;
+    d.pos = p;
     switch (d.kind) {
     case Decoration::Kind::Tree:      drawTree(d.pos, d.scale);   break;
     case Decoration::Kind::Rock:      drawRock(d, planet);        break;

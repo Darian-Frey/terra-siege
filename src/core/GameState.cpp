@@ -367,6 +367,38 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
     return Vector3{x, y, z};
   };
 
+  // World-wide grassland placement. Distances are measured to the
+  // nearest toroidal copy so friendlies near opposite edges still
+  // count as neighbours. Spacing relaxes each pass so a seed with
+  // little grass still places everything; pickSpot is the last resort.
+  const float worldSize = m_planet.worldSize();
+  auto pickGrassSpot = [&]() {
+    float spacing = Config::FRIENDLY_SPAWN_SPREAD_DIST;
+    for (int pass = 0; pass < 4; ++pass, spacing *= 0.5f) {
+      for (int attempt = 0; attempt < 256; ++attempt) {
+        float x = randF(0.0f, worldSize);
+        float z = randF(0.0f, worldSize);
+        if (!m_planet.isGrassland(x, z)) continue;
+        float h = m_planet.heightAt(x, z);
+        float slope = fabsf(m_planet.heightAt(x + 1.0f, z) - h) +
+                      fabsf(m_planet.heightAt(x, z + 1.0f) - h);
+        if (slope > Config::FRIENDLY_SPAWN_MAX_SLOPE) continue;
+        Vector3 cand{x, h + 1.0f, z};
+        bool ok = true;
+        for (const Vector3 &p : placed) {
+          Vector3 q = m_planet.nearestCopy(p, cand);
+          float dx = q.x - x, dz = q.z - z;
+          if (dx * dx + dz * dz < spacing * spacing) {
+            ok = false;
+            break;
+          }
+        }
+        if (ok) return cand;
+      }
+    }
+    return pickSpot();
+  };
+
   // Slice C C.1 — Base mode places a NETWORK of friendly bases per
   // base_mode_v2.md ("All friendly bases pre-placed; radar network
   // live and fully connected"). Wave mode keeps the original single-
@@ -392,14 +424,14 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
     // Difficulty-driven counts come in C.8.
     constexpr int kBaseExtra = 7;
     for (int i = 0; i < kBaseExtra; ++i) {
-      Vector3 pos = pickSpot();
+      Vector3 pos = pickGrassSpot();
       m_em.spawnEnemy(EntityType::Base, pos);
       placed.push_back(pos);
     }
     // Radar boosters fill the network — enough that the bases form a
     // connected detection graph (C.4 will formalise the topology).
     for (int i = 0; i < Config::FRIENDLY_BOOSTER_COUNT * 2; ++i) {
-      Vector3 pos = pickSpot();
+      Vector3 pos = pickGrassSpot();
       m_em.spawnEnemy(EntityType::RadarBooster, pos);
       placed.push_back(pos);
     }
@@ -407,7 +439,7 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
     // on dock, but the existing RepairStation entity is the simpler
     // path for in-flight ammo top-up around the network.
     for (int i = 0; i < Config::FRIENDLY_REPAIR_COUNT; ++i) {
-      Vector3 pos = pickSpot();
+      Vector3 pos = pickGrassSpot();
       m_em.spawnEnemy(EntityType::RepairStation, pos);
       placed.push_back(pos);
     }
@@ -422,7 +454,6 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
     constexpr float kLanderMinDist = 350.0f;
     constexpr float kLanderFromPlayer = 600.0f;
     std::vector<Vector3> landerPlaced;
-    float worldSize = m_planet.worldSize();
     for (int i = 0; i < kLanderCount; ++i) {
       Vector3 lpos{0, 0, 0};
       for (int attempt = 0; attempt < 64; ++attempt) {
@@ -491,12 +522,12 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
     placed.push_back(pos);
   }
   for (int i = 0; i < Config::FRIENDLY_REPAIR_COUNT; ++i) {
-    Vector3 pos = pickSpot();
+    Vector3 pos = pickGrassSpot();
     m_em.spawnEnemy(EntityType::RepairStation, pos);
     placed.push_back(pos);
   }
   for (int i = 0; i < Config::FRIENDLY_BOOSTER_COUNT; ++i) {
-    Vector3 pos = pickSpot();
+    Vector3 pos = pickGrassSpot();
     m_em.spawnEnemy(EntityType::RadarBooster, pos);
     placed.push_back(pos);
   }
@@ -1461,7 +1492,7 @@ void GameState::render(float alpha) {
     m_decorations.render(m_planet, m_camera.position);
     m_player.renderGroundShadow(m_planet);
     m_player.render(&m_meshRegistry);
-    m_em.render(m_camera, &m_meshRegistry);
+    m_em.render(m_camera, m_planet, &m_meshRegistry);
     m_particles.render(m_camera);
     // Beam Laser — drawn before the shield bubble so the bubble
     // (translucent) blends over it correctly. Bright cyan core + a
@@ -1508,7 +1539,7 @@ void GameState::render(float alpha) {
     m_decorations.render(m_planet, m_camera.position);
     m_player.renderGroundShadow(m_planet);
     m_player.render(&m_meshRegistry);
-    m_em.render(m_camera, &m_meshRegistry);
+    m_em.render(m_camera, m_planet, &m_meshRegistry);
     m_particles.render(m_camera);
     // Shield bubble drawn AFTER everything else in 3D so its alpha
     // blends over the ship + enemies + particles correctly.
@@ -1560,7 +1591,7 @@ void GameState::drawSessionResult() {
   m_decorations.render(m_planet, m_camera.position);
   m_player.renderGroundShadow(m_planet);
   m_player.render(&m_meshRegistry);
-  m_em.render(m_camera, &m_meshRegistry);
+  m_em.render(m_camera, m_planet, &m_meshRegistry);
   m_particles.render(m_camera);
   EndMode3D();
 

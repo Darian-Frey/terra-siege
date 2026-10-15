@@ -115,8 +115,10 @@ public:
   // Dynamic per-entity overlays (HP bars, Carrier shield panels,
   // RadarBooster rotating dish, Base turret, Collector cabin pip) are
   // rendered after the body in either path. The camera is needed so
-  // the HP bars can billboard toward the player.
-  void render(Camera3D camera,
+  // the HP bars can billboard toward the player. The planet supplies
+  // the toroidal wrap so entities draw at the world copy nearest the
+  // camera, matching the tiled terrain.
+  void render(Camera3D camera, const Planet &planet,
               const tsmesh::MeshRegistry *registry = nullptr) const;
 
   // Debug / HUD

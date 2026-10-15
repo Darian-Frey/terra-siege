@@ -56,6 +56,12 @@ void Planet::draw(Vector3 cameraPos) const {
   }
 }
 
+bool Planet::isGrassland(float worldX, float worldZ) const {
+  float h = heightAt(worldX, worldZ) / Config::TERRAIN_HEIGHT_MAX;
+  float landH = (h - Config::SEA_LEVEL) / (1.0f - Config::SEA_LEVEL);
+  return landH >= Config::BIOME_SAND_MAX && landH < Config::BIOME_GRASS_MAX;
+}
+
 void Planet::unload() {
   for (auto &chunk : m_chunks)
     chunk.unload();

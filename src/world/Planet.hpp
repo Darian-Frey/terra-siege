@@ -3,6 +3,7 @@
 #include "Heightmap.hpp"
 #include "TerrainChunk.hpp"
 #include "core/Config.hpp"
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -36,6 +37,19 @@ public:
     return static_cast<float>(Config::HEIGHTMAP_SIZE - 1) *
            Config::TERRAIN_SCALE;
   }
+
+  // Toroidal world: the copy of p (shifted by whole multiples of
+  // worldSize) nearest to ref. World-fixed objects are drawn here so
+  // they tile alongside the terrain around the unwrapped camera.
+  Vector3 nearestCopy(Vector3 p, Vector3 ref) const {
+    const float ws = worldSize();
+    p.x -= roundf((p.x - ref.x) / ws) * ws;
+    p.z -= roundf((p.z - ref.z) / ws) * ws;
+    return p;
+  }
+
+  // True when (x, z) is in the green grassland biome band.
+  bool isGrassland(float worldX, float worldZ) const;
 
   // Dev introspection — write <stem>.png and <stem>.txt with the
   // current heightmap as a greyscale image plus stats/histogram/ASCII
