@@ -1713,12 +1713,17 @@ void GameState::drawHUD() const {
   const int sw = GetScreenWidth();
   const int sh = GetScreenHeight();
 
+  const Color col = {200, 220, 255, 220};
+
+  // FPS and the telemetry panel are developer aids, not player HUD.
+#ifdef DEV_MODE
   DrawFPS(12, 12);
 
   // ---- Debug info panel (top right) ----
   const Vector3 &pos = m_player.position();
   float terrainH = m_planet.heightAt(pos.x, pos.z);
   float agl = pos.y - terrainH;
+  char buf[64];
   float spd = m_player.speed();
 
   float yawDeg = m_player.yaw() * (180.0f / 3.14159f);
@@ -1747,11 +1752,9 @@ void GameState::drawHUD() const {
   const char *assistLabels[] = {"RAW", "MINIMAL", "STANDARD", "FULL"};
   const char *assistStr = assistLabels[m_player.flightAssist()];
 
-  char buf[64];
   const int px = sw - 220;
   int py = 12;
   const int lh = 18;
-  const Color col = {200, 220, 255, 220};
 
   float pitchDeg = m_player.pitch() * (180.0f / 3.14159f);
   float rollDeg = m_player.roll() * (180.0f / 3.14159f);
@@ -1792,7 +1795,6 @@ void GameState::drawHUD() const {
   drawHudText(buf, px, py, 14, col);
   py += lh;
 
-#ifdef DEV_MODE
   if (m_camMode == CamMode::FreeRoam) {
     drawHudText("[ FREE CAM ]", px, py, 14, YELLOW);
   }
@@ -2101,8 +2103,9 @@ void GameState::drawHUD() const {
 
   const char *controls =
       m_camMode == CamMode::Follow
-          ? "Mouse: pitch+yaw  |  Wheel/[]: zoom  |  W/LMB: thrust  |  "
-            "A/D: yaw  |  Q/E: roll  |  1-5: view  |  \\: zoom reset"
+          ? "Mouse: aim | W: thrust | LMB: fire | Shift+LMB: charge | "
+            "Q/E: red/blue | Tab: primary | RMB/Z: secondary | "
+            "F/X: special | T: turret | 1-5: view"
           : "WASD: fly  |  Q/E: up/down  |  Shift: fast  (F1: back to ship)";
   drawHudText(controls, 12, sh - 20, 14, {180, 180, 180, 220});
 
