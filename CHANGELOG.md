@@ -24,6 +24,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Stale duplicate of `game_modes_and_features.md` at the repo root
 
 ### Fixed
+- Overlapping HUD elements: weapon battery bar over the weapon name, SHLD caption and weapon panel under the controls bar, pitch ladder through the top banners, speed-tape labels off-screen ([BUG-021](BUGS.md#bug-021-overlapping-hud-elements-in-the-bottom-left-cluster-pitch-ladder-and-speed-tape))
 - In-game controls bar showed stale bindings; FPS counter and telemetry panel appeared in release builds ([BUG-019](BUGS.md#bug-019-in-game-controls-bar-shows-stale-bindings), [BUG-020](BUGS.md#bug-020-debug-info-panel-and-fps-counter-appear-in-release-builds))
 - Trees, decorations and entities vanished after crossing a world edge; they now render at the toroidal copy nearest the camera ([AV-005](ATTACK_VECTORS.md#av-005-world-fixed-objects-drawn-or-measured-without-the-toroidal-wrap), `7e846c3`)
 - Documentation drift: rivers, difficulty presets, spatial grid, constants and archive terrain status ([BUG-003](BUGS.md#bug-003-documentation-claims-rivers-ship-but-river-carving-is-disabled), [BUG-006](BUGS.md#bug-006-difficulty-presets-documented-as-shipped-but-not-implemented), [BUG-013](BUGS.md#bug-013-claudemd-key-constants-table-drifted-from-confighpp), [BUG-017](BUGS.md#bug-017-documentation-describes-a-spatial-grid-and-module-layout-that-dont-exist), [BUG-018](BUGS.md#bug-018-archived-design-docs-claim-the-terrain-rebuild-never-shipped))

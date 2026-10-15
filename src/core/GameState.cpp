@@ -1801,10 +1801,15 @@ void GameState::drawHUD() const {
 #endif
 
   // ---- Health bar (HULL) and thrust charge bar (THRUST), bottom-left ----
+  // The whole bottom-left cluster stacks up from the top of the controls
+  // bar so nothing slides underneath it.
+  const int ctrlBarTop = sh - 28;
   const int bx = 12, bw = 160, bh = 14;
+  const int thrustY = ctrlBarTop - 12 - bh;
+  const int hullY = thrustY - 34;
   // Hull
   {
-    int by = sh - 80;
+    int by = hullY;
     DrawRectangle(bx - 1, by - 1, bw + 2, bh + 2, {0, 0, 0, 160});
     DrawRectangle(bx, by, bw, bh, {50, 50, 50, 255});
     int healthW = static_cast<int>(bw * m_player.health() / 100.0f);
@@ -1813,10 +1818,15 @@ void GameState::drawHUD() const {
                                      : Color{210, 40, 40, 255};
     DrawRectangle(bx, by, healthW, bh, hpCol);
     drawHudText("HULL", bx, by - 14, 12, col);
+    // Status tags sit right-aligned on the label line, clear of the pie.
+    if (m_player.godMode()) {
+      int gw = measureHudText("GOD", 12);
+      drawHudText("GOD", bx + bw - gw, by - 14, 12, {255, 200, 80, 240});
+    }
   }
   // Thrust charge
   {
-    int by = sh - 56;
+    int by = thrustY;
     DrawRectangle(bx - 1, by - 1, bw + 2, bh + 2, {0, 0, 0, 160});
     DrawRectangle(bx, by, bw, bh, {50, 50, 50, 255});
     int chgW = static_cast<int>(bw * m_player.thrustCharge() /
@@ -1826,12 +1836,10 @@ void GameState::drawHUD() const {
                      : Color{80, 180, 255, 255};
     DrawRectangle(bx, by, chgW, bh, cCol);
     drawHudText("THRUST", bx, by - 14, 12, col);
-    if (m_player.godMode())
-      drawHudText("GOD", bx + bw + 8, by, 14, {255, 200, 80, 240});
-  }
-  // Landed indicator
-  if (m_player.isLanded()) {
-    drawHudText("LANDED", bx + bw + 12, sh - 80, 14, {120, 220, 140, 255});
+    if (m_player.isLanded()) {
+      int lw = measureHudText("LANDED", 12);
+      drawHudText("LANDED", bx + bw - lw, by - 14, 12, {120, 220, 140, 255});
+    }
   }
 
   // ---- Directional shield pie ----
@@ -1842,9 +1850,10 @@ void GameState::drawHUD() const {
   // Wedge colour shifts cyan → red as HP drops; alpha fades so a
   // depleted sector visibly drops out.
   {
-    const int piX = bx + bw + 60;
-    const int piY = sh - 60; // centre between hull (sh-80) and thrust (sh-56)
     const float radius = 28.0f;
+    const int piX = bx + bw + 60;
+    // Leaves room for the SHLD caption between the pie and the controls bar.
+    const int piY = ctrlBarTop - 20 - static_cast<int>(radius);
     Vector2 centre = {static_cast<float>(piX), static_cast<float>(piY)};
 
     // Background ring + dark fill so empty sectors still have a
@@ -1899,12 +1908,15 @@ void GameState::drawHUD() const {
   // name so the player sees the drain in real time.
   {
     const int wx = bx + bw + 100; // right of the shield pie
-    const int wy = sh - 92;       // top of the cluster
-    const int wWidth = 160;
+    const int wWidth = 180;
     const int rowH = 18;
+    const int boxH = rowH * 4 + 6;
+    const int wy = ctrlBarTop - 8 - boxH + 4; // box bottom clears the bar
+    // Meters start after the widest primary name so they never cover it.
+    const int meterX = wx + 32 + measureHudText("BLUE LASER", 13) + 8;
+    const int meterW = wx + wWidth - meterX;
 
-    DrawRectangle(wx - 4, wy - 4, wWidth + 8, rowH * 4 + 6,
-                  {0, 0, 0, 130});
+    DrawRectangle(wx - 4, wy - 4, wWidth + 8, boxH, {0, 0, 0, 130});
 
     // ---- Primary row ----
     // Slice C — LaserPair shows "RED LASER" / "BLUE LASER" based on
@@ -1940,8 +1952,8 @@ void GameState::drawHUD() const {
       float frac = m_player.laserBatteryFrac();
       if (frac < 0.0f) frac = 0.0f;
       if (frac > 1.0f) frac = 1.0f;
-      int barW = 60, barH = 6;
-      int barX = wx + 90, barY = wy + 6;
+      int barW = meterW, barH = 6;
+      int barX = meterX, barY = wy + 6;
       DrawRectangle(barX, barY, barW, barH, {40, 40, 50, 220});
       // Battery bar adopts the active colour so the HUD reads at a
       // glance which laser is firing.
@@ -1965,8 +1977,8 @@ void GameState::drawHUD() const {
       float frac = m_player.primaryEnergy() / m_player.primaryEnergyMax();
       if (frac < 0.0f) frac = 0.0f;
       if (frac > 1.0f) frac = 1.0f;
-      int barW = 60, barH = 6;
-      int barX = wx + 90, barY = wy + 6;
+      int barW = meterW, barH = 6;
+      int barX = meterX, barY = wy + 6;
       DrawRectangle(barX, barY, barW, barH, {40, 40, 50, 220});
       Color e = m_player.beamFiring() ? Color{255, 200, 80, 240}
                                        : Color{120, 220, 255, 240};
@@ -2061,11 +2073,11 @@ void GameState::drawHUD() const {
     float t = agl / maxAGL;
     if (t > 1.0f) t = 1.0f;
 
-    // Sits to the right of the SPD tape (which is at x=14, width 18).
+    // Sits to the right of the SPD tape (which is at x=38, width 18).
     // Vertical placement matches the SPD tape (drawFlightHUD) so the
     // two read as a paired left-edge instrument cluster: both centred
     // on screen midline with 220px height.
-    const int abx = 50;
+    const int abx = 74;
     const int abw = 16;
     const int abh = 220;
     const int aby = sh / 2 - abh / 2;
@@ -2479,6 +2491,12 @@ void GameState::drawFlightHUD() const {
       return {lx * ca - ly * sa + cx, lx * sa + ly * ca + cy};
     };
 
+    // Clip to a window below the heading tape and wave/friendlies
+    // banners (which end around y=112) and above the controls bar.
+    const int clipTop = 116;
+    BeginScissorMode(static_cast<int>(cx) - 130, clipTop, 260,
+                     sh - 28 - clipTop);
+
     const int LADDER[] = {-45, -30, -15, 0, 15, 30, 45};
     for (int d : LADDER) {
       // Local Y for rung at world-pitch d, given player pitch:
@@ -2527,6 +2545,7 @@ void GameState::drawFlightHUD() const {
       drawHudText(buf, static_cast<int>(lblR.x), static_cast<int>(lblR.y), 11,
                amber);
     }
+    EndScissorMode();
   }
 
   // ----------------------------------------------------------------
@@ -2635,7 +2654,7 @@ void GameState::drawFlightHUD() const {
   {
     const float tapeH = 220.0f;
     const float tapeW = 18.0f;
-    const float tx = 14.0f;
+    const float tx = 38.0f; // leaves room for tick labels left of the tape
     const float ty = cy - tapeH * 0.5f;
 
     // Frame

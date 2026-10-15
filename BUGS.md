@@ -203,6 +203,26 @@ The register was created on 2026-10-15 ([D-001](DECISIONS.md#d-001-adopt-the-dev
 **Notes.** Fixed 2026-10-15: `DrawFPS` and the telemetry panel are now inside `#ifdef DEV_MODE`. A player-facing FPS toggle can be added to settings later if wanted.
 
 
+### BUG-021: Overlapping HUD elements in the bottom-left cluster, pitch ladder and speed tape
+
+**Status:** fixed (2026-10-15)
+**Found:** 2026-10-15 (README screenshot review)
+**Location:** [src/core/GameState.cpp](src/core/GameState.cpp) `drawHUD()` bottom-left cluster; `drawFlightHUD()` pitch ladder and speed tape
+**Severity:** low
+**Description.** Six overlaps:
+- The HULL/THRUST bars, shield pie and weapon panel were placed at fixed offsets from the screen bottom, so the SHLD caption and the weapon panel's TRT row slid under the 28 px controls bar.
+- The laser battery bar started at a fixed 90 px, on top of "RED LASER" / "BLUE LASER".
+- The GOD tag was wedged between the THRUST bar and the shield pie.
+- The pitch ladder drew through the heading tape and the wave/friendlies banners.
+- The speed tape's tick labels were drawn at a negative x, off the left edge.
+**Reproduction.** Visible in any in-flight frame at 1280×720 (see the pre-fix `docs/screenshots/combat.png`).
+**Notes.** Fixed 2026-10-15:
+- The cluster now stacks up from the top of the controls bar.
+- Meters start after the widest primary name, and the weapon panel is 20 px wider.
+- GOD and LANDED are right-aligned on the HULL/THRUST label lines.
+- The pitch ladder is scissor-clipped below y=116.
+- The speed and altitude tapes moved 24 px right.
+
 ## Won't Fix
 
 _None._
