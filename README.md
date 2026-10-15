@@ -7,12 +7,12 @@
 
 terra-siege is a modern C++17 / raylib reimagining of **Virus** (Argonaut Software / Firebird, 1988), the game that put a real-time filled-polygon landscape on home computers. You defend a planet against alien invaders from the cockpit of a hovercraft, flying with the original's Newtonian "tilt and burn" physics over a seamless, wrap-around world of flat-shaded hills, lakes and forests. The low-poly look is preserved deliberately, and the original is extended with directional shields, a typed red/blue laser pair, homing missiles, ship infection, an old-style pulse radar, and an asymmetric Base Defence mode against grounded alien Landers. It ships with `terra-siege-inspect`, a purpose-built editor for the game's OBJ meshes and their JSON gameplay profiles.
 
-![Dogfight over the forest: cluster missiles trailing smoke, a kill fireball, and the lake beyond](docs/screenshots/combat.png)
+![Classic view: homing missiles curve in on smoke trails as drones swarm the hovercraft over forest and coastline](docs/screenshots/combat.png)
 
 | | |
 | --- | --- |
-| ![Forested coastline with homing missiles inbound; the pulse radar ring is mid-sweep, bottom right](docs/screenshots/coastline-radar.png) | ![Lake, beaches and snow-capped mountains on the wrap-around world, with friendly units and a missile arc](docs/screenshots/lake-vista.png) |
-| Forest coastline with the pulse radar mid-sweep | Lakes, beaches and snow-capped ridges |
+| ![Chase view over a lake and beaches; the pulse radar ring is mid-sweep, bottom right](docs/screenshots/coastline-radar.png) | ![Forest plains running to snow-capped ridges on the wrap-around world](docs/screenshots/lake-vista.png) |
+| Lakes and beaches, with the pulse radar mid-sweep | Forest plains and snow-capped ridges |
 
 ## Quick Start
 
