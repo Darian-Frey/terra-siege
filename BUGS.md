@@ -69,16 +69,6 @@ The register was created on 2026-10-15 ([D-001](DECISIONS.md#d-001-adopt-the-dev
 **Reproduction.** Start a Base Defence round and look for Lander contacts on the radar.
 **Notes.** Add a Lander blip type, perhaps a larger hollow square.
 
-### BUG-009: Infected ships still show as hostile on radar
-
-**Status:** open
-**Found:** 2026-06-04 (`44b5d99`)
-**Location:** [src/hud/Radar.cpp](src/hud/Radar.cpp) `baseColourForBlip()`
-**Severity:** low
-**Description.** Infected Fighters and Bombers fight for the player, but the radar colours blips by entity type only. Converted ships still appear red. The `44b5d99` commit message notes "Radar.cpp not touched in this slice; can be wired in later."
-**Reproduction.** Infect a Fighter with the Infectious Missile. Its blip stays red.
-**Notes.** Will matter more under infection v2 (F-025), when bases can flip faction.
-
 ### BUG-010: In-flight auto-aimed projectiles can still hit newly infected ships
 
 **Status:** open
@@ -271,6 +261,43 @@ The register was created on 2026-10-15 ([D-001](DECISIONS.md#d-001-adopt-the-dev
 - Outside `aiAttackRange`, ships drop back to PURSUE.
 - Drones, tanks and turrets were already range-gated correctly.
 - Fighter `ai.attackRange` (180 m) is still well beyond its weapon reach, so Fighters ease throttle and line up from 180 m and close for about 100 m before firing. Lowering it in `fighter.meta.json` is a tuning call.
+
+### BUG-009: Infected ships still show as hostile on radar
+
+**Status:** fixed (2026-10-15)
+**Found:** 2026-06-04 (`44b5d99`)
+**Location:** [src/hud/Radar.cpp](src/hud/Radar.cpp) `baseColourForBlip()`
+**Severity:** low
+**Description.** Infected Fighters and Bombers fight for the player, but the radar colours blips by entity type only. Converted ships still appear red. The `44b5d99` commit message notes "Radar.cpp not touched in this slice; can be wired in later."
+**Reproduction.** Infect a Fighter with the Infectious Missile. Its blip stays red.
+**Notes.** Fixed 2026-10-15 (C.2): `Radar::update` colours Infected/Infecting contacts with the friendly IFF colour. This also covers base defenders, which fly the same allied path.
+
+
+### BUG-026: Enemy fire never damages friendly structures or allied ships
+
+**Status:** fixed (2026-10-15)
+**Found:** 2026-10-15 (Slice C C.2 implementation)
+**Location:** [src/entity/EntityManager.cpp](src/entity/EntityManager.cpp) `updateProjectile()` collision routing (the "enemy projectile → player" branch)
+**Severity:** high
+**Description.** Enemy-owned projectiles are only collision-tested against the player. Nothing checks them against Bases, Collectors, Repair Stations, Radar Boosters or Radar Stations, or against allied ships (infected Fighters and Bombers, base defenders). As a result:
+- Friendly structures can't be destroyed, so Bomber STRAFE_FRIENDLY runs (5g, `f22f08e`) do nothing.
+- The "all friendlies lost" loss condition can never trigger, in Wave or Base mode.
+- Allied ships die only from the infection bleed or the player's own shots.
+- In C.2, bases can never come "under attack", so they never launch defenders.
+The 5g commit says strafe runs "fire at the friendly", but the friendly-hit check was never written.
+**Reproduction.** Let a Bomber strafe a Collector or Base for a while. Its hull bar never drops.
+**Notes.** Fixed 2026-10-15 in both modes, as part of C.2: the enemy-projectile branch now tests friendly structures and allied ships (`isFriendlyStructure` or Infected/Infecting) before the player. This makes Wave mode harder, because Collectors and Bases can now be lost. Enemy AI still aims only at the player (and Bombers at friendlies), so allied ships are mostly hit by stray fire. The original note said the fix is an extra pass in the enemy-projectile branch: test friendly structures and allied ships (Infected/Infecting state) and `applyDamage` them, before the player test.
+
+
+### BUG-027: Rebuilding a terrain chunk crashes (stale mesh ids after unload)
+
+**Status:** fixed (2026-10-15)
+**Found:** 2026-10-15 (C.2 playtest: segfault, exit 139, after adding base aprons)
+**Location:** [src/world/TerrainChunk.cpp](src/world/TerrainChunk.cpp) `unload()`
+**Severity:** high
+**Description.** `unload()` called `UnloadModel(m_model)` but left the chunk's separate `Mesh m_mesh` copy holding the freed GPU ids and vertex pointers. On the next `build()`, raylib's `UploadMesh` saw a non-zero VAO id and refused ("Trying to re-load an already loaded mesh"), so the new model referenced freed memory and the game crashed when drawing it. Any chunk rebuild was affected, including the DEV F5 terrain reseed (`Planet::generate` unloads and rebuilds every chunk).
+**Reproduction.** Before the fix: start a round (base aprons rebuild nearby chunks), or press F5 in a DEV build. The log shows the "already loaded" warning, followed by a segfault.
+**Notes.** Fixed 2026-10-15: `unload()` now resets `m_mesh` and `m_model` to `{}`. A startup smoke test confirms clean re-uploads with no warnings.
 
 ## Won't Fix
 

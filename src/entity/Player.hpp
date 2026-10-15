@@ -102,6 +102,8 @@ public:
   // within its heal radius. Caps at PLAYER_HULL_HP. Does NOT refill
   // shields (that's ShieldBooster's job).
   void heal(float amount);
+  // Restock every secondary weapon to its magazine size (base pad).
+  void rearm();
 
   // Weapon slot enums — three slots (Primary / Secondary / Special)
   // plus an independent Auto Turret toggle. Cycled with Tab / Z / X.

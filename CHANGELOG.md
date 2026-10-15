@@ -10,12 +10,16 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 ## [Unreleased]
 
 ### Added
+- Slice C C.2 (F-021): bases under attack launch allied Fighter defenders (up to 3 each), which are leashed to their base and land when idle. Bases stand on raised 36 m landing platforms, with the control tower in the NE corner and ramps on the south and east sides that Collectors use to drive on and off. Landing or hovering low anywhere on the platform repairs and rearms the player (HUD: ON PAD). Both work in every mode. Fighters, Drones and Tanks now attack nearby friendlies (about a third of them are raiders that prefer friendlies), and Landers besiege nearby bases. New radar station entity as the network node. Base mode now places 8 bases and 6 radar stations ([D-030](DECISIONS.md#d-030-base-defenders-reuse-the-allied-fighter-path-pads-replace-repair-stations-in-base-mode))
 - Old-style pulse radar: a ring sweeps out every second and paints contacts, which fade until the next pulse (F-028, [D-026](DECISIONS.md#d-026-old-style-pulse-radar), `50506fc`)
 - `Planet::nearestCopy()` and `Planet::isGrassland()`; `BIOME_*` band thresholds centralised in `Config.hpp` (`7e846c3`)
 - README screenshot gallery in `docs/screenshots/`
 - Project documentation to the development documentation standard: README status header, FEATURES, DECISIONS, ARCHITECTURE, ATTACK_VECTORS, BUGS, IMPROVEMENTS, CHANGELOG, MIT LICENSE ([D-001](DECISIONS.md#d-001-adopt-the-development-documentation-standard))
 
 ### Changed
+- Base Defence mode is lost when every base falls, not every friendly unit
+- `base.obj` now holds only the control tower, centred on its own origin. The raised platform, ramps and corner lights are drawn procedurally
+- Friendly-structure checks consolidated into `isFriendlyStructure()` (Entity.hpp)
 - Friendlies other than the home Base and its collectors now spawn on grassland across the whole world, not within 220 m of the player (F-018, [D-028](DECISIONS.md#d-028-friendlies-scattered-world-wide-on-grassland), `7e846c3`)
 - ROADMAP and CLAUDE.md rewritten to the standard's format. Design references moved to `project-status/` ([D-002](DECISIONS.md#d-002-exempt-buildmd-and-specmd-keep-design-references-in-project-status))
 
@@ -24,6 +28,9 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Stale duplicate of `game_modes_and_features.md` at the repo root
 
 ### Fixed
+- Rebuilding a terrain chunk (base aprons, DEV F5 reseed) crashed because of stale mesh ids after unload ([BUG-027](BUGS.md#bug-027-rebuilding-a-terrain-chunk-crashes-stale-mesh-ids-after-unload))
+- Enemy fire never damaged friendly structures or allied ships, so friendlies were invulnerable and the "friendlies lost" defeat could never trigger ([BUG-026](BUGS.md#bug-026-enemy-fire-never-damages-friendly-structures-or-allied-ships))
+- Infected ships showed as hostile (red) on radar ([BUG-009](BUGS.md#bug-009-infected-ships-still-show-as-hostile-on-radar))
 - Fighters and Bombers opened fire from well beyond their weapons' reach, and could stay latched in ATTACK at any distance. They now fire only within 90% of their projectile range ([BUG-025](BUGS.md#bug-025-fighters-and-bombers-open-fire-beyond-their-weapons-reach))
 - Remaining HUD overlaps: nose crosshair and FPV over the top banners, DEV hotkey labels over the controls hints, Classic-view compass rose over the radar ([BUG-022](BUGS.md#bug-022-nose-crosshair-can-draw-over-the-heading-tape-and-wave-banners), [BUG-023](BUGS.md#bug-023-dev-hotkey-labels-overlap-the-controls-hint-text), [BUG-024](BUGS.md#bug-024-classic-view-compass-rose-overlaps-the-radar))
 - Overlapping HUD elements: weapon battery bar over the weapon name, SHLD caption and weapon panel under the controls bar, pitch ladder through the top banners, speed-tape labels off-screen ([BUG-021](BUGS.md#bug-021-overlapping-hud-elements-in-the-bottom-left-cluster-pitch-ladder-and-speed-tape))

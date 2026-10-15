@@ -48,6 +48,8 @@ public:
   // Non-owning. Defaults to nullptr so unit tests / inspector that
   // don't wire one still run silently.
   void setAudio(AudioManager *a) { m_audio = a; }
+  // True while the player is docked on a friendly base's pad (HUD cue).
+  bool playerOnPad() const { return m_playerOnPad; }
 
   // Dev-only — kill every alive enemy without triggering kill bursts
   // or scoring. Used by the F7 skip-wave hotkey to advance through the
@@ -175,6 +177,8 @@ private:
   // so unit tests / tools that don't wire one in still work.
   const tsmesh::EntityProfileRegistry *m_profileRegistry = nullptr;
   AudioManager *m_audio = nullptr; // non-owning; nullptr → silent
+  bool m_playerOnPad = false;
+  float m_padDwell = 0.0f; // seconds landed on a pad, for the rearm timer
 
   // Per-entity update bodies
   void updateFighter(Entity &e, float dt, const Planet &planet,
@@ -238,14 +242,26 @@ private:
   void updateCollector(Entity &e, float dt, const Planet &planet);
   void updateRepairStation(Entity &e, float dt, Player &player);
   void updateRadarBooster(Entity &e, float dt);
+  void updateRadarStation(Entity &e, float dt);
   // Base — passive friendly building, Collector delivery destination.
   // No movement; only renders + animates a landing-light yaw.
-  void updateBase(Entity &e, float dt);
+  void updateBase(Entity &e, float dt, Player &player);
+  void launchBaseDefender(const Entity &base);
+  void tickBasePad(const Entity &base, float dt, Player &player);
 
   // Ground Turret — stationary, rotates toward player, fires in cone.
   void updateGroundTurret(Entity &e, float dt, const Planet &planet,
                           const Player &player);
-  void fireTurretShot(Entity &e, const Player &player);
+  void fireTurretShot(Entity &e, Vector3 targetPos);
+  // Ground height including base platforms and their ramps (C.2), for
+  // ground vehicles. Falls back to the terrain.
+  float surfaceHeightAt(const Planet &planet, float x, float z) const;
+  // Nearest friendly structure or allied ship to origin; 0 if none.
+  uint32_t nearestAllied(Vector3 origin, Vector3 &outPos) const;
+  // Where a hostile Fighter / Drone / Tank should attack: the nearest
+  // allied target inside its detection range when that is closer than
+  // the player × ENEMY_FRIENDLY_PRIORITY, otherwise the player.
+  Vector3 hostileTargetFor(const Entity &e, const Player &player) const;
 
   // Projectile update + collision
   void updateProjectile(Entity &p, float dt, const Planet &planet,

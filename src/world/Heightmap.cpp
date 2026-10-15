@@ -576,6 +576,29 @@ void Heightmap::set(int x, int z, float value) {
   m_data[static_cast<size_t>(z * m_size + x)] = value;
 }
 
+void Heightmap::flattenSquare(float cx, float cz, float half, float blend,
+                              float target) {
+  const float r = half + blend;
+  const int x0 = static_cast<int>(floorf(cx - r));
+  const int x1 = static_cast<int>(ceilf(cx + r));
+  const int z0 = static_cast<int>(floorf(cz - r));
+  const int z1 = static_cast<int>(ceilf(cz + r));
+  for (int z = z0; z <= z1; ++z) {
+    for (int x = x0; x <= x1; ++x) {
+      float d = fmaxf(fabsf(static_cast<float>(x) - cx),
+                      fabsf(static_cast<float>(z) - cz));
+      if (d > r) continue;
+      float v = target;
+      if (d > half && blend > 0.0f) {
+        float t = (d - half) / blend;
+        t = t * t * (3.0f - 2.0f * t); // smoothstep
+        v = target + (get(x, z) - target) * t;
+      }
+      set(x, z, v);
+    }
+  }
+}
+
 float Heightmap::get(int x, int z) const {
   int period = m_size - 1;
   x = wrapIdx(x, period);

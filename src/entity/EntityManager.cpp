@@ -23,15 +23,83 @@ namespace {
 inline bool isAutoAimTarget(const Entity &e) {
   if (!e.alive) return false;
   if (e.type == EntityType::Projectile) return false;
-  if (e.type == EntityType::Collector ||
-      e.type == EntityType::RepairStation ||
-      e.type == EntityType::RadarBooster ||
-      e.type == EntityType::Base)
+  if (isFriendlyStructure(e.type))
     return false;
   if (e.aiState == AIState::Infected ||
       e.aiState == AIState::Infecting)
     return false;
   return true;
+}
+
+// Base platform geometry (C.2). Ramp r = 0 is the south (−Z) side, 1 the
+// east (+X) side. top = middle of the platform edge, foot = bottom of
+// the ramp, approach = a few metres beyond the foot on the ramp's axis.
+// Collector ramp-route steps (Entity::routeStep).
+enum : uint8_t {
+  kRouteDecide = 0,
+  kRouteFree,
+  kRouteExitTop,
+  kRouteExitApproach,
+  kRouteExitDetour,
+  kRouteEnterDetour,
+  kRouteEnterApproach,
+  kRouteEnterTop,
+  kRouteEnterCentre,
+};
+
+struct RampPoints {
+  Vector3 top, foot, approach;
+};
+inline RampPoints rampPoints(const Entity &b, int r) {
+  const float h = Config::BASE_PAD_HALF_SIZE;
+  const float L = Config::BASE_RAMP_LENGTH;
+  const float ground = b.pos.y - Config::BASE_PAD_HEIGHT;
+  const float dx = (r == 0) ? 0.0f : 1.0f;
+  const float dz = (r == 0) ? -1.0f : 0.0f;
+  return {{b.pos.x + dx * h, b.pos.y, b.pos.z + dz * h},
+          {b.pos.x + dx * (h + L), ground, b.pos.z + dz * (h + L)},
+          {b.pos.x + dx * (h + L + 6.0f), ground, b.pos.z + dz * (h + L + 6.0f)}};
+}
+inline bool onPlatform(const Entity &b, Vector3 p) {
+  return fabsf(p.x - b.pos.x) <= Config::BASE_PAD_HALF_SIZE &&
+         fabsf(p.z - b.pos.z) <= Config::BASE_PAD_HALF_SIZE;
+}
+// Does the XZ segment a→c cross the platform square (plus a margin)?
+// Liang–Barsky clip against the square.
+inline bool crossesPlatform(Vector3 a, Vector3 c, const Entity &b) {
+  const float m = Config::BASE_PAD_HALF_SIZE + 1.0f;
+  const float x0 = a.x - b.pos.x, z0 = a.z - b.pos.z;
+  const float dx = c.x - a.x, dz = c.z - a.z;
+  const float p[4] = {-dx, dx, -dz, dz};
+  const float q[4] = {x0 + m, m - x0, z0 + m, m - z0};
+  float t0 = 0.0f, t1 = 1.0f;
+  for (int i = 0; i < 4; ++i) {
+    if (fabsf(p[i]) < 1e-6f) {
+      if (q[i] < 0.0f) return false;
+      continue;
+    }
+    float t = q[i] / p[i];
+    if (p[i] < 0.0f) {
+      if (t > t1) return false;
+      if (t > t0) t0 = t;
+    } else {
+      if (t < t0) return false;
+      if (t < t1) t1 = t;
+    }
+  }
+  return true;
+}
+// Outside corner to drive through so the leg between `from` and ramp r's
+// approach point stays clear of the platform.
+inline Vector3 rampDetour(const Entity &b, int r, Vector3 from) {
+  const float h = Config::BASE_PAD_HALF_SIZE;
+  const float out = h + Config::BASE_RAMP_LENGTH + 6.0f;
+  if (r == 0) {
+    float sx = (from.x >= b.pos.x) ? 1.0f : -1.0f;
+    return {b.pos.x + sx * (h + 6.0f), b.pos.y, b.pos.z - out};
+  }
+  float sz = (from.z >= b.pos.z) ? 1.0f : -1.0f;
+  return {b.pos.x + out, b.pos.y, b.pos.z + sz * (h + 6.0f)};
 }
 
 // Tint colour for infected / infecting entities (Slice B.4). Infected
@@ -98,6 +166,8 @@ void EntityManager::clear() {
   m_liveEnemies = 0;
   m_liveProjectiles = 0;
   m_deliveryCount = 0;
+  m_playerOnPad = false;
+  m_padDwell = 0.0f;
 }
 
 // Dev hotkey support — silent enemy clear. No explosions, no scoring,
@@ -426,6 +496,18 @@ Entity *EntityManager::spawnEnemy(EntityType type, Vector3 pos) {
     // yaw is animated by updateRadarBooster (rotating dish visual).
     e->yaw = 0.0f;
     break;
+  case EntityType::RadarStation:
+    // No OBJ / sidecar yet — Config values, procedural render.
+    if (prof && prof->view.hullPresent) {
+      e->hullMax = prof->view.hullHP;
+      e->radius = prof->view.hullCollisionRadius;
+    } else {
+      e->hullMax = Config::RADAR_STATION_HULL;
+      e->radius = Config::HIT_RADIUS_RADAR_STATION;
+    }
+    e->hullHP = e->hullMax;
+    e->yaw = static_cast<float>((e->id * 2654435761u) % 6283) / 1000.0f;
+    break;
   case EntityType::Base:
     // Stationary delivery destination. High HP — losing this means
     // losing the collector economy, so it should take real effort
@@ -552,10 +634,7 @@ uint32_t EntityManager::beamRaycast(Vector3 origin, Vector3 dir,
   for (Entity &e : m_entities) {
     if (!e.alive) continue;
     if (e.type == EntityType::Projectile) continue;
-    if (e.type == EntityType::Collector ||
-        e.type == EntityType::RepairStation ||
-        e.type == EntityType::RadarBooster ||
-        e.type == EntityType::Base)
+    if (isFriendlyStructure(e.type))
       continue;
     Vector3 oc = Vector3Subtract(e.pos, origin);
     float tCentre = Vector3DotProduct(oc, dn);
@@ -605,10 +684,7 @@ uint32_t EntityManager::shieldLaserRaycast(Vector3 origin, Vector3 dir,
   for (Entity &e : m_entities) {
     if (!e.alive) continue;
     if (e.type == EntityType::Projectile) continue;
-    if (e.type == EntityType::Collector ||
-        e.type == EntityType::RepairStation ||
-        e.type == EntityType::RadarBooster ||
-        e.type == EntityType::Base)
+    if (isFriendlyStructure(e.type))
       continue;
     Vector3 oc = Vector3Subtract(e.pos, origin);
     float tCentre = Vector3DotProduct(oc, dn);
@@ -738,10 +814,7 @@ const Entity *EntityManager::nearestEnemyTo(Vector3 origin,
     if (!e.alive) continue;
     if (e.id == excludeId) continue;
     if (e.type == EntityType::Projectile) continue;
-    if (e.type == EntityType::Collector ||
-        e.type == EntityType::RepairStation ||
-        e.type == EntityType::RadarBooster ||
-        e.type == EntityType::Base)
+    if (isFriendlyStructure(e.type))
       continue;
     bool eIsInfected = (e.aiState == AIState::Infected ||
                         e.aiState == AIState::Infecting);
@@ -764,10 +837,7 @@ void EntityManager::applyEMPStun(Vector3 pos, float radius, float duration) {
   for (Entity &e : m_entities) {
     if (!e.alive) continue;
     if (e.type == EntityType::Projectile) continue;
-    if (e.type == EntityType::Collector ||
-        e.type == EntityType::RepairStation ||
-        e.type == EntityType::RadarBooster ||
-        e.type == EntityType::Base)
+    if (isFriendlyStructure(e.type))
       continue;
     Vector3 d = Vector3Subtract(e.pos, pos);
     float d2 = d.x * d.x + d.y * d.y + d.z * d.z;
@@ -898,6 +968,11 @@ bool EntityManager::tickRetreat(Entity &e, float dt, const Planet &planet,
 // ====================================================================
 void EntityManager::update(float dt, const Planet &planet, Player &player,
                            ParticleSystem &particles) {
+  // Base pad state is recomputed by tickBasePad each tick; the rearm
+  // dwell timer restarts once the player leaves the pad.
+  if (!m_playerOnPad) m_padDwell = 0.0f;
+  m_playerOnPad = false;
+
   for (auto &e : m_entities) {
     if (!e.alive) continue;
 
@@ -962,7 +1037,10 @@ void EntityManager::update(float dt, const Planet &planet, Player &player,
     // bleed (~100s at 0.01/s). Normal kill path: emitKillExplosion on
     // hullHP hitting zero, mark dead, decrement liveEnemies, skip the
     // rest of the AI tick.
-    if (e.aiState == AIState::Infected && e.hullMax > 0.0f) {
+    // Base defenders (C.2) fly the allied path but aren't infected —
+    // they don't bleed.
+    if (e.aiState == AIState::Infected && e.hullMax > 0.0f &&
+        e.homeBaseId == 0) {
       e.hullHP -= e.hullMax * Config::INFECT_BLEED_HP_FRAC_PS * dt;
       if (e.hullHP <= 0.0f) {
         e.hullHP = 0.0f;
@@ -1021,7 +1099,10 @@ void EntityManager::update(float dt, const Planet &planet, Player &player,
       updateRadarBooster(e, dt);
       break;
     case EntityType::Base:
-      updateBase(e, dt);
+      updateBase(e, dt, player);
+      break;
+    case EntityType::RadarStation:
+      updateRadarStation(e, dt);
       break;
     default:
       break;
@@ -1050,13 +1131,28 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
   // now aligned with, so hasTarget gates firing below. Movement still
   // uses player position as a fallback so the ship doesn't lock up.
   bool isInfected = (e.aiState == AIState::Infected);
-  Vector3 targetPos = player.position();
+  Vector3 targetPos = isInfected ? player.position() : hostileTargetFor(e, player);
   bool hasTarget = !isInfected;
   if (isInfected) {
     const Entity *prey = nearestEnemyTo(e.pos, e.id, false);
+    // Base defenders (C.2) only engage enemies near their home base;
+    // spawnPos is the launch point above the pad.
+    if (prey && e.homeBaseId != 0 &&
+        Vector3Distance(prey->pos, e.spawnPos) > Config::BASE_DEFENDER_LEASH)
+      prey = nullptr;
     if (prey) {
       targetPos = prey->pos;
       hasTarget = true;
+    } else if (e.homeBaseId != 0) {
+      // Nothing to defend against — fly home and land (despawn).
+      targetPos = e.spawnPos;
+      float hx = e.spawnPos.x - e.pos.x, hz = e.spawnPos.z - e.pos.z;
+      if (hx * hx + hz * hz <
+          Config::BASE_DEFENDER_LAND_DIST * Config::BASE_DEFENDER_LAND_DIST) {
+        e.alive = false;
+        --m_liveEnemies;
+        return;
+      }
     }
   }
 
@@ -1498,8 +1594,9 @@ void EntityManager::updateDrone(Entity &e, float dt, const Planet &planet,
   }
 
   // ---------- Stand-off + orbital drift ----------
-  Vector3 toPlayerH = {player.position().x - e.pos.x, 0.0f,
-                       player.position().z - e.pos.z};
+  // Hostile target: the player, or a nearby friendly (C.2).
+  const Vector3 tgt = hostileTargetFor(e, player);
+  Vector3 toPlayerH = {tgt.x - e.pos.x, 0.0f, tgt.z - e.pos.z};
   float distH = sqrtf(toPlayerH.x * toPlayerH.x + toPlayerH.z * toPlayerH.z);
 
   // Radial: 0 inside the band, +radial (toward player) if too far,
@@ -1521,8 +1618,8 @@ void EntityManager::updateDrone(Entity &e, float dt, const Planet &planet,
   e.stateTimer -= dt;
   if (e.stateTimer <= 0.0f) {
     uint32_t h = e.id * 1103515245u +
-                 static_cast<uint32_t>(player.position().x * 17.0f) +
-                 static_cast<uint32_t>(player.position().z * 31.0f);
+                 static_cast<uint32_t>(tgt.x * 17.0f) +
+                 static_cast<uint32_t>(tgt.z * 31.0f);
     float angle = static_cast<float>(h % 6283) / 1000.0f; // 0..2π
     e.targetPos = {sinf(angle), 0.0f, cosf(angle)};
     float u = static_cast<float>((h >> 13) & 0xFF) / 255.0f;
@@ -1535,9 +1632,9 @@ void EntityManager::updateDrone(Entity &e, float dt, const Planet &planet,
   // the unit vector from drone → orbit target on the XZ plane.
   float standoffMid = 0.5f * (Config::DRONE_STANDOFF_MIN +
                               Config::DRONE_STANDOFF_MAX);
-  Vector3 orbitTarget = {player.position().x + e.targetPos.x * standoffMid,
+  Vector3 orbitTarget = {tgt.x + e.targetPos.x * standoffMid,
                          e.pos.y,
-                         player.position().z + e.targetPos.z * standoffMid};
+                         tgt.z + e.targetPos.z * standoffMid};
   Vector3 orbitForce = {orbitTarget.x - e.pos.x, 0.0f,
                         orbitTarget.z - e.pos.z};
   float ol = sqrtf(orbitForce.x * orbitForce.x +
@@ -1589,10 +1686,9 @@ void EntityManager::updateDrone(Entity &e, float dt, const Planet &planet,
   // fireTimer is auto-decremented at the top of update(). Fire when
   // ready AND inside the engage range. Aim straight at the player —
   // the slow projectile speed gives the player a fair dodge window.
-  Vector3 toPlayer = Vector3Subtract(player.position(), e.pos);
-  float pdist = Vector3Length(toPlayer);
+  float pdist = Vector3Distance(tgt, e.pos);
   if (e.fireTimer <= 0.0f && pdist <= Config::DRONE_FIRE_RANGE) {
-    fireDroneShot(e, player.position());
+    fireDroneShot(e, tgt);
     e.fireTimer = Config::DRONE_FIRE_RATE;
   }
 }
@@ -1828,9 +1924,12 @@ void EntityManager::updateLander(Entity &e, float dt, const Planet &planet,
   e.pos.y = ground + 0.6f;
   e.vel = {0, 0, 0};
 
-  // Detect the player for the deploy gate.
-  Vector3 toPlayer = Vector3Subtract(player.position(), e.pos);
-  float dist = Vector3Length(toPlayer);
+  // Deploy gate: the player or any friendly within range (C.2 — landers
+  // besiege nearby bases even when the player is elsewhere).
+  float dist = Vector3Distance(player.position(), e.pos);
+  Vector3 alliedPos{};
+  if (nearestAllied(e.pos, alliedPos) != 0)
+    dist = fminf(dist, Vector3Distance(alliedPos, e.pos));
 
   // Drone deploy — slow steady drip. Cooldown ticks always; we just
   // wait for the player to be in range AND drone counts to permit.
@@ -1871,7 +1970,9 @@ void EntityManager::updateLander(Entity &e, float dt, const Planet &planet,
 void EntityManager::updateGroundTurret(Entity &e, float dt,
                                        const Planet &planet,
                                        const Player &player) {
-  Vector3 toPlayer = Vector3Subtract(player.position(), e.pos);
+  // Hostile target: the player, or a nearby friendly (C.2).
+  const Vector3 tgt = hostileTargetFor(e, player);
+  Vector3 toPlayer = Vector3Subtract(tgt, e.pos);
   Vector3 toPlayerH = {toPlayer.x, 0.0f, toPlayer.z};
   float distH = Vector3Length(toPlayerH);
   float dist = Vector3Length(toPlayer);
@@ -1917,7 +2018,7 @@ void EntityManager::updateGroundTurret(Entity &e, float dt,
     Vector3 toPlayerN = Vector3Normalize(toPlayer);
     float dot = Vector3DotProduct(fwd, toPlayerN);
     if (dot > (1.0f - Config::TANK_FIRE_CONE)) {
-      fireTurretShot(e, player);
+      fireTurretShot(e, tgt);
       e.fireTimer = Config::TURRET_ENEMY_FIRE_RATE;
     }
   }
@@ -1962,14 +2063,51 @@ void EntityManager::updateCollector(Entity &e, float dt, const Planet &planet) {
     if (newId == 0) {
       // No base alive — collector idles in place.
       e.vel = {0, 0, 0};
-      e.pos.y = planet.heightAt(e.pos.x, e.pos.z) + 0.8f;
+      e.pos.y = surfaceHeightAt(planet, e.pos.x, e.pos.z) + 0.8f;
       return;
     }
+    for (const Entity &b : m_entities)
+      if (b.alive && b.id == newId) base = &b;
     e.seekTargetId = newId;
     // First-time setup: pick a pickup site and head out.
     e.aiState = AIState::CollectorOutbound;
     e.hasCargo = false;
+    e.routeStep = kRouteDecide;
   }
+
+  // Drive straight at a point; true once within `radius` (XZ).
+  auto driveTo = [&](Vector3 tgt, float radius) {
+    Vector3 to = Vector3Subtract(tgt, e.pos);
+    float d = sqrtf(to.x * to.x + to.z * to.z);
+    if (d <= radius) {
+      e.vel = {0, 0, 0};
+      return true;
+    }
+    e.yaw = atan2f(to.x, to.z);
+    float spd = Config::COLLECTOR_SPEED;
+    e.vel.x = sinf(e.yaw) * spd;
+    e.vel.z = cosf(e.yaw) * spd;
+    e.pos.x += e.vel.x * dt;
+    e.pos.z += e.vel.z * dt;
+    return false;
+  };
+  // Ramp (of those the base has) whose approach point is nearest `p`;
+  // -1 if the base has none.
+  auto nearestRamp = [&](Vector3 p) {
+    int best = -1;
+    float bestD = 1e18f;
+    for (int r = 0; r < 2; ++r) {
+      if (!(base->rampMask & (1u << r))) continue;
+      Vector3 a = rampPoints(*base, r).approach;
+      float d = (a.x - p.x) * (a.x - p.x) + (a.z - p.z) * (a.z - p.z);
+      if (d < bestD) {
+        bestD = d;
+        best = r;
+      }
+    }
+    return best;
+  };
+  const float wp = Config::COLLECTOR_ROUTE_RADIUS;
 
   // Pick a fresh pickup site whenever we transition into Outbound
   // without a valid target — i.e. round start, or after returning.
@@ -2000,17 +2138,42 @@ void EntityManager::updateCollector(Entity &e, float dt, const Planet &planet) {
       toTgt = Vector3Subtract(e.targetPos, e.pos);
       distXZ = sqrtf(toTgt.x * toTgt.x + toTgt.z * toTgt.z);
     }
-    if (distXZ <= Config::COLLECTOR_WAYPOINT_RADIUS) {
+    // Leave a raised platform down a ramp: top → approach → (detour
+    // corner if the pickup lies behind the base) → pickup site.
+    if (e.routeStep == kRouteDecide) {
+      int r = nearestRamp(e.targetPos);
+      if (r >= 0 && onPlatform(*base, e.pos)) {
+        e.routeRamp = static_cast<uint8_t>(r);
+        e.routeStep = kRouteExitTop;
+      } else {
+        e.routeStep = kRouteFree;
+      }
+    }
+    if (e.routeStep == kRouteExitTop) {
+      if (driveTo(rampPoints(*base, e.routeRamp).top, wp))
+        e.routeStep = kRouteExitApproach;
+      break;
+    }
+    if (e.routeStep == kRouteExitApproach) {
+      RampPoints rp = rampPoints(*base, e.routeRamp);
+      if (driveTo(rp.approach, wp)) {
+        if (crossesPlatform(rp.approach, e.targetPos, *base)) {
+          e.routePoint = rampDetour(*base, e.routeRamp, e.targetPos);
+          e.routeStep = kRouteExitDetour;
+        } else {
+          e.routeStep = kRouteFree;
+        }
+      }
+      break;
+    }
+    if (e.routeStep == kRouteExitDetour) {
+      if (driveTo(e.routePoint, wp)) e.routeStep = kRouteFree;
+      break;
+    }
+    if (driveTo(e.targetPos, Config::COLLECTOR_WAYPOINT_RADIUS)) {
       e.aiState = AIState::CollectorPickup;
       e.stateTimer = Config::COLLECTOR_DWELL_TIME;
-      e.vel = {0, 0, 0};
-    } else {
-      e.yaw = atan2f(toTgt.x, toTgt.z);
-      float spd = Config::COLLECTOR_SPEED;
-      e.vel.x = sinf(e.yaw) * spd;
-      e.vel.z = cosf(e.yaw) * spd;
-      e.pos.x += e.vel.x * dt;
-      e.pos.z += e.vel.z * dt;
+      e.routeStep = kRouteDecide;
     }
     break;
   }
@@ -2020,23 +2183,46 @@ void EntityManager::updateCollector(Entity &e, float dt, const Planet &planet) {
       e.hasCargo = true;
       e.targetPos = basePos;
       e.aiState = AIState::CollectorInbound;
+      e.routeStep = kRouteDecide;
     }
     break;
   }
   case AIState::CollectorInbound: {
-    Vector3 toTgt = Vector3Subtract(basePos, e.pos);
-    float distXZ = sqrtf(toTgt.x * toTgt.x + toTgt.z * toTgt.z);
-    if (distXZ <= Config::COLLECTOR_WAYPOINT_RADIUS) {
+    // Reach a raised platform only by ramp: (detour corner) → approach →
+    // ramp top → platform centre.
+    if (e.routeStep == kRouteDecide) {
+      int r = nearestRamp(e.pos);
+      if (r < 0 || onPlatform(*base, e.pos)) {
+        e.routeStep = kRouteEnterCentre;
+      } else {
+        e.routeRamp = static_cast<uint8_t>(r);
+        RampPoints rp = rampPoints(*base, r);
+        if (crossesPlatform(e.pos, rp.approach, *base)) {
+          e.routePoint = rampDetour(*base, r, e.pos);
+          e.routeStep = kRouteEnterDetour;
+        } else {
+          e.routeStep = kRouteEnterApproach;
+        }
+      }
+    }
+    if (e.routeStep == kRouteEnterDetour) {
+      if (driveTo(e.routePoint, wp)) e.routeStep = kRouteEnterApproach;
+      break;
+    }
+    if (e.routeStep == kRouteEnterApproach) {
+      if (driveTo(rampPoints(*base, e.routeRamp).approach, wp))
+        e.routeStep = kRouteEnterTop;
+      break;
+    }
+    if (e.routeStep == kRouteEnterTop) {
+      if (driveTo(rampPoints(*base, e.routeRamp).top, wp))
+        e.routeStep = kRouteEnterCentre;
+      break;
+    }
+    if (driveTo(basePos, Config::COLLECTOR_WAYPOINT_RADIUS)) {
       e.aiState = AIState::CollectorUnload;
       e.stateTimer = Config::COLLECTOR_DWELL_TIME;
-      e.vel = {0, 0, 0};
-    } else {
-      e.yaw = atan2f(toTgt.x, toTgt.z);
-      float spd = Config::COLLECTOR_SPEED;
-      e.vel.x = sinf(e.yaw) * spd;
-      e.vel.z = cosf(e.yaw) * spd;
-      e.pos.x += e.vel.x * dt;
-      e.pos.z += e.vel.z * dt;
+      e.routeStep = kRouteDecide;
     }
     break;
   }
@@ -2048,6 +2234,7 @@ void EntityManager::updateCollector(Entity &e, float dt, const Planet &planet) {
       e.hasCargo = false;
       pickPickupSite();
       e.aiState = AIState::CollectorOutbound;
+      e.routeStep = kRouteDecide;
     }
     break;
   }
@@ -2058,8 +2245,8 @@ void EntityManager::updateCollector(Entity &e, float dt, const Planet &planet) {
     break;
   }
 
-  // Resnap to terrain — collector hugs the ground regardless of state.
-  e.pos.y = planet.heightAt(e.pos.x, e.pos.z) + 0.8f;
+  // Hug the ground — including base platforms and ramps.
+  e.pos.y = surfaceHeightAt(planet, e.pos.x, e.pos.z) + 0.8f;
 }
 
 // ====================================================================
@@ -2076,7 +2263,22 @@ void EntityManager::updateCollector(Entity &e, float dt, const Planet &planet) {
 // main update loop so we don't need to tick it here. yaw stores the
 // turret's barrel angle (same convention as the Ground Tank now).
 // ====================================================================
-void EntityManager::updateBase(Entity &e, float dt) {
+void EntityManager::updateBase(Entity &e, float dt, Player &player) {
+  tickBasePad(e, dt, player);
+  // Defender launch cooldown lives in stateTimer (the turret uses
+  // fireTimer). Launch only while under attack and below the cap.
+  if (e.stateTimer > 0.0f) e.stateTimer -= dt;
+  if (e.timeSinceHit < Config::BASE_UNDER_ATTACK_WINDOW &&
+      e.stateTimer <= 0.0f) {
+    int live = 0;
+    for (const Entity &o : m_entities)
+      if (o.alive && o.homeBaseId == e.id) ++live;
+    if (live < Config::BASE_DEFENDER_MAX) {
+      launchBaseDefender(e);
+      e.stateTimer = Config::BASE_DEFENDER_LAUNCH_INTERVAL;
+    }
+  }
+
   // Find nearest enemy in range via the shared auto-aim predicate.
   // Skips friendlies, projectiles, AND infected / infecting entities
   // (which are the player's allies after the flip).
@@ -2124,9 +2326,9 @@ void EntityManager::updateBase(Entity &e, float dt) {
     if (dot > (1.0f - Config::BASE_TURRET_FIRE_CONE)) {
       // Muzzle sits on top of the control tower. Spawn shot slightly
       // ahead of the muzzle along the firing direction.
-      Vector3 muzzle = {e.pos.x + 2.5f, e.pos.y +
-                                            Config::BASE_TURRET_BARREL_HEIGHT,
-                        e.pos.z + 2.5f};
+      Vector3 muzzle = {e.pos.x + Config::BASE_TOWER_OFFSET,
+                        e.pos.y + Config::BASE_TURRET_BARREL_HEIGHT,
+                        e.pos.z + Config::BASE_TOWER_OFFSET};
       Vector3 dir3 = Vector3Subtract(targetPos, muzzle);
       float d3 = Vector3Length(dir3);
       if (d3 > 0.001f) {
@@ -2142,6 +2344,46 @@ void EntityManager::updateBase(Entity &e, float dt) {
         e.fireTimer = Config::BASE_TURRET_FIRE_RATE;
       }
     }
+  }
+}
+
+// Slice C C.2 — launch one allied Fighter from a base's pad. It flies
+// the Infected (allied) AI path: targets the nearest hostile, fires
+// player-owned shots, skipped by auto-aim. homeBaseId marks it as a
+// defender (no bleed, leashed to its launch point, lands when idle).
+void EntityManager::launchBaseDefender(const Entity &base) {
+  Vector3 pos = {base.pos.x, base.pos.y + Config::BASE_DEFENDER_LAUNCH_HEIGHT,
+                 base.pos.z};
+  Entity *d = spawnEnemy(EntityType::Fighter, pos);
+  if (!d) return;
+  d->aiState = AIState::Infected;
+  d->canBeInfected = false;
+  d->homeBaseId = base.id;
+  d->yaw = base.yaw;
+  if (m_audio) m_audio->play3D(SfxId::UIBlip, pos, 0.6f);
+}
+
+// Slice C C.2 — landing apron. A player over the base's apron square
+// (BASE_PAD_HALF_SIZE) who has landed, or is hovering low and slow, is
+// repaired continuously and fully rearmed after BASE_PAD_REARM_TIME
+// docked. The dwell timer restarts on leaving.
+void EntityManager::tickBasePad(const Entity &base, float dt, Player &player) {
+  if (!player.isAlive()) return;
+  Vector3 pp = player.position();
+  if (fabsf(pp.x - base.pos.x) > Config::BASE_PAD_HALF_SIZE ||
+      fabsf(pp.z - base.pos.z) > Config::BASE_PAD_HALF_SIZE)
+    return;
+  bool hovering = (pp.y - base.pos.y) < Config::BASE_PAD_HOVER_AGL &&
+                  player.speed() < Config::BASE_PAD_HOVER_SPEED;
+  if (!player.isLanded() && !hovering) return;
+  m_playerOnPad = true;
+  player.heal(Config::BASE_PAD_REPAIR_RATE * dt);
+  float before = m_padDwell;
+  m_padDwell += dt;
+  if (before < Config::BASE_PAD_REARM_TIME &&
+      m_padDwell >= Config::BASE_PAD_REARM_TIME) {
+    player.rearm();
+    if (m_audio) m_audio->play2D(SfxId::UIBlip, 0.8f);
   }
 }
 
@@ -2171,6 +2413,13 @@ void EntityManager::updateRadarBooster(Entity &e, float dt) {
   if (e.yaw > 6.28318f) e.yaw -= 6.28318f;
 }
 
+// Slice C C.2 — radar station. Passive network node; C.4 adds the
+// link graph and shared detection. Only the dish animates for now.
+void EntityManager::updateRadarStation(Entity &e, float dt) {
+  e.yaw += Config::RADAR_STATION_DISH_SPIN * dt;
+  if (e.yaw > 6.28318f) e.yaw -= 6.28318f;
+}
+
 bool EntityManager::anyRadarBoosterAlive() const {
   for (const Entity &e : m_entities) {
     if (e.alive && e.type == EntityType::RadarBooster) return true;
@@ -2182,10 +2431,7 @@ int EntityManager::liveFriendlyCount() const {
   int n = 0;
   for (const Entity &e : m_entities) {
     if (!e.alive) continue;
-    if (e.type == EntityType::Collector ||
-        e.type == EntityType::RepairStation ||
-        e.type == EntityType::RadarBooster ||
-        e.type == EntityType::Base) {
+    if (isFriendlyStructure(e.type)) {
       ++n;
     }
   }
@@ -2198,11 +2444,7 @@ uint32_t EntityManager::nearestFriendly(Vector3 origin,
   float bestDist = 1e9f;
   for (const Entity &e : m_entities) {
     if (!e.alive) continue;
-    if (e.type != EntityType::Collector &&
-        e.type != EntityType::RepairStation &&
-        e.type != EntityType::RadarBooster &&
-        e.type != EntityType::Base)
-      continue;
+    if (!isFriendlyStructure(e.type)) continue;
     float d = Vector3Distance(e.pos, origin);
     if (d < bestDist) {
       bestDist = d;
@@ -2211,6 +2453,66 @@ uint32_t EntityManager::nearestFriendly(Vector3 origin,
     }
   }
   return bestId;
+}
+
+float EntityManager::surfaceHeightAt(const Planet &planet, float x,
+                                     float z) const {
+  float y = planet.heightAt(x, z);
+  const float h = Config::BASE_PAD_HALF_SIZE;
+  const float L = Config::BASE_RAMP_LENGTH;
+  const float w = Config::BASE_RAMP_WIDTH * 0.5f;
+  for (const Entity &b : m_entities) {
+    if (!b.alive || b.type != EntityType::Base) continue;
+    float dx = x - b.pos.x, dz = z - b.pos.z;
+    if (fabsf(dx) > h + L || fabsf(dz) > h + L) continue;
+    if (fabsf(dx) <= h && fabsf(dz) <= h) {
+      y = fmaxf(y, b.pos.y);
+      continue;
+    }
+    // Ramp surfaces fall linearly from the platform edge to the ground.
+    if ((b.rampMask & 1) && fabsf(dx) <= w && dz < -h && dz >= -h - L)
+      y = fmaxf(y, b.pos.y - Config::BASE_PAD_HEIGHT * ((-h - dz) / L));
+    if ((b.rampMask & 2) && fabsf(dz) <= w && dx > h && dx <= h + L)
+      y = fmaxf(y, b.pos.y - Config::BASE_PAD_HEIGHT * ((dx - h) / L));
+  }
+  return y;
+}
+
+uint32_t EntityManager::nearestAllied(Vector3 origin, Vector3 &outPos) const {
+  uint32_t bestId = 0;
+  float bestD2 = 1e18f;
+  for (const Entity &e : m_entities) {
+    if (!e.alive) continue;
+    bool allied = isFriendlyStructure(e.type) ||
+                  e.aiState == AIState::Infected ||
+                  e.aiState == AIState::Infecting;
+    if (!allied) continue;
+    Vector3 d = Vector3Subtract(e.pos, origin);
+    float d2 = d.x * d.x + d.y * d.y + d.z * d.z;
+    if (d2 < bestD2) {
+      bestD2 = d2;
+      bestId = e.id;
+      outPos = e.pos;
+    }
+  }
+  return bestId;
+}
+
+Vector3 EntityManager::hostileTargetFor(const Entity &e,
+                                        const Player &player) const {
+  Vector3 playerPos = player.position();
+  Vector3 alliedPos{};
+  if (nearestAllied(e.pos, alliedPos) == 0) return playerPos;
+  float dAllied = Vector3Distance(alliedPos, e.pos);
+  float range = e.aiDetectionRange > 0.0f ? e.aiDetectionRange
+                                          : Config::AI_PURSUE_RANGE;
+  if (dAllied > range) return playerPos;
+  // Raiders (fixed by id) go for friendlies whenever one is in range.
+  if (static_cast<int>(e.id % 100u) < Config::ENEMY_RAIDER_PERCENT)
+    return alliedPos;
+  float dPlayer = Vector3Distance(playerPos, e.pos);
+  return (dAllied < dPlayer * Config::ENEMY_FRIENDLY_PRIORITY) ? alliedPos
+                                                               : playerPos;
 }
 
 uint32_t EntityManager::nearestBase(Vector3 origin, Vector3 &outPos) const {
@@ -2229,9 +2531,9 @@ uint32_t EntityManager::nearestBase(Vector3 origin, Vector3 &outPos) const {
   return bestId;
 }
 
-void EntityManager::fireTurretShot(Entity &e, const Player &player) {
+void EntityManager::fireTurretShot(Entity &e, Vector3 targetPos) {
   Vector3 muzzle = {e.pos.x, e.pos.y + Config::TURRET_BARREL_HEIGHT, e.pos.z};
-  Vector3 toPlayer = Vector3Subtract(player.position(), muzzle);
+  Vector3 toPlayer = Vector3Subtract(targetPos, muzzle);
   float d = Vector3Length(toPlayer);
   if (d < 0.001f) return;
   Vector3 dir = Vector3Scale(toPlayer, 1.0f / d);
@@ -2600,10 +2902,7 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
       // skip friendlies. Splash damage already filters friendlies
       // inside applySplashDamage(), so a player splash on a near-miss
       // can't collateral-kill a Collector either.
-      if (e.type == EntityType::Collector ||
-          e.type == EntityType::RepairStation ||
-          e.type == EntityType::RadarBooster ||
-          e.type == EntityType::Base)
+      if (isFriendlyStructure(e.type))
         continue;
       float d = Vector3Distance(p.pos, e.pos);
       if (d < (e.radius + p.radius)) {
@@ -2648,6 +2947,24 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
       }
     }
   } else {
+    // Enemy shots hit friendly structures and allied ships (infected
+    // ships, base defenders) as well as the player — Bomber strafe
+    // runs and attacks on bases depend on this.
+    for (auto &e : m_entities) {
+      if (!e.alive) continue;
+      bool allied = isFriendlyStructure(e.type) ||
+                    e.aiState == AIState::Infected ||
+                    e.aiState == AIState::Infecting;
+      if (!allied) continue;
+      if (Vector3Distance(p.pos, e.pos) < (e.radius + p.radius)) {
+        emitHitBurst(p.pos, particles);
+        applyDamage(e, p.damage, p.pos, particles, p.damageType);
+        p.alive = false;
+        --m_liveProjectiles;
+        return;
+      }
+    }
+
     Vector3 ppos = player.position();
     float d = Vector3Distance(p.pos, ppos);
     if (d < (Config::HIT_RADIUS_PLAYER + p.radius)) {
@@ -2676,10 +2993,7 @@ void EntityManager::applySplashDamage(Vector3 pos, float radius, float damage,
   for (Entity &e : m_entities) {
     if (!e.alive) continue;
     if (e.type == EntityType::Projectile) continue;
-    if (e.type == EntityType::Collector ||
-        e.type == EntityType::RepairStation ||
-        e.type == EntityType::RadarBooster ||
-        e.type == EntityType::Base)
+    if (isFriendlyStructure(e.type))
       continue;
     Vector3 d = Vector3Subtract(e.pos, pos);
     float d2 = d.x * d.x + d.y * d.y + d.z * d.z;
@@ -3193,43 +3507,79 @@ void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
     break;
   }
   case EntityType::Base: {
-    // Wide landing pad + control tower + rotating beacon. The
-    // beacon yaw animates so the base reads as "active" at distance,
-    // and the central control tower gives a clear silhouette
-    // collectors are visibly approaching.
+    // Raised landing platform (C.2): a slab standing BASE_PAD_HEIGHT above
+    // the levelled ground, ramps on the sides flagged in rampMask, corner
+    // lamps, and the control tower + rotating turret at the NE corner.
+    const float h = Config::BASE_PAD_HALF_SIZE;
+    const float top = e.pos.y;
+    const float ground = top - Config::BASE_PAD_HEIGHT;
+    Color slab = {78, 86, 96, 255};
+    Color slabSide = {58, 64, 72, 255};
+    Color lamp = {255, 220, 80, 255};
+    // Damage flash tints only the tower + turret below — flashing the
+    // whole 36 m platform white on every hit is glaring.
+    {
+      // Slab runs a metre below the ground so slopes never show a gap.
+      const float bottom = ground - 1.0f;
+      DrawCubeV({e.pos.x, (top + bottom) * 0.5f, e.pos.z},
+                {2.0f * h, top - bottom, 2.0f * h}, slab);
+      for (int i = 0; i < 4; ++i) {
+        float lx = (i & 1) ? h - 1.0f : -(h - 1.0f);
+        float lz = (i & 2) ? h - 1.0f : -(h - 1.0f);
+        DrawCubeV({e.pos.x + lx, top + 0.35f, e.pos.z + lz},
+                  {0.7f, 0.7f, 0.7f}, lamp);
+      }
+    }
+    // Ramps — sloped wedges from the platform edge down to the ground.
+    {
+      const float L = Config::BASE_RAMP_LENGTH;
+      const float w = Config::BASE_RAMP_WIDTH * 0.5f;
+      // Each face is emitted in both windings: DrawTriangle3D is batched,
+      // so toggling backface culling around these calls doesn't survive
+      // to the flush and one winding gets culled.
+      auto tri2 = [](Vector3 a, Vector3 b, Vector3 c, Color col) {
+        DrawTriangle3D(a, b, c, col);
+        DrawTriangle3D(a, c, b, col);
+      };
+      for (int r = 0; r < 2; ++r) {
+        if (!(e.rampMask & (1u << r))) continue;
+        // Axis along the ramp (outward) and across it.
+        Vector3 out = (r == 0) ? Vector3{0, 0, -1} : Vector3{1, 0, 0};
+        Vector3 side = (r == 0) ? Vector3{1, 0, 0} : Vector3{0, 0, 1};
+        auto pt = [&](float along, float across, float y) {
+          return Vector3{e.pos.x + out.x * along + side.x * across, y,
+                         e.pos.z + out.z * along + side.z * across};
+        };
+        Vector3 tA = pt(h, -w, top), tB = pt(h, w, top);
+        Vector3 fA = pt(h + L, -w, ground), fB = pt(h + L, w, ground);
+        Vector3 bA = pt(h, -w, ground), bB = pt(h, w, ground);
+        tri2(tA, fA, fB, slab);
+        tri2(tA, fB, tB, slab);
+        tri2(tA, bA, fA, slabSide);
+        tri2(tB, fB, bB, slabSide);
+      }
+    }
+
+    // Control tower at the NE corner (+X east, +Z north).
+    const Vector3 tower = {e.pos.x + Config::BASE_TOWER_OFFSET, top,
+                           e.pos.z + Config::BASE_TOWER_OFFSET};
     if (registry && registry->has(EntityType::Base)) {
-      // Pad + lights + tower + tower-top from the OBJ. yaw=0 so the
-      // static structure stays world-aligned (the base never rotates
-      // as a whole); the rotating turret comes after.
-      registry->draw(EntityType::Base, e.pos, 0.0f, 1.0f, WHITE);
+      // Tower + tower-top from the OBJ (centred on its origin, foot at
+      // y = 0). yaw = 0 keeps it world-aligned.
+      registry->draw(EntityType::Base, tower, 0.0f, 1.0f, WHITE);
     } else {
-      Color pad = {90, 100, 110, 255};
-      Color tower = {120, 130, 150, 255};
-      Color top = {200, 220, 240, 255};
-      if (e.damageFlashTimer > 0.0f) pad = tower = top = {255, 255, 255, 255};
-      DrawCubeV({e.pos.x, e.pos.y + 0.2f, e.pos.z}, {9.0f, 0.6f, 9.0f},
-                pad);
-      Color light = {255, 220, 80, 255};
-      DrawCubeV({e.pos.x + 4.0f, e.pos.y + 0.6f, e.pos.z + 4.0f},
-                {0.5f, 0.5f, 0.5f}, light);
-      DrawCubeV({e.pos.x - 4.0f, e.pos.y + 0.6f, e.pos.z + 4.0f},
-                {0.5f, 0.5f, 0.5f}, light);
-      DrawCubeV({e.pos.x + 4.0f, e.pos.y + 0.6f, e.pos.z - 4.0f},
-                {0.5f, 0.5f, 0.5f}, light);
-      DrawCubeV({e.pos.x - 4.0f, e.pos.y + 0.6f, e.pos.z - 4.0f},
-                {0.5f, 0.5f, 0.5f}, light);
-      DrawCubeV({e.pos.x + 2.5f, e.pos.y + 2.2f, e.pos.z + 2.5f},
-                {2.0f, 4.0f, 2.0f}, tower);
-      DrawCubeV({e.pos.x + 2.5f, e.pos.y + 4.5f, e.pos.z + 2.5f},
-                {2.6f, 0.6f, 2.6f}, top);
+      Color towerCol = {120, 130, 150, 255};
+      Color towerTop = {200, 220, 240, 255};
+      if (e.damageFlashTimer > 0.0f) towerCol = towerTop = {255, 255, 255, 255};
+      DrawCubeV({tower.x, tower.y + 2.0f, tower.z}, {2.0f, 4.0f, 2.0f}, towerCol);
+      DrawCubeV({tower.x, tower.y + 4.3f, tower.z}, {2.6f, 0.6f, 2.6f}, towerTop);
     }
     // Turret cap + barrel + tip — always procedural, rotates with
     // e.yaw independently of the static structure.
     Color capCol = {180, 110, 90, 255};
     Color barrelCol = {220, 220, 220, 255};
     if (e.damageFlashTimer > 0.0f) capCol = barrelCol = {255, 255, 255, 255};
-    Vector3 capPos = {e.pos.x + 2.5f, e.pos.y + Config::BASE_TURRET_BARREL_HEIGHT,
-                      e.pos.z + 2.5f};
+    Vector3 capPos = {tower.x, top + Config::BASE_TURRET_BARREL_HEIGHT, tower.z};
     DrawCubeV(capPos, {1.4f, 0.8f, 1.4f}, capCol);
     float dx = sinf(e.yaw), dz = cosf(e.yaw);
     Vector3 barrel = {capPos.x + dx * 1.1f, capPos.y,
@@ -3240,7 +3590,34 @@ void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
 
     // Hull bar above the tower so killing the base is visible.
     if (e.hullMax > 0.0f) {
-      drawHpBar(e.pos, 6.0f, 8.0f, e.hullHP / e.hullMax,
+      drawHpBar(tower, 7.5f, 8.0f, e.hullHP / e.hullMax,
+                {80, 220, 100, 220}, camPos);
+    }
+    break;
+  }
+  case EntityType::RadarStation: {
+    // Slice C C.2 — procedural until an OBJ is authored: concrete
+    // footing, tall mast, wide rotating dish, beacon. Taller than the
+    // Radar Booster so network nodes read at distance.
+    Color footing = {110, 115, 120, 255};
+    Color mast = {150, 160, 175, 255};
+    Color dish = {210, 225, 240, 255};
+    if (e.damageFlashTimer > 0.0f) footing = mast = dish = {255, 255, 255, 255};
+    DrawCubeV({e.pos.x, e.pos.y + 0.3f, e.pos.z}, {4.0f, 0.6f, 4.0f}, footing);
+    DrawCubeV({e.pos.x, e.pos.y + 3.6f, e.pos.z}, {0.9f, 6.6f, 0.9f}, mast);
+    DrawCubeV({e.pos.x, e.pos.y + 1.6f, e.pos.z}, {1.8f, 0.4f, 1.8f}, mast);
+    float dx = sinf(e.yaw), dz = cosf(e.yaw);
+    // Dish: a broad panel facing along yaw, offset forward of the mast.
+    Vector3 dishPos = {e.pos.x + dx * 0.7f, e.pos.y + 7.2f, e.pos.z + dz * 0.7f};
+    Vector3 dishSize = {fabsf(dz) * 3.6f + fabsf(dx) * 0.4f, 2.0f,
+                        fabsf(dx) * 3.6f + fabsf(dz) * 0.4f};
+    DrawCubeV(dishPos, dishSize, dish);
+    DrawCubeV({e.pos.x + dx * 1.8f, e.pos.y + 7.2f, e.pos.z + dz * 1.8f},
+              {0.35f, 0.35f, 0.35f}, {255, 220, 100, 255});
+    DrawCubeV({e.pos.x, e.pos.y + 8.6f, e.pos.z}, {0.5f, 0.5f, 0.5f},
+              {255, 70, 60, 255});
+    if (e.hullMax > 0.0f) {
+      drawHpBar(e.pos, 9.6f, 4.0f, e.hullHP / e.hullMax,
                 {80, 220, 100, 220}, camPos);
     }
     break;

@@ -83,6 +83,15 @@ void Player::applyDamage(float amount) {
     m_health = 0.0f;
 }
 
+void Player::rearm() {
+  if (m_health <= 0.0f) return;
+  m_missileAmmo = Config::MISSILE_AMMO_MAX;
+  m_clusterAmmo = Config::CLUSTER_AMMO_MAX;
+  m_depthChargeAmmo = Config::DEPTH_CHARGE_MAX;
+  m_shieldMissileAmmo = Config::SHIELD_MISSILE_AMMO_MAX;
+  m_infectiousMissileAmmo = Config::INFECT_MISSILE_AMMO_MAX;
+}
+
 void Player::heal(float amount) {
   // Repair Stations call this each tick while the player is inside
   // their heal radius. Caps at the spawn hull HP — no overheal.
@@ -485,7 +494,7 @@ void Player::applyPhysics(float dt, const Planet &planet) {
       // SUCCESSFUL landing
       m_landed = true;
       m_vel = {0, 0, 0};
-      // TODO Phase 3: refuel if at launch pad
+      // Base pads repair + rearm a landed player (EntityManager::tickBasePad).
     }
     m_pos.y = minH;
   }

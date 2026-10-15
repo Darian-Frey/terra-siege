@@ -260,6 +260,22 @@ bool sampleAndPush(std::vector<Decoration> &out,
 //   * Antennas    — flat ground, dense enough to encounter.
 //   * Crash sites — anywhere on land, gentle slope.
 // ====================================================================
+void Decorations::clearSquare(const Planet &planet, float x, float z,
+                              float half, float reseatHalf) {
+  const Vector3 c{x, 0.0f, z};
+  size_t w = 0;
+  for (size_t i = 0; i < m_items.size(); ++i) {
+    Decoration &d = m_items[i];
+    Vector3 p = planet.nearestCopy(d.pos, c);
+    float ax = fabsf(p.x - x), az = fabsf(p.z - z);
+    if (ax <= half && az <= half) continue;
+    if (ax <= reseatHalf && az <= reseatHalf)
+      d.pos.y = planet.heightAt(d.pos.x, d.pos.z);
+    m_items[w++] = d;
+  }
+  m_items.resize(w);
+}
+
 void Decorations::generate(const Planet &planet, uint32_t seed) {
   m_items.clear();
   uint32_t rng = seed ? seed : 0x9e3779b9u;

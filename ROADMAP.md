@@ -12,11 +12,11 @@ Phases are append-only: completed phases are marked with an ISO date, never dele
 
 ## Current focus
 
-**Slice C — Base Defence mode.** The next blocking item is **C.2** (friendly base and radar station entities, F-021). C.4 radar network (F-023), C.5 help calls (F-024) and C.6 infection v2 (F-025) all build on those entities. Settle [BUG-001](BUGS.md#bug-001-radar-shows-every-entity-on-the-map-regardless-of-range) and [BUG-002](BUGS.md#bug-002-one-radar-booster-anywhere-boosts-radar-range-globally) (radar range semantics) before C.4.
+**Slice C — Base Defence mode.** C.2 is done (2026-10-15). Next comes **C.4, the radar network** (F-023), which also settles [BUG-001](BUGS.md#bug-001-radar-shows-every-entity-on-the-map-regardless-of-range) and [BUG-002](BUGS.md#bug-002-one-radar-booster-anywhere-boosts-radar-range-globally). Decide the player's personal radar range first: the design says about 150 m, against today's 300 m. C.3 follow-ups (Lander production) can be done before or after.
 
 Recommended order from here:
 
-1. Slice C: C.2 → C.3 follow-ups → C.4 → C.5 → C.6 → C.8
+1. Slice C: C.4 → C.3 follow-ups → C.5 → C.6 → C.8
 2. Inspector F.6 (resources tool) when Slice C asset authoring needs it
 3. Engine Phase 4 finish (ThreatLock, [BUG-004](BUGS.md#bug-004-threatlock-camera-view-is-a-stub)) and Phase 5 remainder, in spare cycles
 4. Inspector B follow-ups and G, when useful
@@ -212,7 +212,7 @@ Recommended order from here:
 **Deliverables:**
 
 - [x] C.1 — Game mode picker and Base Defence shell (`9380ffb`, 2026-06-11)
-- [ ] C.2 — Friendly base and radar station entities (F-021); placement only so far
+- [x] C.2 — Friendly base defenders, landing-pad repair/rearm, radar station entity (F-021, 2026-10-15)
 - [x] C.3 — Lander entity, first cut: grounded, spawns drones (`49f005f`, 2026-06-11)
 - [ ] C.3 follow-ups — fighter, collector and builder production; wreckage node; hardpoints; descent
 - [ ] C.4 — Radar network (F-023)

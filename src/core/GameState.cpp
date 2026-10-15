@@ -304,7 +304,7 @@ void GameState::loadWorld(uint32_t seed) {
   // Snapshot the total for the "alive vs total" HUD readout and
   // game-over detection (need a known baseline since friendlies
   // can't respawn during the round).
-  m_friendlyTotalAtStart = m_em.liveFriendlyCount();
+  m_friendlyTotalAtStart = liveDefendedCount();
 
   // WaveManager drives all enemy spawning from here on — first wave
   // begins after WAVE_FIRST_DELAY seconds so the player has time to
@@ -319,6 +319,11 @@ void GameState::loadWorld(uint32_t seed) {
 // constraint or we exhaust the retry budget. xorshift32 keyed off the
 // world seed so placement is reproducible per seed.
 // ====================================================================
+int GameState::liveDefendedCount() const {
+  return m_gameMode == GameMode::Base ? m_em.liveEnemyOfType(EntityType::Base)
+                                      : m_em.liveFriendlyCount();
+}
+
 void GameState::spawnFriendliesForRound(Vector3 playerStart) {
   uint32_t rng = m_seed ? m_seed : 0xACE1u;
   auto randF = [&rng](float lo, float hi) {
@@ -399,6 +404,28 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
     return pickSpot();
   };
 
+  // Bases stand on a raised landing platform (C.2). Level the terrain
+  // under the platform and its ramps, clear decorations off the site,
+  // seat the base at platform-top height, and add a ramp on the south
+  // and east sides wherever that side stands above the ground beside it.
+  auto spawnBase = [&](Vector3 pos) {
+    const float site = Config::BASE_PAD_HALF_SIZE + Config::BASE_RAMP_LENGTH + 2.0f;
+    float h = m_planet.flattenPad(pos.x, pos.z, site, Config::BASE_PAD_BLEND);
+    m_decorations.clearSquare(m_planet, pos.x, pos.z, site + 2.0f,
+                              site + Config::BASE_PAD_BLEND + 2.0f);
+    pos.y = h + Config::BASE_PAD_HEIGHT;
+    Entity *b = m_em.spawnEnemy(EntityType::Base, pos);
+    if (b) {
+      const float probe = Config::BASE_PAD_HALF_SIZE + Config::BASE_RAMP_LENGTH * 0.5f;
+      float southGround = m_planet.heightAt(pos.x, pos.z - probe);
+      float eastGround = m_planet.heightAt(pos.x + probe, pos.z);
+      if (pos.y - southGround >= Config::BASE_RAMP_MIN_RISE) b->rampMask |= 1;
+      if (pos.y - eastGround >= Config::BASE_RAMP_MIN_RISE) b->rampMask |= 2;
+    }
+    placed.push_back(pos);
+    return pos;
+  };
+
   // Slice C C.1 — Base mode places a NETWORK of friendly bases per
   // base_mode_v2.md ("All friendly bases pre-placed; radar network
   // live and fully connected"). Wave mode keeps the original single-
@@ -415,32 +442,18 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
       float r = 40.0f;
       float x = playerStart.x + r * sinf(a);
       float z = playerStart.z + r * cosf(a);
-      float y = m_planet.heightAt(x, z) + 0.6f;
-      anchorPos = {x, y, z};
-      m_em.spawnEnemy(EntityType::Base, anchorPos);
-      placed.push_back(anchorPos);
+      anchorPos = spawnBase({x, 0.0f, z});
     }
-    // Additional bases — first cut hits 8 (= base_mode_v2 Hard preset).
-    // Difficulty-driven counts come in C.8.
-    constexpr int kBaseExtra = 7;
-    for (int i = 0; i < kBaseExtra; ++i) {
-      Vector3 pos = pickGrassSpot();
-      m_em.spawnEnemy(EntityType::Base, pos);
-      placed.push_back(pos);
+    // Remaining bases. Difficulty-driven counts come in C.8.
+    for (int i = 1; i < Config::BASE_MODE_BASE_COUNT; ++i) {
+      spawnBase(pickGrassSpot());
     }
-    // Radar boosters fill the network — enough that the bases form a
-    // connected detection graph (C.4 will formalise the topology).
-    for (int i = 0; i < Config::FRIENDLY_BOOSTER_COUNT * 2; ++i) {
+    // Slice C C.2 — radar stations are the network nodes (C.4 adds the
+    // link graph). No Repair Stations or Radar Boosters in this mode:
+    // base landing pads repair + rearm, and boosters are Wave-mode only.
+    for (int i = 0; i < Config::BASE_MODE_RADAR_STATION_COUNT; ++i) {
       Vector3 pos = pickGrassSpot();
-      m_em.spawnEnemy(EntityType::RadarBooster, pos);
-      placed.push_back(pos);
-    }
-    // A few repair stations — friendly bases also repair the player
-    // on dock, but the existing RepairStation entity is the simpler
-    // path for in-flight ammo top-up around the network.
-    for (int i = 0; i < Config::FRIENDLY_REPAIR_COUNT; ++i) {
-      Vector3 pos = pickGrassSpot();
-      m_em.spawnEnemy(EntityType::RepairStation, pos);
+      m_em.spawnEnemy(EntityType::RadarStation, pos);
       placed.push_back(pos);
     }
 
@@ -502,10 +515,7 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
     float r = 40.0f;
     float x = playerStart.x + r * sinf(a);
     float z = playerStart.z + r * cosf(a);
-    float y = m_planet.heightAt(x, z) + 0.6f;
-    basePos = {x, y, z};
-    m_em.spawnEnemy(EntityType::Base, basePos);
-    placed.push_back(basePos);
+    basePos = spawnBase({x, 0.0f, z});
   }
 
   for (int i = 0; i < Config::FRIENDLY_COLLECTOR_COUNT; ++i) {
@@ -1413,7 +1423,7 @@ void GameState::update(float dt) {
       // GameOver without the wreck-rest gate (the player is still
       // alive; they've just failed the objective).
       if (!m_friendliesLostHandled && m_friendlyTotalAtStart > 0 &&
-          m_em.liveFriendlyCount() == 0 && m_player.isAlive()) {
+          liveDefendedCount() == 0 && m_player.isAlive()) {
         m_friendliesLostHandled = true;
         m_sessionResult = SessionResult::FriendliesLost;
         m_sessionEndTime = GetTime();
@@ -1430,7 +1440,7 @@ void GameState::update(float dt) {
           m_sessionResult == SessionResult::None &&
           m_landerTotalAtStart > 0 &&
           m_em.liveEnemyOfType(EntityType::Lander) == 0 &&
-          m_player.isAlive() && m_em.liveFriendlyCount() > 0) {
+          m_player.isAlive() && liveDefendedCount() > 0) {
         m_sessionResult = SessionResult::Victory;
         m_sessionEndTime = GetTime();
         m_state = AppState::Victory;
@@ -1676,7 +1686,7 @@ void GameState::drawSessionResult() {
     statLine("Landers destroyed", lbuf);
   }
   if (m_friendlyTotalAtStart > 0) {
-    int alive = m_em.liveFriendlyCount();
+    int alive = liveDefendedCount();
     int lost = m_friendlyTotalAtStart - alive;
     char fbuf[48];
     if (m_sessionResult == SessionResult::Victory) {
@@ -1686,7 +1696,7 @@ void GameState::drawSessionResult() {
       snprintf(fbuf, sizeof(fbuf), "%d lost of %d", lost,
                m_friendlyTotalAtStart);
     }
-    statLine("Friendlies", fbuf);
+    statLine(m_gameMode == GameMode::Base ? "Bases" : "Friendlies", fbuf);
   }
   // Score (Wave mode only — collector delivery score).
   if (m_gameMode == GameMode::Wave) {
@@ -1848,8 +1858,9 @@ void GameState::drawHUD() const {
     DrawRectangle(bx, by, chgW, bh, cCol);
     drawHudText("THRUST", bx, by - 14, 12, col);
     if (m_player.isLanded()) {
-      int lw = measureHudText("LANDED", 12);
-      drawHudText("LANDED", bx + bw - lw, by - 14, 12, {120, 220, 140, 255});
+      const char *tag = m_em.playerOnPad() ? "ON PAD" : "LANDED";
+      int lw = measureHudText(tag, 12);
+      drawHudText(tag, bx + bw - lw, by - 14, 12, {120, 220, 140, 255});
     }
   }
 
@@ -2216,7 +2227,7 @@ void GameState::drawHUD() const {
     // Friendlies counter still shows in Base mode — useful since
     // friendly attrition is the loss curve.
     if (m_friendlyTotalAtStart > 0) {
-      int alive = m_em.liveFriendlyCount();
+      int alive = liveDefendedCount();
       char fbuf[48];
       snprintf(fbuf, sizeof(fbuf), "BASES %d / %d", alive,
                m_friendlyTotalAtStart);
@@ -2276,7 +2287,7 @@ void GameState::drawHUD() const {
     // alive/total at a glance; colour darkens to red as the player
     // loses ground. Hidden when no friendlies were spawned.
     if (m_friendlyTotalAtStart > 0) {
-      int alive = m_em.liveFriendlyCount();
+      int alive = liveDefendedCount();
       char fbuf[48];
       snprintf(fbuf, sizeof(fbuf), "FRIENDLIES %d / %d", alive,
                m_friendlyTotalAtStart);
@@ -2790,7 +2801,7 @@ void GameState::resetCombat() {
   // path would leave the friendly pool empty and the
   // all-friendlies-dead game over would fire on tick 1.
   spawnFriendliesForRound(startPos);
-  m_friendlyTotalAtStart = m_em.liveFriendlyCount();
+  m_friendlyTotalAtStart = liveDefendedCount();
   // Slice C C.7 — snapshot lander total for the result-screen stat
   // line + the Base-mode victory gate. Zero in Wave mode (no landers
   // spawn there), which is fine — Wave has no Victory transition.

@@ -241,6 +241,9 @@ private:
   // each tick to the live count to drive the "all friendlies dead"
   // game-over condition. Reset by spawnFriendliesForRound().
   int m_friendlyTotalAtStart = 0;
+  // What the player is defending: bases in Base mode (losing them all
+  // loses the round), every friendly unit in Wave mode.
+  int liveDefendedCount() const;
   bool m_friendliesLostHandled = false;
 
   // Pre-flight loadout (5f). Selected on the LoadoutSelect screen,

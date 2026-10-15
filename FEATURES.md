@@ -257,13 +257,17 @@ Players who want a modern take on the 1988 Argonaut game *Virus*: flat-shaded lo
 ### F-021 Friendly base and radar station entities (C.2)
 
 **Priority:** Must
-**Status:** In progress
+**Status:** Complete (2026-10-15)
 **Acceptance:**
 
-- A passive friendly base produces defenders when damaged and repairs the player on its landing pad
-- A radar station entity acts as a network node
+- A base that has been hit in the last `BASE_UNDER_ATTACK_WINDOW` seconds launches allied Fighter defenders, up to `BASE_DEFENDER_MAX` per base. Defenders engage hostiles within `BASE_DEFENDER_LEASH` of home and land (despawn) when none remain
+- Each base stands on a raised 36 m landing platform (`BASE_PAD_HALF_SIZE`, `BASE_PAD_HEIGHT`) on levelled terrain with decorations cleared, with the control tower at its NE corner. The south and east sides get a ramp wherever they stand above the adjacent ground. Collectors reach and leave the platform only by those ramps, detouring around the platform when needed. A player docked anywhere on the platform (landed, or hovering below `BASE_PAD_HOVER_AGL` at under `BASE_PAD_HOVER_SPEED`) is repaired continuously and fully rearmed after `BASE_PAD_REARM_TIME`. The HUD shows ON PAD
+- A radar station entity exists as a network node, ready for C.4
+- Defenders and pads work in both game modes. Base-mode placement uses bases and radar stations, with no Repair Stations or Radar Boosters
+- Enemy fire can damage friendly structures and allied ships ([BUG-026](BUGS.md#bug-026-enemy-fire-never-damages-friendly-structures-or-allied-ships))
+- Fighters, Drones and Tanks attack a nearby friendly instead of the player when it is closer (`ENEMY_FRIENDLY_PRIORITY`). A fixed share of them (`ENEMY_RAIDER_PERCENT`, "raiders") always prefer friendlies in range. Landers deploy drones when any friendly is in range
 
-**Notes:** Only base placement exists so far (8 bases, 2× boosters, `9380ffb`).
+**Notes:** [D-030](DECISIONS.md#d-030-base-defenders-reuse-the-allied-fighter-path-pads-replace-repair-stations-in-base-mode). The radar station renders procedurally until an OBJ and sidecar are authored. Losing all bases (not every friendly) ends a Base-mode round.
 
 ### F-022 Lander entity (C.3)
 

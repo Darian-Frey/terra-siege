@@ -57,6 +57,11 @@ public:
 
   // Clear all instances — called by Planet regeneration paths.
   void clear() { m_items.clear(); }
+  // Remove decorations inside a square (toroidal), e.g. a base apron, and
+  // re-seat those inside the larger `reseatHalf` square onto the current
+  // terrain (after Planet::flattenPad has reshaped the ground there).
+  void clearSquare(const Planet &planet, float x, float z, float half,
+                   float reseatHalf);
   size_t count() const { return m_items.size(); }
 
 private:

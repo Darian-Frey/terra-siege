@@ -33,6 +33,10 @@ public:
 
   float get(int x, int z) const;        // wraps toroidally
   float sample(float x, float z) const; // bilinear, wraps toroidally
+  // Flatten a square (Chebyshev radius `half` cells) around (cx, cz) to
+  // `target`, ramping back to the original heights over `blend` cells.
+  // Coordinates in heightmap cells; wraps toroidally.
+  void flattenSquare(float cx, float cz, float half, float blend, float target);
   WaterType waterAt(int x, int z) const;
 
   int size() const { return m_size; }

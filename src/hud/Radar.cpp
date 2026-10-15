@@ -31,7 +31,8 @@ BlipType blipTypeFromEntity(EntityType t) {
   case EntityType::GroundTurret: return BlipType::Turret;
   case EntityType::Collector:
   case EntityType::RepairStation:
-  case EntityType::RadarBooster: return BlipType::Friendly;
+  case EntityType::RadarBooster:
+  case EntityType::RadarStation: return BlipType::Friendly;
   case EntityType::Base:         return BlipType::Base;
   default:                       return BlipType::Fighter;
   }
@@ -112,6 +113,10 @@ void Radar::update(float dt, const EntityManager &entities, Vector3 playerPos,
 
     BlipType bt = blipTypeFromEntity(e.type);
     Color col = baseColourForBlip(bt);
+    // Allied ships (infected, or base defenders) keep their shape but
+    // read as friendly.
+    if (e.aiState == AIState::Infected || e.aiState == AIState::Infecting)
+      col = COL_FRIENDLY;
 
     RadarContact c;
     c.position = ps.pos;

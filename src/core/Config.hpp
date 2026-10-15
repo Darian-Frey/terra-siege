@@ -373,6 +373,15 @@ constexpr float AI_ATTACK_RANGE = 60.0f;
 // of fizzling out mid-air. aiAttackRange still governs when a ship
 // commits (eases throttle, lines up); this governs the trigger.
 constexpr float ENEMY_FIRE_RANGE_FRAC = 0.9f;
+// Fighters, Drones and Tanks go after the nearest friendly (structure or
+// allied ship) inside their detection range instead of the player when
+// it is closer than the player × this. Bombers use their own, stronger
+// BOMBER_FRIENDLY_PRIORITY.
+constexpr float ENEMY_FRIENDLY_PRIORITY = 0.9f; // TUNE
+// Raiders — this share of Fighters / Drones / Tanks (fixed per ship by
+// id) always prefer a friendly inside their detection range, so bases
+// and collectors visibly come under attack even with the player near.
+constexpr int ENEMY_RAIDER_PERCENT = 35; // TUNE
 constexpr float AI_EVADE_HEALTH = 0.25f; // fraction
 constexpr float SPATIAL_CELL_SIZE = 60.0f;
 
@@ -656,7 +665,40 @@ constexpr float BASE_TURRET_AIM_RATE = 2.2f;      // rad/s rotation
 constexpr float BASE_TURRET_FIRE_RATE = 0.45f;    // sec between shots
 constexpr float BASE_TURRET_DAMAGE = 7.0f;        // per shot (15 DPS)
 constexpr float BASE_TURRET_FIRE_CONE = 0.12f;    // ~14° fire cone
-constexpr float BASE_TURRET_BARREL_HEIGHT = 5.0f; // muzzle Y above base pos
+constexpr float BASE_TURRET_BARREL_HEIGHT = 5.0f; // muzzle Y above the platform top
+
+// Slice C C.2 — Base Defence mode friendly-base behaviour. Bases are
+// passive infrastructure: when hit they launch a few allied Fighter
+// defenders, and a landed player on the pad is repaired and rearmed.
+// Applies in both game modes.
+constexpr float BASE_UNDER_ATTACK_WINDOW = 8.0f;  // s since last hit = "under attack"
+constexpr int BASE_DEFENDER_MAX = 3;              // TUNE — live defenders per base
+constexpr float BASE_DEFENDER_LAUNCH_INTERVAL = 1.5f; // TUNE — s between launches
+constexpr float BASE_DEFENDER_LAUNCH_HEIGHT = 10.0f;  // spawn this far above the pad
+constexpr float BASE_DEFENDER_LEASH = 260.0f;     // TUNE — only engage enemies this close to home
+constexpr float BASE_DEFENDER_LAND_DIST = 14.0f;  // horizontal distance to "land" (despawn)
+// Landing apron: a flattened square of terrain under every base, 4× the
+// original 9 m pad. Docking anywhere on the square counts.
+constexpr float BASE_PAD_HALF_SIZE = 18.0f;       // half-width of the apron (36 m square)
+constexpr float BASE_PAD_BLEND = 10.0f;           // terrain blend back to natural ground
+constexpr float BASE_PAD_HEIGHT = 1.5f;           // TUNE — platform top above the levelled ground
+constexpr float BASE_TOWER_OFFSET = 14.0f;        // tower centre from pad centre, +X (east) and +Z (north)
+// Ramps on the south and east sides let Collectors drive up onto the
+// platform. Added where that side stands at least BASE_RAMP_MIN_RISE
+// above the ground beside it.
+constexpr float BASE_RAMP_LENGTH = 8.0f;          // TUNE — horizontal run
+constexpr float BASE_RAMP_WIDTH = 8.0f;           // TUNE
+constexpr float BASE_RAMP_MIN_RISE = 0.3f;
+constexpr float COLLECTOR_ROUTE_RADIUS = 2.5f;    // arrival radius for ramp route waypoints
+constexpr float BASE_PAD_HOVER_AGL = 8.0f;        // low hover counts as docked below this height…
+constexpr float BASE_PAD_HOVER_SPEED = 5.0f;      // …when also slower than this (m/s)
+constexpr float BASE_PAD_REPAIR_RATE = 12.0f;     // TUNE — hull HP / sec while on the pad
+constexpr float BASE_PAD_REARM_TIME = 2.5f;       // TUNE — s on the pad to restock all ammo
+
+// Slice C C.2 — radar station: passive network node (C.4 adds the
+// link graph). Taller and tougher than the Wave-mode Radar Booster.
+constexpr float RADAR_STATION_HULL = 160.0f;
+constexpr float RADAR_STATION_DISH_SPIN = 0.9f;   // rad/s, visual only
 
 constexpr float REPAIR_STATION_HULL = 90.0f;
 constexpr float REPAIR_STATION_HEAL_RADIUS = 30.0f; // player needs to be close
@@ -678,6 +720,11 @@ constexpr float FRIENDLY_SPAWN_MIN_DIST = 40.0f; // keep them separated
 // the map rather than clumping on one patch of grass.
 constexpr float FRIENDLY_SPAWN_SPREAD_DIST = 500.0f;
 constexpr float FRIENDLY_SPAWN_MAX_SLOPE = 0.30f; // rise per metre
+// Base Defence mode friendly layout (C.1/C.2). Bases include the anchor
+// base beside the player. Radar stations replace boosters and pad repair
+// replaces Repair Stations in this mode.
+constexpr int BASE_MODE_BASE_COUNT = 8;          // TUNE — C.8 makes this per-difficulty
+constexpr int BASE_MODE_RADAR_STATION_COUNT = 6; // TUNE
 
 // Bomber engagement of friendlies — preference threshold. If the
 // nearest friendly is closer than (dist to player × FRIENDLY_PRIORITY),
@@ -710,6 +757,7 @@ constexpr float HIT_RADIUS_COLLECTOR = 2.4f;
 constexpr float HIT_RADIUS_REPAIR = 3.0f;
 constexpr float HIT_RADIUS_BOOSTER = 2.8f;
 constexpr float HIT_RADIUS_BASE = 4.5f;
+constexpr float HIT_RADIUS_RADAR_STATION = 3.2f;
 constexpr float HIT_RADIUS_PLAYER = 2.0f;
 
 // ----------------------------------------------------------------

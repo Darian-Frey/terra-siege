@@ -135,10 +135,7 @@ int WaveManager::aliveEnemyCount(const EntityManager &entities) const {
   for (const Entity &e : entities.entities()) {
     if (!e.alive) continue;
     if (e.type == EntityType::Projectile) continue;
-    if (e.type == EntityType::Collector ||
-        e.type == EntityType::RepairStation ||
-        e.type == EntityType::RadarBooster ||
-        e.type == EntityType::Base)
+    if (isFriendlyStructure(e.type))
       continue; // friendlies don't count toward wave-clear
     ++n;
   }

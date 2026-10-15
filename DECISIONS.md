@@ -843,3 +843,46 @@ Undo is held at inspector level as full-mesh snapshots (32 deep) and is shared a
 **Consequences.** None.
 
 **Reversal conditions.** Add CLAIMS.md if the project starts asserting measurable properties outside feature acceptance, such as performance figures published in the README.
+
+### D-030 Base defenders reuse the allied-Fighter path; pads replace Repair Stations in Base mode
+
+**Decided:** 2026-10-15
+**Recorded:** 2026-10-15
+**Status:** Accepted
+**Authors:** Shane Hartley (with Claude Code)
+**Related:** F-021, F-023, D-020, D-023, [BUG-026](BUGS.md#bug-026-enemy-fire-never-damages-friendly-structures-or-allied-ships)
+
+**Context.** C.2 needs friendly bases that launch defenders when attacked, repair and rearm a docked player, and a radar station entity for the C.4 network. The codebase had no friendly-ship concept apart from infected ships. Allegiance was decided by copied hard-coded type lists.
+
+**Options.**
+
+- **A. A new `Defender` AI state or faction field, with its own targeting and firing.** Rejected: it duplicates the allied-ship path, and every allegiance check would need a third case.
+- **B. Reuse the Infected (allied) Fighter path, with a `homeBaseId` field.** Chosen. It already provides allied targeting, player-owned shots, auto-aim exemption, a green tint, and now green radar blips.
+- **Repair:** keep Repair Stations in Base mode, or move repair to base landing pads as the v2 design says. Pads were chosen.
+
+**Decision.**
+
+- **Defenders.** A defender is a Fighter spawned in `AIState::Infected` with `homeBaseId` set. Compared with an infected ship, it:
+  - doesn't bleed hull;
+  - engages only hostiles within `BASE_DEFENDER_LEASH` of its launch point;
+  - flies home and despawns when nothing is in range.
+- **Launching.** A base launches defenders while `timeSinceHit` < `BASE_UNDER_ATTACK_WINDOW`, at most `BASE_DEFENDER_MAX` alive per base.
+- **Landing pads.** A landed player within `BASE_PAD_RADIUS` is healed, then rearmed after `BASE_PAD_REARM_TIME`.
+- **Base-mode placement.** Base mode places Bases and RadarStations only. Repair Stations and Radar Boosters are Wave-mode entities.
+- **Allegiance.** Friendly structures are defined once, in `isFriendlyStructure()`.
+- **Loss condition.** Base mode is lost when all *bases* fall (`liveDefendedCount`).
+- **Modes.** Defenders and pads apply in both game modes. Docking counts as either landing or hovering low and slow over the pad.
+- **Landing platform.** Each base stands on a 36 m platform raised `BASE_PAD_HEIGHT` above levelled ground, with the tower at the NE corner. Ramps on the south and east sides, where that side stands above the ground beside it, are the only way Collectors get on or off: they follow waypoint routes (approach, ramp top, centre) through `surfaceHeightAt()`, with a corner detour when a direct leg would cross the platform. The terrain under it is levelled: `Planet::flattenPad` levels the terrain to the footprint's mean height with a 10 m blend and rebuilds the affected chunks; `Decorations::clearSquare` clears the site. This keeps landing physics, ground vehicles and the camera on a real flat surface, rather than a slab floating over a slope.
+- **Enemy aggression.** Fighters, Drones and Tanks pick their target with `hostileTargetFor()`. Raiders (`ENEMY_RAIDER_PERCENT`, fixed per ship by id) always prefer a friendly in range. Everyone else uses the nearest friendly structure or allied ship inside their detection range when it is closer than the player × `ENEMY_FRIENDLY_PRIORITY`, otherwise the player. Landers deploy when any friendly is in range. Bombers keep their own strafe logic.
+
+**Consequences.**
+
+- Making bases attackable exposed [BUG-026](BUGS.md#bug-026-enemy-fire-never-damages-friendly-structures-or-allied-ships): enemy shots never hit friendlies. That fix applies in both modes, so Wave mode is harder too.
+- Without the aggression rule, playtesting (2026-10-15) found that bases were never attacked and defenders never launched. With it, attacks spread across the map, and Wave mode is harder because Collectors and the home Base now come under deliberate fire.
+- Defenders are counted in `m_liveEnemies` and in WaveManager's alive count, like infected ships. This is harmless in Base mode, which has no waves.
+- C.6 (infection v2) must keep defenders (`homeBaseId != 0`) distinct from infected ships.
+
+**Reversal conditions.**
+
+- Give defenders their own state if they need behaviour the infected path can't express, such as formation flying or escorting the player.
+- Bring Repair Stations back to Base mode if pad-only repair makes the map feel too sparse.

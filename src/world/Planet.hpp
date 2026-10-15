@@ -48,6 +48,12 @@ public:
     return p;
   }
 
+  // Flatten a square landing area centred on (worldX, worldZ) to its mean
+  // height, blend the edges back into the terrain, and rebuild the
+  // affected chunks. Returns the flattened world height. Load-time only
+  // (re-uploads chunk meshes).
+  float flattenPad(float worldX, float worldZ, float halfSize, float blend);
+
   // True when (x, z) is in the green grassland biome band.
   bool isGrassland(float worldX, float worldZ) const;
 

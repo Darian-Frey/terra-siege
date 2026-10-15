@@ -17,7 +17,7 @@ A C++17 / raylib 5.0 remake of *Virus* (Argonaut, 1988) for Linux: Newtonian hov
 - `src/core/GameState.*`: working. App state machine, Wave/Base modes, five cameras (ThreatLock stubbed, [BUG-004](BUGS.md#bug-004-threatlock-camera-view-is-a-stub)), menus, loadout, HUD drawing, friendly placement, win/loss. About 3,100 lines.
 - `src/core/Config.hpp`: working. Every constant. Difficulty preset tables exist but are unused (F-027).
 - `src/entity/Player.*`: working. Flight, assist, shields, weapon selection. Has [BUG-005](BUGS.md#bug-005-holding-q-or-e-to-select-a-laser-colour-suppresses-auto-level-roll).
-- `src/entity/EntityManager.*`: working. Pools, all AI, projectiles, damage, infection v1, Lander (first cut). Distances are not wrap-aware ([BUG-007](BUGS.md#bug-007-ai-collision-and-radar-distances-ignore-the-toroidal-wrap)).
+- `src/entity/EntityManager.*`: working. Pools, all AI, projectiles, damage, infection v1, Lander (first cut), C.2 base defenders, landing pads and radar stations (procedural render; no OBJ yet). Distances are not wrap-aware ([BUG-007](BUGS.md#bug-007-ai-collision-and-radar-distances-ignore-the-toroidal-wrap)).
 - `src/world/*`: working. Perlin terrain, lakes, decorations, wrap-aware rendering. Rivers disabled (F-003). `SkyDome` is empty.
 - `src/hud/Radar.*`: working pulse radar. Range semantics are open ([BUG-001](BUGS.md#bug-001-radar-shows-every-entity-on-the-map-regardless-of-range), [BUG-002](BUGS.md#bug-002-one-radar-booster-anywhere-boosts-radar-range-globally)).
 - `src/audio/AudioManager.*`: working. No engine loop yet.
@@ -29,16 +29,17 @@ A C++17 / raylib 5.0 remake of *Virus* (Argonaut, 1988) for Linux: Newtonian hov
 
 ## Active task
 
-**Slice C, sub-slice C.2: friendly base and radar station entities (F-021).** Design: [project-status/base_mode_v2.md](project-status/base_mode_v2.md) §"Friendly base (simplified)".
+**Slice C, sub-slice C.4: radar network (F-023).** Design: [project-status/base_mode_v2.md](project-status/base_mode_v2.md), §"Radar network". C.2 (bases, defenders, pads, radar stations) landed on 2026-10-15.
+
+**First, a decision to ask the user about:** the player's personal radar range. The design says about 150 m; today it is 300 m. This also changes what the pulse radar sweep represents.
 
 **Acceptance:**
 
-- The friendly Base becomes passive: it spawns defenders when attacked and repairs the player on its landing pad
-- A radar station entity exists as a network node, ready for C.4 (F-023)
-- Base-mode placement uses the new entities. Wave mode is unchanged
-- FEATURES F-021 and ROADMAP Slice C are updated in the same commit
-
-Settle radar range semantics ([BUG-001](BUGS.md#bug-001-radar-shows-every-entity-on-the-map-regardless-of-range)) before starting C.4.
+- Bases and radar stations within `NETWORK_LINK_RANGE` form clusters that share detection
+- The player's personal radar always works at short range; network-only contacts are drawn differently
+- Areas outside all coverage are fogged on the radar disc
+- Resolves [BUG-001](BUGS.md#bug-001-radar-shows-every-entity-on-the-map-regardless-of-range) and [BUG-002](BUGS.md#bug-002-one-radar-booster-anywhere-boosts-radar-range-globally) for Base mode
+- FEATURES F-023 and ROADMAP Slice C updated in the same commit
 
 ## Architectural invariants
 

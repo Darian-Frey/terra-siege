@@ -32,6 +32,7 @@ enum class EntityType : uint8_t {
   RepairStation,
   RadarBooster,
   Base, // delivery destination for Collectors; counts as friendly
+  RadarStation, // Slice C C.2 — Base-mode radar network node
   // Other
   Projectile,
 };
@@ -271,4 +272,28 @@ struct Entity {
   // to AIState::Infected.
   bool canBeInfected = false;
   float infectionTimer = 0.0f;
+
+  // Slice C C.2 — id of the friendly Base that launched this ship as a
+  // defender (0 = not a defender). Defenders fly the allied (Infected)
+  // AI path but don't bleed, stay leashed to spawnPos, and land back at
+  // their base when nothing is in range.
+  uint32_t homeBaseId = 0;
+
+  // Base platforms (C.2): bit 0 = south ramp, bit 1 = east ramp.
+  uint8_t rampMask = 0;
+  // Collector ramp routing: current route step, chosen ramp (0 south,
+  // 1 east), and a detour corner when the direct line would cross the
+  // platform.
+  uint8_t routeStep = 0;
+  uint8_t routeRamp = 0;
+  Vector3 routePoint = {0, 0, 0};
 };
+
+// Friendly ground structures and support units — never hostile, never
+// auto-aim targets, don't count toward wave clear. One list so a new
+// friendly type only needs adding here.
+inline bool isFriendlyStructure(EntityType t) {
+  return t == EntityType::Collector || t == EntityType::RepairStation ||
+         t == EntityType::RadarBooster || t == EntityType::Base ||
+         t == EntityType::RadarStation;
+}

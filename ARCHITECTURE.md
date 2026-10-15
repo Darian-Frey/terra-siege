@@ -62,9 +62,9 @@ main.cpp ── Clock accumulator (FIXED_DT = 1/120 s, capped at MAX_FRAME_TIME)
 | `world/Planet` | Owns the heightmap and 16×16 `TerrainChunk`s. `generate(seed, ProgressCb)`. Wrapped `heightAt()`. Draws each chunk at the copy nearest the camera. `nearestCopy()`, `isGrassland()`. World size is 1024 × `TERRAIN_SCALE` (about 8192 units). |
 | `world/TerrainChunk` | Flat-shaded chunk mesh with per-face colour from the `BIOME_*` bands and water types. |
 | `world/Decorations` | Visual-only trees, rocks, antennas and crash sites. Noise-mask and biome-gated placement. Distance-culled at 800 and drawn at the nearest toroidal copy. |
-| `entity/Entity.hpp` | One type-tagged `Entity` struct (`EntityType`, `DamageType`, `ProjectileOwner`, AI/FX/infection fields). |
+| `entity/Entity.hpp` | One type-tagged `Entity` struct (`EntityType`, `DamageType`, `ProjectileOwner`, AI/FX/infection fields, `homeBaseId`). `isFriendlyStructure()` is the single allegiance list for friendly structures. |
 | `entity/Player` | Hovercraft input, Newtonian physics, flight assist, 4-sector shields, thrust charge, weapon selection state, render. About 1,170 lines. |
-| `entity/EntityManager` | Fixed pools (256 entities, 512 projectiles). All enemy and friendly AI, projectile and missile guidance, collision, damage routing (`applyDamage`, `applyShieldHit`), infection, sidecar lookups at spawn, wrap-aware render. About 3,400 lines. |
+| `entity/EntityManager` | Fixed pools (256 entities, 512 projectiles). All enemy and friendly AI (including Base-mode defenders, landing pads and radar stations), projectile and missile guidance, collision, damage routing (`applyDamage`, `applyShieldHit`), infection, sidecar lookups at spawn, wrap-aware render. About 3,400 lines. |
 | `hud/Radar` | Pulse radar: IFF blip shapes, altitude strip, per-slot echo state, ghost-blip pool (32), missile warnings, Carrier jamming. |
 | `shield/ShieldRenderer` | `shieldfx` impact-cap visuals for the player and shielded entities. |
 | `audio/AudioManager` | Procedural SFX synthesis at startup, alias pools, `play3D`/`play2D` with manual pan and falloff. |
@@ -100,6 +100,7 @@ Their responsibilities live in `GameState` and `EntityManager`.
 - **Toroidal wrap everywhere.** Player coordinates are unbounded. Height queries wrap internally, and world-fixed objects draw at `Planet::nearestCopy()` ([D-007](DECISIONS.md#d-007-unwrapped-player-coordinates-on-a-toroidal-world), [AV-005](ATTACK_VECTORS.md#av-005-world-fixed-objects-drawn-or-measured-without-the-toroidal-wrap)). Gameplay distances are not yet wrap-aware ([BUG-007](BUGS.md#bug-007-ai-collision-and-radar-distances-ignore-the-toroidal-wrap)).
 - **Coordinate system.** +X east, +Y up, +Z north (forward). Yaw 0 faces +Z and increases clockwise. The world origin is the heightmap corner.
 - **Camera.** Every view clamps above the terrain ([AV-004](ATTACK_VECTORS.md#av-004-camera-clips-below-terrain)). Tactical uses `up = {0, 0, 1}`. The far plane is overridden to 3000 ([AV-013](ATTACK_VECTORS.md#av-013-raylib-name-and-default-collisions)).
+- **Allegiance.** Friendly structures come from `isFriendlyStructure()`. Allied ships are those in `AIState::Infected`/`Infecting` (infected ships and base defenders). Player shots skip friendlies. Enemy shots hit friendlies, allied ships and the player.
 - **Data sources.** Tuning constants live in `Config.hpp`. Per-entity stats come from sidecars, falling back to Config ([D-011](DECISIONS.md#d-011-sidecar-entity-profiles-by-default-registry-override-later)).
 - **Meshes.** OBJ is the mesh source of truth. Normals are recomputed at load and colour comes from palette material names ([D-009](DECISIONS.md#d-009-obj-text-format-as-the-single-mesh-source-of-truth), [D-010](DECISIONS.md#d-010-32-colour-palette-via-obj-material-names)).
 
