@@ -66,6 +66,10 @@ void Radar::update(float dt, const EntityManager &entities, Vector3 playerPos,
                    float playerYaw, float gameTime) {
   m_playerPos = playerPos;
   m_playerYaw = playerYaw;
+  // Pulse window for this tick. First tick has an empty window so the
+  // screen starts dark and fills in as the first pulse sweeps out.
+  const float t0 = m_prevGameTime < 0.0f ? gameTime : m_prevGameTime;
+  m_prevGameTime = gameTime;
   m_gameTime = gameTime;
   // 5g: a live RadarBooster friendly bumps the disc range to
   // RADAR_BOOST_RANGE. Border tint also flips green via boosted().
@@ -78,7 +82,9 @@ void Radar::update(float dt, const EntityManager &entities, Vector3 playerPos,
   // RADAR_JAM_RANGE, jamFactor lerps 0 → 1 as the player closes.
   // Friendlies and other enemy types don't jam.
   float carrierDist = 1e9f;
-  for (const Entity &e : entities.entities()) {
+  const auto &pool = entities.entities();
+  for (size_t i = 0; i < pool.size(); ++i) {
+    const Entity &e = pool[i];
     if (!e.alive) continue;
     if (e.type == EntityType::Projectile) continue;
 
@@ -90,15 +96,30 @@ void Radar::update(float dt, const EntityManager &entities, Vector3 playerPos,
     Vector3 d = Vector3Subtract(e.pos, playerPos);
     float horiz = sqrtf(d.x * d.x + d.z * d.z);
 
+    // Paint when the pulse front sweeps past this contact. Contacts
+    // beyond range sit on the rim, so they paint as the ring arrives
+    // there. Between pulses the echo stays where it was painted.
+    PaintState &ps = m_paint[i];
+    if (ps.id != e.id) ps = PaintState{e.id};
+    float frac = std::min(horiz / m_activeRange, 1.0f);
+    if (pulseCrossed(frac, t0, gameTime)) {
+      ps.painted = true;
+      ps.pos = e.pos;
+      ps.vel = e.vel;
+      ps.time = gameTime;
+    }
+    if (!ps.painted) continue;
+
     BlipType bt = blipTypeFromEntity(e.type);
     Color col = baseColourForBlip(bt);
 
     RadarContact c;
-    c.position = e.pos;
-    c.velocity = e.vel;
+    c.position = ps.pos;
+    c.velocity = ps.vel;
     c.blipType = bt;
     c.distance = horiz;
-    c.altDelta = e.pos.y - playerPos.y;
+    c.altDelta = ps.pos.y - playerPos.y;
+    c.paintAge = gameTime - ps.time;
     c.colour = col;
     c.id = e.id;
     m_contacts.push_back(c);
@@ -320,6 +341,8 @@ void Radar::drawDisc(Vector2 centre, float radius) const {
   DrawCircleLinesV(centre, radius * Config::RADAR_OUTER_RING_FRAC,
                    {60, 120, 60, 70});
 
+  drawPulse(centre, radius);
+
   Color borderCol = m_boosted ? Color{80, 220, 100, 255}
                               : Color{40, 120, 55, 200};
   DrawCircleLinesV(centre, radius, borderCol);
@@ -331,6 +354,23 @@ void Radar::drawDisc(Vector2 centre, float radius) const {
   DrawLine(static_cast<int>(centre.x), static_cast<int>(centre.y) - 4,
            static_cast<int>(centre.x), static_cast<int>(centre.y) + 4,
            COL_PLAYER);
+}
+
+// ====================================================================
+// Pulse ring — expands centre → rim over RADAR_PULSE_SWEEP_TIME, then
+// the screen rests until the next pulse. A soft trailing band behind
+// the bright front gives the classic phosphor-wave look.
+// ====================================================================
+void Radar::drawPulse(Vector2 centre, float radius) const {
+  float phase = fmodf(m_gameTime, Config::RADAR_PULSE_PERIOD);
+  if (phase >= Config::RADAR_PULSE_SWEEP_TIME) return;
+  float t = phase / Config::RADAR_PULSE_SWEEP_TIME;
+  float r = t * radius;
+  unsigned char a = clampU(230.0f * (1.0f - 0.6f * t));
+  DrawRing(centre, std::max(r - 10.0f, 0.0f), r, 0.0f, 360.0f, 64,
+           {80, 220, 100, static_cast<unsigned char>(a / 5)});
+  DrawRing(centre, std::max(r - 2.0f, 0.0f), r, 0.0f, 360.0f, 64,
+           {140, 255, 160, a});
 }
 
 // ====================================================================
@@ -365,6 +405,7 @@ void Radar::drawAltitudeStrip(Vector2 stripTopLeft, float height,
     float dotY = midY - altT * (height * 0.45f);
     float dotX = stripTopLeft.x + width * 0.5f;
     Color tinted = altitudeTint(c.colour, c.altDelta);
+    tinted.a = clampU(tinted.a * paintFade(c.paintAge));
     DrawCircleV({dotX, dotY}, 2.5f, tinted);
   }
 }
@@ -376,12 +417,10 @@ void Radar::drawAltitudeStripOnly(Vector2 stripTopLeft, float height,
 
 // ====================================================================
 // Per-blip dispatch — shape selected by enemy type, colour from IFF +
-// altitude tint, visibility gated by proximity-pulse blink.
+// altitude tint + pulse fade.
 // ====================================================================
-void Radar::drawBlip(Vector2 radarPos, float distance, BlipType type,
-                     Color col, Vector3 velocity, float playerYaw) const {
-  if (!blipVisibleNow(distance, m_gameTime)) return;
-
+void Radar::drawBlip(Vector2 radarPos, BlipType type, Color col,
+                     Vector3 velocity, float playerYaw) const {
   switch (type) {
   case BlipType::Drone:    DrawCircleV(radarPos, 2.0f, col); break;
   case BlipType::Seeder:   DrawCircleV(radarPos, 3.0f, col); break;
@@ -463,9 +502,10 @@ void Radar::draw(Vector2 discCentre, float discRadius) const {
     rp = applyJam(rp, c.id);
 
     Color tinted = altitudeTint(c.colour, c.altDelta);
+    tinted.a = clampU(tinted.a * paintFade(c.paintAge));
     // Velocity arrow first so the blip shape sits on top of its tail.
     drawVelocityArrow(rp, c.velocity, m_playerYaw, tinted);
-    drawBlip(rp, c.distance, c.blipType, tinted, c.velocity, m_playerYaw);
+    drawBlip(rp, c.blipType, tinted, c.velocity, m_playerYaw);
   }
 
   // Incoming-missile warning arrows on the rim.
@@ -492,18 +532,23 @@ Color Radar::altitudeTint(Color base, float altDelta) {
 }
 
 // ====================================================================
-// Pulse-blink — period interpolated by distance. Closer blips blink
-// faster (alarming); distant blips pulse slowly. Visible for 60% of
-// each cycle.
+// Pulse timing. The front reaches radius fraction f at times
+// k * PERIOD + f * SWEEP_TIME; find the latest such time <= t1 and
+// check it falls inside the window.
 // ====================================================================
-bool Radar::blipVisibleNow(float distance, float gameTime) {
-  float t = (distance - Config::RADAR_BLINK_NEAR) /
-            (Config::RADAR_BLINK_FAR - Config::RADAR_BLINK_NEAR);
-  if (t < 0.0f) t = 0.0f;
+bool Radar::pulseCrossed(float f, float t0, float t1) {
+  const float offset = f * Config::RADAR_PULSE_SWEEP_TIME;
+  float k = floorf((t1 - offset) / Config::RADAR_PULSE_PERIOD);
+  float hit = k * Config::RADAR_PULSE_PERIOD + offset;
+  return hit > t0;
+}
+
+// Echo brightness — full when painted, fading linearly to
+// RADAR_PAINT_MIN_ALPHA by the time the next pulse repaints it.
+float Radar::paintFade(float age) {
+  float t = age / Config::RADAR_PULSE_PERIOD;
   if (t > 1.0f) t = 1.0f;
-  float period = Config::RADAR_BLINK_FAST +
-                 t * (Config::RADAR_BLINK_SLOW - Config::RADAR_BLINK_FAST);
-  return fmodf(gameTime, period) < period * 0.6f;
+  return 1.0f - t * (1.0f - Config::RADAR_PAINT_MIN_ALPHA);
 }
 
 // ====================================================================

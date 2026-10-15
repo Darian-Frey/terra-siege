@@ -12,7 +12,10 @@ class EntityManager;
 // Radar — tactical situational-awareness display.
 //
 // Tier 1 (this file): disc + altitude strip + IFF blips with shape per
-// enemy type + proximity pulse blink. Roadmap calls out Tier 1 as
+// enemy type. Old-style pulse radar: every RADAR_PULSE_PERIOD a ring
+// expands from the centre; each contact is painted at its position at
+// the moment the ring reaches it, then fades until the next pulse.
+// Missile warnings stay real-time. Roadmap calls out Tier 1 as
 // MANDATORY before any multi-enemy wave testing — the player can't
 // fight what they can't see, and altitude info is the limiting cue
 // in 3D combat.
@@ -45,6 +48,7 @@ struct RadarContact {
   BlipType blipType = BlipType::Fighter;
   float distance = 0.0f;
   float altDelta = 0.0f; // contact.y - player.y
+  float paintAge = 0.0f; // seconds since the pulse last painted it
   Color colour = WHITE;
   uint32_t id = 0;       // entity ID — used as jitter seed in Tier 3
   int spawnedCount = 0;  // Carrier drone count label (Tier 2)
@@ -88,8 +92,9 @@ private:
   void drawDisc(Vector2 centre, float radius) const;
   void drawAltitudeStrip(Vector2 stripTopLeft, float height,
                          float width) const;
-  void drawBlip(Vector2 radarPos, float distance, BlipType type, Color col,
+  void drawBlip(Vector2 radarPos, BlipType type, Color col,
                 Vector3 velocity, float playerYaw) const;
+  void drawPulse(Vector2 centre, float radius) const;
 
   // Ego-centric coordinate transform — rotates world XZ by -playerYaw
   // so the player's nose direction is always "up" on the disc.
@@ -105,8 +110,11 @@ private:
   // Altitude-relative tint — brighter above, darker below.
   static Color altitudeTint(Color base, float altDelta);
 
-  // Pulse-blink helper — true while blip should be visible this tick.
-  static bool blipVisibleNow(float distance, float gameTime);
+  // True when the pulse front passed radius fraction f (0 = centre,
+  // 1 = rim) during the time window (t0, t1].
+  static bool pulseCrossed(float f, float t0, float t1);
+  // Alpha multiplier for a blip painted `age` seconds ago.
+  static float paintFade(float age);
 
   // Per-tick state
   std::vector<RadarContact> m_contacts;
@@ -115,6 +123,18 @@ private:
   float m_playerYaw = 0.0f;
   float m_activeRange = Config::RADAR_BASE_RANGE;
   float m_gameTime = 0.0f;
+  float m_prevGameTime = -1.0f; // < 0 until the first update
+
+  // Last pulse echo per entity-pool slot. id detects slot reuse so a
+  // newly spawned entity stays dark until the pulse reaches it.
+  struct PaintState {
+    uint32_t id = 0;
+    bool painted = false;
+    Vector3 pos{};
+    Vector3 vel{};
+    float time = 0.0f;
+  };
+  std::array<PaintState, Config::ENTITY_POOL_SIZE> m_paint{};
 
   bool m_boosted = false; // wired to RadarBooster friendly when alive
 
