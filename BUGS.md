@@ -223,6 +223,38 @@ The register was created on 2026-10-15 ([D-001](DECISIONS.md#d-001-adopt-the-dev
 - The pitch ladder is scissor-clipped below y=116.
 - The speed and altitude tapes moved 24 px right.
 
+### BUG-022: Nose crosshair can draw over the heading tape and wave banners
+
+**Status:** fixed (2026-10-15)
+**Found:** 2026-10-15 (HUD layout check after BUG-021)
+**Location:** [src/core/GameState.cpp](src/core/GameState.cpp) `drawFlightHUD()` nose / weapons crosshair
+**Severity:** low
+**Description.** The aim crosshair is projected from a point 30 m ahead of the nose and drawn wherever that lands on screen, without clipping. In chase view it often lands near the top of the screen, on top of the heading tape and the WAVE / FRIENDLIES banners.
+**Reproduction.** Chase view (1), level flight. The circle-and-cross marker appears at about y = 40–70 at 1280×720.
+**Notes.** Fixed 2026-10-15: the flight HUD now draws before the status banners, and the crosshair and FPV are scissor-clipped to the play area below `kHudTopStackBottom`, matching the pitch ladder. Whether the 30 m projection is itself right is still unverified. Original options considered: clip it like the pitch ladder; draw the banners after the flight HUD so they sit on top; or check whether the 30 m projection distance is what's intended. The crosshair should mark where shots go, and a projection that sits that high may itself be off.
+
+
+### BUG-023: DEV hotkey labels overlap the controls hint text
+
+**Status:** fixed (2026-10-15)
+**Found:** 2026-10-15 (HUD layout check after BUG-021)
+**Location:** [src/core/GameState.cpp](src/core/GameState.cpp) `drawHUD()` controls bar, `#ifdef DEV_MODE` key labels
+**Severity:** low
+**Description.** In DEV_MODE builds, the right-aligned `[DEV] F1:cam … F6:dump` labels are drawn on the same 28 px bar as the left-aligned player controls text. Since BUG-019 lengthened that text, the two overlap across the right half of the bar. Release builds are unaffected.
+**Reproduction.** Build with `-DDEV_MODE=ON` and start a round.
+**Notes.** Fixed 2026-10-15: in DEV builds the controls bar is two rows (`kControlsBarH` = 46): player hints on top, dev labels below. The bottom-left cluster and the radar stack from the bar's top edge. Original options: in DEV builds, give the dev labels their own strip; or hide the player hint text while the dev labels are shown.
+
+
+### BUG-024: Classic-view compass rose overlaps the radar
+
+**Status:** fixed (2026-10-15)
+**Found:** 2026-10-15 (HUD layout check after BUG-021)
+**Location:** [src/core/GameState.cpp](src/core/GameState.cpp) `drawClassicCompassRose()`
+**Severity:** low
+**Description.** In Classic view (5), the compass rose was drawn at a fixed bottom-right position (`sw − 50`, `sh − 95`). That is inside the radar disc, which Classic view also enlarges by 20%, and on top of the altitude strip.
+**Reproduction.** Press 5 during a round. The N/S/E/W rose sits on the radar's lower-right edge.
+**Notes.** Fixed 2026-10-15: moved to the top-left (64, 150), between the FPS counter and the SPD tape, which is free in both builds.
+
 ## Won't Fix
 
 _None._

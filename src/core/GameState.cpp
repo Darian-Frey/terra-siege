@@ -738,6 +738,17 @@ void GameState::handleDevKeys() {
 // ================================================================
 
 namespace {
+// Bottom controls bar. DEV builds add a second row for the hotkey labels
+// so they don't sit on top of the player control hints.
+#ifdef DEV_MODE
+constexpr int kControlsBarH = 46;
+#else
+constexpr int kControlsBarH = 28;
+#endif
+// The heading tape and wave/friendlies banners fill the top of the
+// screen down to about here. Flight-HUD symbology is clipped below it.
+constexpr int kHudTopStackBottom = 116;
+
 // Apply the standard terrain clamp: camera position is pushed up to be
 // at least 3.5 above the ground beneath it AND at least 2.0 above the
 // player. Used by every view that follows the player from above.
@@ -1803,7 +1814,7 @@ void GameState::drawHUD() const {
   // ---- Health bar (HULL) and thrust charge bar (THRUST), bottom-left ----
   // The whole bottom-left cluster stacks up from the top of the controls
   // bar so nothing slides underneath it.
-  const int ctrlBarTop = sh - 28;
+  const int ctrlBarTop = sh - kControlsBarH;
   const int bx = 12, bw = 160, bh = 14;
   const int thrustY = ctrlBarTop - 12 - bh;
   const int hullY = thrustY - 34;
@@ -2111,7 +2122,7 @@ void GameState::drawHUD() const {
   }
 
   // ---- Controls bar ----
-  DrawRectangle(0, sh - 28, sw, 28, {0, 0, 0, 140});
+  DrawRectangle(0, sh - kControlsBarH, sw, kControlsBarH, {0, 0, 0, 140});
 
   const char *controls =
       m_camMode == CamMode::Follow
@@ -2119,7 +2130,7 @@ void GameState::drawHUD() const {
             "Q/E: red/blue | Tab: primary | RMB/Z: secondary | "
             "F/X: special | T: turret | 1-5: view"
           : "WASD: fly  |  Q/E: up/down  |  Shift: fast  (F1: back to ship)";
-  drawHudText(controls, 12, sh - 20, 14, {180, 180, 180, 220});
+  drawHudText(controls, 12, sh - kControlsBarH + 8, 14, {180, 180, 180, 220});
 
 #ifdef DEV_MODE
   // Render dev key labels right-aligned with a fixed gap between tokens so
@@ -2166,6 +2177,12 @@ void GameState::drawHUD() const {
     drawHudText(tbuf, bx + 100, by + 10, 18, {255, 220, 220, 255});
   }
 #endif
+
+  // Wireframe flight HUD — visible in every camera view. Provides the
+  // attitude/heading/speed/FPV data a Newtonian pilot needs regardless
+  // of which camera is active. Toggled via Settings (m_settings.wireframeHUD).
+  // Drawn before the status banners so they stay readable on top of it.
+  if (m_settings.wireframeHUD) drawFlightHUD();
 
   // Wave status — small thin bar at top-centre showing the current
   // wave number plus either intermission countdown or remaining-
@@ -2297,11 +2314,6 @@ void GameState::drawHUD() const {
   drawTacticalShipArrow();
   drawClassicCompassRose();
 
-  // Wireframe flight HUD — visible in every camera view. Provides the
-  // attitude/heading/speed/FPV data a Newtonian pilot needs regardless
-  // of which camera is active. Toggled via Settings (m_settings.wireframeHUD).
-  if (m_settings.wireframeHUD) drawFlightHUD();
-
   // Radar Tier 1 — bottom-right disc + altitude strip. Tactical view
   // hides the disc since the screen IS effectively a radar in that
   // mode; only the altitude strip stays for vertical-cue parity.
@@ -2323,7 +2335,7 @@ void GameState::drawHUD() const {
       float r = Config::RADAR_DISC_RADIUS_PX * scale;
       // Leave room for the altitude strip + margin to the right.
       Vector2 discCentre = {static_cast<float>(sw) - r - 36.0f,
-                            static_cast<float>(sh) - r - 38.0f};
+                            static_cast<float>(sh - kControlsBarH) - r - 10.0f};
       m_radar.draw(discCentre, r);
     }
   }
@@ -2375,9 +2387,10 @@ void GameState::drawTacticalShipArrow() const {
 void GameState::drawClassicCompassRose() const {
   if (m_cameraView != CameraView::Classic) return;
 
-  // Bottom-right corner, above the dev controls bar.
-  const int cx = GetScreenWidth() - 50;
-  const int cy = GetScreenHeight() - 95;
+  // Top-left, below the FPS counter and above the SPD tape. The
+  // bottom-right corner belongs to the (enlarged, in Classic) radar.
+  const int cx = 64;
+  const int cy = 150;
   const int r = 24;
   DrawCircleLines(cx, cy, static_cast<float>(r), {150, 160, 180, 160});
   drawHudText("N", cx - 4, cy - r - 14, 12, {220, 230, 255, 220});
@@ -2456,6 +2469,10 @@ void GameState::drawFlightHUD() const {
         Vector3Subtract(m_camera.target, m_camera.position));
     bool inFront = Vector3DotProduct(noseFwd, camFwd) > 0.0f;
 
+    // Clipped like the pitch ladder so it never draws over the top
+    // status stack or the controls bar.
+    BeginScissorMode(0, kHudTopStackBottom, sw,
+                     sh - kControlsBarH - kHudTopStackBottom);
     if (inFront && noseScreen.x > -50.0f && noseScreen.x < sw + 50.0f &&
         noseScreen.y > -50.0f && noseScreen.y < sh + 50.0f) {
       const float r = 5.0f;
@@ -2471,6 +2488,7 @@ void GameState::drawFlightHUD() const {
       DrawLineEx({noseScreen.x, noseScreen.y + r},
                  {noseScreen.x, noseScreen.y + r + arm}, 1.5f, amber);
     }
+    EndScissorMode();
   }
 
   // ----------------------------------------------------------------
@@ -2491,11 +2509,10 @@ void GameState::drawFlightHUD() const {
       return {lx * ca - ly * sa + cx, lx * sa + ly * ca + cy};
     };
 
-    // Clip to a window below the heading tape and wave/friendlies
-    // banners (which end around y=112) and above the controls bar.
-    const int clipTop = 116;
-    BeginScissorMode(static_cast<int>(cx) - 130, clipTop, 260,
-                     sh - 28 - clipTop);
+    // Clip to a window below the top status stack and above the
+    // controls bar.
+    BeginScissorMode(static_cast<int>(cx) - 130, kHudTopStackBottom, 260,
+                     sh - kControlsBarH - kHudTopStackBottom);
 
     const int LADDER[] = {-45, -30, -15, 0, 15, 30, 45};
     for (int d : LADDER) {
@@ -2563,6 +2580,8 @@ void GameState::drawFlightHUD() const {
         Vector3Add(ppos, Vector3Scale(velDir, 30.0f));
     Vector2 fpvScreen = GetWorldToScreen(fpvWorld, m_camera);
 
+    BeginScissorMode(0, kHudTopStackBottom, sw,
+                     sh - kControlsBarH - kHudTopStackBottom);
     // Cull if projection is wildly off-screen (behind camera, etc.)
     if (fpvScreen.x > -100.0f && fpvScreen.x < sw + 100.0f &&
         fpvScreen.y > -100.0f && fpvScreen.y < sh + 100.0f) {
@@ -2595,6 +2614,7 @@ void GameState::drawFlightHUD() const {
                    {fpvScreen.x + d, fpvScreen.y - d}, 1.5f, amber);
       }
     }
+    EndScissorMode();
   }
 
   // ----------------------------------------------------------------

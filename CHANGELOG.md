@@ -24,6 +24,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Stale duplicate of `game_modes_and_features.md` at the repo root
 
 ### Fixed
+- Remaining HUD overlaps: nose crosshair and FPV over the top banners, DEV hotkey labels over the controls hints, Classic-view compass rose over the radar ([BUG-022](BUGS.md#bug-022-nose-crosshair-can-draw-over-the-heading-tape-and-wave-banners), [BUG-023](BUGS.md#bug-023-dev-hotkey-labels-overlap-the-controls-hint-text), [BUG-024](BUGS.md#bug-024-classic-view-compass-rose-overlaps-the-radar))
 - Overlapping HUD elements: weapon battery bar over the weapon name, SHLD caption and weapon panel under the controls bar, pitch ladder through the top banners, speed-tape labels off-screen ([BUG-021](BUGS.md#bug-021-overlapping-hud-elements-in-the-bottom-left-cluster-pitch-ladder-and-speed-tape))
 - In-game controls bar showed stale bindings; FPS counter and telemetry panel appeared in release builds ([BUG-019](BUGS.md#bug-019-in-game-controls-bar-shows-stale-bindings), [BUG-020](BUGS.md#bug-020-debug-info-panel-and-fps-counter-appear-in-release-builds))
 - Trees, decorations and entities vanished after crossing a world edge; they now render at the toroidal copy nearest the camera ([AV-005](ATTACK_VECTORS.md#av-005-world-fixed-objects-drawn-or-measured-without-the-toroidal-wrap), `7e846c3`)
