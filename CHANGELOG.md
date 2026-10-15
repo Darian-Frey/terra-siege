@@ -36,6 +36,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Stale duplicate of `game_modes_and_features.md` at the repo root
 
 ### Fixed
+- The compass read mirrored against the view: the heading tape and debug heading now increase when turning right, and E is on the right when facing north ([BUG-028](BUGS.md#bug-028-3d-view-is-mirrored-eastwest-relative-to-the-compass-and-heading), [D-033](DECISIONS.md#d-033-world-x-points-west-compass-heading-is-yaw))
 - The radar showed every entity on the map and one booster anywhere boosted range globally; both now follow network coverage ([BUG-001](BUGS.md#bug-001-radar-shows-every-entity-on-the-map-regardless-of-range), [BUG-002](BUGS.md#bug-002-one-radar-booster-anywhere-boosts-radar-range-globally))
 - Base defenders never fired at drones circling them, because they couldn't turn tightly enough for the 16° fire cone. Allied ships now fire within about 45°. Bases also scramble defenders when a hostile is within 220 m, not only when hit, and the base turret range rises from 110 m to 160 m
 - Gameplay and radar ignored the world wrap. After crossing a world edge, nearby radar towers had no blip or pulse, and back at base enemies, the base turret and defenders stopped engaging. The simulation is now re-centred on the player every tick ([BUG-007](BUGS.md#bug-007-ai-collision-and-radar-distances-ignore-the-toroidal-wrap))

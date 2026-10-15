@@ -89,16 +89,6 @@ The register was created on 2026-10-15 ([D-001](DECISIONS.md#d-001-adopt-the-dev
 **Reproduction.** Fire a Cluster Missile at a tight group. Check how child targets are picked in the reacquire loop; there is no angular gate.
 **Notes.** Either implement the cone (`CLUSTER_SUB_SEARCH_CONE`), or accept split-distance spreading and update [AV-007](ATTACK_VECTORS.md#av-007-cluster-submunitions-converge-on-one-target).
 
-### BUG-028: 3D view is mirrored east–west relative to the compass and heading
-
-**Status:** open
-**Found:** 2026-10-15 (pad radar tower placement review)
-**Location:** cross-cutting: camera setup in [src/core/GameState.cpp](src/core/GameState.cpp); world convention +X = east (heading 090 faces +X)
-**Severity:** medium
-**Description.** With the player facing north (heading about 000), world +X objects appear on the left of the screen and −X objects on the right. By the compass and heading tape, east should be on the right. raylib's camera right vector when looking down +Z is −X, so a right-handed view of a world authored with +X = east shows east on the left. Anything placed by compass direction therefore appears mirrored. Examples: the base control tower (+X+Z, "NE") shows as NW, and the "east" ramp shows on the west. The radar's long-standing "empirical fix" that negates screen X (`Radar::worldToRadar`) is very likely compensating for this.
-**Reproduction.** Face north on a base platform: the control tower (+X+Z) is on the left and the pad radar tower (−X+Z) is on the right, towards the heading tape's NE marks.
-**Notes.** A root fix (flip the world X convention, or mirror the projection) touches flight input, camera, radar and compass, and needs a dedicated session. Until then, base layout uses `BASE_EAST_SIGN` so placement matches what the player sees on the compass.
-
 ## Fixed
 
 ### BUG-003: Documentation claims rivers ship, but river carving is disabled
@@ -310,6 +300,17 @@ The 5g commit says strafe runs "fire at the friendly", but the friendly-hit chec
 **Description.** The boosted range applies if any Radar Booster is alive anywhere. Since `7e846c3`, boosters spawn across the whole world, so one booster thousands of metres away still gives the player the full 500 m range.
 **Reproduction.** Start a Wave round. The radar border is bright green (boosted) even when the only booster is far out of sight.
 **Notes.** Fixed 2026-10-15 by C.4: the booster is now an ordinary network node that covers 300 m around itself while its cluster is online. The global 500 m boost (`RADAR_BOOST_RANGE`) is gone. Related: BUG-001.
+
+
+### BUG-028: 3D view is mirrored east–west relative to the compass and heading
+
+**Status:** fixed (2026-10-15)
+**Found:** 2026-10-15 (pad radar tower placement review)
+**Location:** cross-cutting: camera setup in [src/core/GameState.cpp](src/core/GameState.cpp); world convention +X = east (heading 090 faces +X)
+**Severity:** medium
+**Description.** With the player facing north (heading about 000), world +X objects appear on the left of the screen and −X objects on the right. By the compass and heading tape, east should be on the right. raylib's camera right vector when looking down +Z is −X, so a right-handed view of a world authored with +X = east shows east on the left. Anything placed by compass direction therefore appears mirrored. Examples: the base control tower (+X+Z, "NE") shows as NW, and the "east" ramp shows on the west. The radar's long-standing "empirical fix" that negates screen X (`Radar::worldToRadar`) is very likely compensating for this.
+**Reproduction.** Face north on a base platform: the control tower (+X+Z) is on the left and the pad radar tower (−X+Z) is on the right, towards the heading tape's NE marks.
+**Notes.** Fixed 2026-10-15 ([D-033](DECISIONS.md#d-033-world-x-points-west-compass-heading-is-yaw)). The 3D view, flight input (yaw inverted by default) and radar (negated screen X) already agreed with each other: only the compass labelling was mirrored. The heading tape and debug `Hdg` now show heading = −yaw, so 090/E means facing −X and the heading rises as the player turns right. The world convention is now documented as +X = west. `BASE_EAST_SIGN = −1` stays, and is now the true convention rather than a workaround. Mirroring the projection instead was rejected: it would need inverted face culling, input defaults and radar logic just to reach the same result.
 
 
 ## Won't Fix

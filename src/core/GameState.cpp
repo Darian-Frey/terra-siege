@@ -864,6 +864,19 @@ constexpr int kControlsBarH = 28;
 // screen down to about here. Flight-HUD symbology is clipped below it.
 constexpr int kHudTopStackBottom = 116;
 
+// Compass heading in degrees [0, 360) for a player yaw. The world's +X
+// axis points west (compass east is −X — see Config::BASE_EAST_SIGN and
+// D-033), so heading runs opposite to yaw: turning right on screen
+// lowers yaw and raises the heading. 000 = north (+Z), 090 = east (−X).
+inline float headingDegrees(float yaw) {
+  float h = -yaw * (180.0f / 3.14159265f);
+  h = fmodf(h, 360.0f);
+  if (h < 0.0f) h += 360.0f;
+  // Due north can land a hair below 360 and print as "360.0" — snap it.
+  if (h >= 359.95f) h = 0.0f;
+  return h;
+}
+
 // Apply the standard terrain clamp: camera position is pushed up to be
 // at least 3.5 above the ground beneath it AND at least 2.0 above the
 // player. Used by every view that follows the player from above.
@@ -1852,11 +1865,7 @@ void GameState::drawHUD() const {
   char buf[64];
   float spd = m_player.speed();
 
-  float yawDeg = m_player.yaw() * (180.0f / 3.14159f);
-  while (yawDeg < 0.0f)
-    yawDeg += 360.0f;
-  while (yawDeg >= 360.0f)
-    yawDeg -= 360.0f;
+  const float yawDeg = headingDegrees(m_player.yaw());
 
   const char *compass = "N";
   if (yawDeg >= 22.5f && yawDeg < 67.5f)
@@ -2539,9 +2548,7 @@ void GameState::drawFlightHUD() const {
   float roll = m_player.roll();
 
   const float deg = 180.0f / 3.14159265f;
-  float yawDeg = yaw * deg;
-  while (yawDeg < 0.0f) yawDeg += 360.0f;
-  while (yawDeg >= 360.0f) yawDeg -= 360.0f;
+  const float yawDeg = headingDegrees(yaw); // compass heading for the tape
   float pitchDeg = pitch * deg;
 
   // ----------------------------------------------------------------

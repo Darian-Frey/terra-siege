@@ -89,8 +89,8 @@ constexpr float THREAT_CAM_HYSTERESIS = 0.20f; // 20% score gap to switch target
 
 // Classic / original-Virus view (View 5) — fixed world-space offset,
 // camera never rotates with the ship; world-north stays at top of screen.
-constexpr float CLASSIC_CAM_OFFSET_X = -15.0f; // east-west offset
-constexpr float CLASSIC_CAM_OFFSET_Z = -35.0f; // north of player (-Z = north)
+constexpr float CLASSIC_CAM_OFFSET_X = -15.0f; // east of the player (−X = compass east)
+constexpr float CLASSIC_CAM_OFFSET_Z = -35.0f; // south of the player (+Z = north)
 constexpr float CLASSIC_CAM_ALTITUDE = 42.0f;  // above player
 constexpr float CLASSIC_CAM_FOV = 65.0f;       // slightly narrower than chase
 constexpr float CLASSIC_CAM_LERP = 5.0f;       // slower = more detached feel
@@ -713,9 +713,9 @@ constexpr float BASE_DEFENDER_LAND_DIST = 14.0f;  // horizontal distance to "lan
 constexpr float BASE_PAD_HALF_SIZE = 18.0f;       // half-width of the apron (36 m square)
 constexpr float BASE_PAD_BLEND = 10.0f;           // terrain blend back to natural ground
 constexpr float BASE_PAD_HEIGHT = 1.5f;           // TUNE — platform top above the levelled ground
-// World X of compass east for base layout. The 3D view is mirrored
-// east–west relative to the compass (BUG-028), so compass east is −X
-// on screen. Set to +1 once the view handedness is fixed.
+// World X of compass east. raylib's right-handed camera puts −X on the
+// right when facing +Z (north), so the world's +X axis points WEST and
+// compass east is −X (D-033). Used by base layout.
 constexpr float BASE_EAST_SIGN = -1.0f;
 constexpr float BASE_TOWER_OFFSET = 14.0f;        // control tower at compass NE of the pad centre;
                                                   // the base's radar tower mirrors it at compass NW

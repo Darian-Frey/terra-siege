@@ -58,7 +58,7 @@ Full rationale is in [DECISIONS.md](DECISIONS.md) and [ARCHITECTURE.md](ARCHITEC
   - Use `DrawModelEx` for yaw-rotated entities.
   - Procedural geometry is only for terrain, particles, shields and state-driven overlays.
 - **Flat-shaded, low-poly** ([D-013](DECISIONS.md#d-013-flat-shaded-low-poly-aesthetic-no-textures)). No textures, specular or per-face gradients. One sun, ambient about 0.45, fog matching the sky. "Could have run in 1992 on very powerful hardware."
-- **Coordinate system.** +X east, +Y up, +Z north (forward). Yaw 0 faces +Z and increases clockwise. The world origin is the heightmap corner.
+- **Coordinate system** ([D-033](DECISIONS.md#d-033-world-x-points-west-compass-heading-is-yaw)). +Z north, **+X west (compass east is −X)**, +Y up. Yaw 0 faces +Z, and turning right on screen *lowers* yaw. Compass heading = −yaw (`headingDegrees()`). Place anything by compass direction via `Config::BASE_EAST_SIGN`. The world origin is the heightmap corner.
 - **Single Newtonian flight model** ([D-005](DECISIONS.md#d-005-single-newtonian-flight-model-one-craft)). Don't re-add `FlightMode` or `CraftType`.
 
 ### Naming

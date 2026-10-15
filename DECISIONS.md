@@ -945,3 +945,32 @@ Undo is held at inspector level as full-mesh snapshots (32 deep) and is shared a
 
 - Add the network map view if rim markers alone leave players unable to read where coverage gaps are.
 - Revisit chain density if tower counts hurt frame rate or crowd the landscape.
+
+### D-033 World +X points west; compass heading is −yaw
+
+**Decided:** 2026-10-15
+**Recorded:** 2026-10-15
+**Status:** Accepted
+**Authors:** Shane Hartley (with Claude Code)
+**Related:** D-007, D-015, D-030, [BUG-028](BUGS.md#bug-028-3d-view-is-mirrored-eastwest-relative-to-the-compass-and-heading)
+
+**Context.** The docs said "+X = east, yaw increases clockwise (right turn)". raylib's camera is right-handed, though, so when facing +Z the screen's right is −X. Over time the controls (yaw inverted by default) and the radar (negated screen X) had been tuned until the game felt right, which made turning right on screen *decrease* yaw. Only the compass (heading tape and debug panel) still labelled +X as east, so it read mirrored against the view.
+
+**Options.**
+
+- **A. Mirror the projection so +X shows on the right.** Rejected: it flips triangle winding (face culling), the yaw input defaults and the radar's screen-X negation, all to reach the same end state with more risk.
+- **B. Correct the compass to the world as rendered.** Chosen.
+
+**Decision.**
+
+- The world's +X axis points west, −X east, +Z north and +Y up.
+- Compass heading = −yaw, in [0, 360): 000 faces +Z and 090 faces −X. The heading rises as the player turns right.
+- The heading tape and debug readout use `headingDegrees()`.
+- `Config::BASE_EAST_SIGN = −1` is the convention for anything placed by compass direction.
+
+**Consequences.**
+
+- Gameplay, input and rendering are unchanged. Only the heading numbers, the E/W letters and the documentation change.
+- Anything added later that says "east" must use −X (`BASE_EAST_SIGN`).
+
+**Reversal conditions.** Revisit if a move to a left-handed projection is ever made for another reason. In that case flip `BASE_EAST_SIGN` and `headingDegrees()` together.
