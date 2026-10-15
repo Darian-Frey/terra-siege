@@ -89,6 +89,15 @@ float Planet::flattenPad(float worldX, float worldZ, float halfSize,
   return h;
 }
 
+bool Planet::isWater(float worldX, float worldZ) const {
+  if (heightAt(worldX, worldZ) < Config::SEA_LEVEL * Config::TERRAIN_HEIGHT_MAX)
+    return true;
+  const float s = Config::TERRAIN_SCALE;
+  return m_heightmap.waterAt(static_cast<int>(roundf(worldX / s)),
+                             static_cast<int>(roundf(worldZ / s))) !=
+         WaterType::None;
+}
+
 bool Planet::isGrassland(float worldX, float worldZ) const {
   float h = heightAt(worldX, worldZ) / Config::TERRAIN_HEIGHT_MAX;
   float landH = (h - Config::SEA_LEVEL) / (1.0f - Config::SEA_LEVEL);

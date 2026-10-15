@@ -771,6 +771,11 @@ constexpr int BASE_MODE_RADAR_STATION_COUNT = 6; // TUNE
 constexpr int WAVE_MODE_EXTRA_BASE_COUNT = 3;     // TUNE
 constexpr int WAVE_MODE_RADAR_STATION_COUNT = 4;  // TUNE
 constexpr float RADAR_STATION_CLEAR_HALF = 5.0f;  // decoration-free square at a tower's foot
+// Relay towers that land in a lake or the sea stand on a concrete plinth
+// raised above the water, its base sunk below the surface.
+constexpr float RADAR_PLINTH_HEIGHT = 1.5f;       // TUNE — plinth top above the water
+constexpr float RADAR_PLINTH_HALF = 3.6f;         // half-width (tower legs sit at ±2.2)
+constexpr float RADAR_PLINTH_DEPTH = 4.0f;        // how far the base goes below the surface
 
 // Bomber engagement of friendlies — preference threshold. If the
 // nearest friendly is closer than (dist to player × FRIENDLY_PRIORITY),

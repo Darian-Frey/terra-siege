@@ -451,14 +451,16 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
   // DEV aid: how big the radar network is and how much of it is online.
   auto logRadarNetwork = [&]() {
     m_em.updateRadarNetwork();
-    int towers = 0, online = 0;
+    int towers = 0, online = 0, plinths = 0;
     for (const Entity &e : m_em.entities()) {
       if (!e.alive || !isDetectionNode(e.type)) continue;
       ++towers;
       if (e.networkOnline) ++online;
+      if (e.onPlinth) ++plinths;
     }
-    TraceLog(LOG_INFO, "RADAR NET: %d bases, %d detection nodes, %d online",
-             static_cast<int>(basesPlaced.size()), towers, online);
+    TraceLog(LOG_INFO,
+             "RADAR NET: %d bases, %d detection nodes, %d online, %d on plinths",
+             static_cast<int>(basesPlaced.size()), towers, online, plinths);
   };
 
   // Slice C C.4 — relay chains. Link each base to its nearest
@@ -517,7 +519,10 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
                                   Config::RADAR_STATION_CLEAR_HALF,
                                   Config::RADAR_STATION_CLEAR_HALF);
         p.y = fmaxf(m_planet.heightAt(p.x, p.z), seaY);
-        m_em.spawnEnemy(EntityType::RadarStation, p);
+        const bool wet = m_planet.isWater(p.x, p.z);
+        if (wet) p.y += Config::RADAR_PLINTH_HEIGHT;
+        Entity *tower = m_em.spawnEnemy(EntityType::RadarStation, p);
+        if (tower) tower->onPlinth = wet;
         placed.push_back(p);
         ++towers;
       }

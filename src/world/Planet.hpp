@@ -51,6 +51,9 @@ public:
   // (re-uploads chunk meshes).
   float flattenPad(float worldX, float worldZ, float halfSize, float blend);
 
+  // True when (x, z) is open water: ocean below sea level, or a lake.
+  bool isWater(float worldX, float worldZ) const;
+
   // True when (x, z) is in the green grassland biome band.
   bool isGrassland(float worldX, float worldZ) const;
 

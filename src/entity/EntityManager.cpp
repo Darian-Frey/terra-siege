@@ -3684,6 +3684,16 @@ void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
     // Slice C C.2 — red/white lattice tower with a deck and white radome
     // (radar_station.obj, ~21 m tall). The procedural mast + spinning
     // dish is the fallback when the OBJ is missing.
+    if (e.onPlinth) {
+      // Concrete plinth built up from the lake / sea bed.
+      const float hw = Config::RADAR_PLINTH_HALF;
+      const float bottom = e.pos.y - Config::RADAR_PLINTH_HEIGHT -
+                           Config::RADAR_PLINTH_DEPTH;
+      DrawCubeV({e.pos.x, (e.pos.y + bottom) * 0.5f, e.pos.z},
+                {2.0f * hw, e.pos.y - bottom, 2.0f * hw}, {150, 150, 145, 255});
+      DrawCubeV({e.pos.x, e.pos.y - 0.1f, e.pos.z},
+                {2.0f * hw + 0.3f, 0.2f, 2.0f * hw + 0.3f}, {175, 175, 168, 255});
+    }
     if (registry && registry->has(EntityType::RadarStation)) {
       registry->draw(EntityType::RadarStation, e.pos, 0.0f, 1.0f, WHITE);
     } else {
@@ -3766,6 +3776,11 @@ void EntityManager::renderProjectile(const Entity &p,
     break;
   }
   case ProjectileKind::ShieldMissile: {
+    if (registry && registry->hasMissile()) {
+      registry->drawMissile(p.pos, p.vel, Config::MISSILE_MODEL_SCALE,
+                            {110, 180, 255, 255}); // blue — shield-stripper
+      break;
+    }
     // Same silhouette as a standard missile but with a blue body
     // tint and blue tip so the player reads it as "shield-stripper"
     // at chase distance.
@@ -3781,6 +3796,11 @@ void EntityManager::renderProjectile(const Entity &p,
     break;
   }
   case ProjectileKind::InfectiousMissile: {
+    if (registry && registry->hasMissile()) {
+      registry->drawMissile(p.pos, p.vel, Config::MISSILE_MODEL_SCALE,
+                            {130, 235, 110, 255}); // green — infection
+      break;
+    }
     // Sickly yellow-green body + bright green tip — reads as
     // "biological" at chase distance, distinct from Shield Missile's
     // blue and standard Missile's silver+red.

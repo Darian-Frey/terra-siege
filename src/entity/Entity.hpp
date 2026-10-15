@@ -288,6 +288,10 @@ struct Entity {
   uint8_t routeRamp = 0;
   Vector3 routePoint = {0, 0, 0};
 
+  // Radar tower standing on a concrete plinth in water (pos.y is the
+  // plinth top).
+  bool onPlinth = false;
+
   // Projectile: a Cluster submunition (a Missile spawned by the split).
   // Drawn as a small orange missile.
   bool clusterChild = false;
