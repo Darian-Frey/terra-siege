@@ -1,6 +1,7 @@
 #include "MeshRegistry.hpp"
 #include "ObjLoader.hpp"
 
+#include <cmath>
 #include <cstdio>
 
 namespace tsmesh {
@@ -67,6 +68,30 @@ void MeshRegistry::loadAll(const std::filesystem::path &meshesDir) {
   // Player mesh — dedicated slot since the Player class isn't in
   // the EntityType-indexed entity pool.
   m_playerLoaded = loadInto("hovercraft.obj", m_playerModel);
+  m_missileLoaded = loadInto("missile.obj", m_missileModel);
+}
+
+void MeshRegistry::drawMissile(Vector3 position, Vector3 dir, float scale,
+                               Color tint) const {
+  if (!m_missileLoaded) return;
+  // Rotate the model's +Z (nose) onto dir: axis = Z × dir, angle = acos(dir.z).
+  float len = sqrtf(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
+  Vector3 axis = {0.0f, 1.0f, 0.0f};
+  float angleDeg = 0.0f;
+  if (len > 1e-4f) {
+    Vector3 d = {dir.x / len, dir.y / len, dir.z / len};
+    Vector3 a = {-d.y, d.x, 0.0f};
+    float al = sqrtf(a.x * a.x + a.y * a.y);
+    float c = fminf(fmaxf(d.z, -1.0f), 1.0f);
+    if (al > 1e-5f) {
+      axis = {a.x / al, a.y / al, 0.0f};
+      angleDeg = acosf(c) * (180.0f / 3.14159265f);
+    } else if (c < 0.0f) {
+      angleDeg = 180.0f; // pointing straight back along −Z
+    }
+  }
+  DrawModelEx(m_missileModel, position, axis, angleDeg, {scale, scale, scale},
+              tint);
 }
 
 void MeshRegistry::unloadAll() {
@@ -79,6 +104,10 @@ void MeshRegistry::unloadAll() {
   if (m_playerLoaded) {
     UnloadModel(m_playerModel);
     m_playerLoaded = false;
+  }
+  if (m_missileLoaded) {
+    UnloadModel(m_missileModel);
+    m_missileLoaded = false;
   }
 }
 

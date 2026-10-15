@@ -354,6 +354,11 @@ constexpr float RADAR_PULSE_SWEEP_TIME = 0.6f;  // sec for ring to reach rim
 // player's pulse, with a ring that travels at the same speed as the
 // player's. The ring is drawn on the player's disc at true scale and
 // fades out over the last RADAR_STATION_PULSE_FADE metres of its range.
+// Missile visuals (missile.obj): the Cluster carrier wears the same
+// guided-missile shape tinted orange; its submunitions are smaller.
+constexpr float MISSILE_MODEL_SCALE = 1.0f;
+constexpr float CLUSTER_PARENT_MODEL_SCALE = 1.15f;
+constexpr float CLUSTER_CHILD_MODEL_SCALE = 0.55f;
 constexpr float RADAR_STATION_RANGE = 300.0f;        // TUNE — tower radar range (m)
 constexpr float RADAR_STATION_PULSE_OFFSET = 0.5f;   // s after the player's pulse
 constexpr float RADAR_STATION_PULSE_FADE = 50.0f;    // m of fade at the end of the ring

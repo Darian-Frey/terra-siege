@@ -337,5 +337,6 @@ private:
   // Render helpers
   void renderEnemy(const Entity &e, Camera3D camera,
                    const tsmesh::MeshRegistry *registry) const;
-  void renderProjectile(const Entity &p) const;
+  void renderProjectile(const Entity &p,
+                        const tsmesh::MeshRegistry *registry) const;
 };

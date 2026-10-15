@@ -62,6 +62,12 @@ public:
     return m_playerLoaded ? &m_playerModel : nullptr;
   }
 
+  // Guided missile mesh (missile.obj), shared by the homing Missile, the
+  // Cluster carrier and its submunitions. Drawn nose-first along `dir`.
+  bool hasMissile() const { return m_missileLoaded; }
+  void drawMissile(Vector3 position, Vector3 dir, float scale,
+                   Color tint) const;
+
 private:
   // Filename for each entity type, looked up under meshesDir/. Empty
   // string = type has no mesh yet (use procedural fallback).
@@ -76,6 +82,8 @@ private:
   // the Player class doesn't live in the entity pool.
   Model m_playerModel{};
   bool m_playerLoaded = false;
+  Model m_missileModel{};
+  bool m_missileLoaded = false;
 };
 
 } // namespace Mesh

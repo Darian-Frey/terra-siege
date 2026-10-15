@@ -2771,14 +2771,15 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
           // Turn rate is higher (CLUSTER_CHILD_TURN_RATE) so the children
           // are more agile than the parent and can reacquire targets the
           // parent would have whiffed.
-          spawnProjectile(childPos, childVel,
-                          Config::MISSILE_DAMAGE *
-                              Config::CLUSTER_CHILD_DAMAGE_FRAC,
-                          Config::MISSILE_RANGE, Config::MISSILE_SPEED,
-                          ProjectileOwner::Player,
-                          ProjectileKind::Missile, Config::PLASMA_SPLASH,
-                          0 /* no lock — children reacquire next tick */,
-                          Config::CLUSTER_CHILD_TURN_RATE);
+          Entity *child = spawnProjectile(
+              childPos, childVel,
+              Config::MISSILE_DAMAGE * Config::CLUSTER_CHILD_DAMAGE_FRAC,
+              Config::MISSILE_RANGE, Config::MISSILE_SPEED,
+              ProjectileOwner::Player, ProjectileKind::Missile,
+              Config::PLASMA_SPLASH,
+              0 /* no lock — children reacquire next tick */,
+              Config::CLUSTER_CHILD_TURN_RATE);
+          if (child) child->clusterChild = true;
         }
         // Carrier vanishes silently (no kill burst — it's a carrier,
         // not a warhead).
@@ -3273,7 +3274,7 @@ void EntityManager::render(Camera3D camera, const Planet &planet,
   }
   for (const auto &p : m_projectiles) {
     if (!p.alive) continue;
-    renderProjectile(p);
+    renderProjectile(p, registry);
   }
 }
 
@@ -3710,7 +3711,8 @@ void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
   }
 }
 
-void EntityManager::renderProjectile(const Entity &p) const {
+void EntityManager::renderProjectile(const Entity &p,
+                                     const tsmesh::MeshRegistry *registry) const {
   switch (p.kind) {
   case ProjectileKind::Plasma: {
     // Glowing magenta orb — bigger than a cannon tracer and visibly
@@ -3728,6 +3730,11 @@ void EntityManager::renderProjectile(const Entity &p) const {
     break;
   }
   case ProjectileKind::ClusterParent: {
+    if (registry && registry->hasMissile()) {
+      registry->drawMissile(p.pos, p.vel, Config::CLUSTER_PARENT_MODEL_SCALE,
+                            {255, 140, 40, 255});
+      break;
+    }
     // Slightly larger silver body with a yellow band so the carrier
     // reads distinct from a single-shot missile as it streaks in.
     DrawCubeV(p.pos, {0.9f, 0.9f, 2.0f}, {220, 230, 240, 255});
@@ -3735,6 +3742,14 @@ void EntityManager::renderProjectile(const Entity &p) const {
     break;
   }
   case ProjectileKind::Missile: {
+    if (registry && registry->hasMissile()) {
+      if (p.clusterChild)
+        registry->drawMissile(p.pos, p.vel, Config::CLUSTER_CHILD_MODEL_SCALE,
+                              {255, 140, 40, 255});
+      else
+        registry->drawMissile(p.pos, p.vel, Config::MISSILE_MODEL_SCALE, WHITE);
+      break;
+    }
     // Elongated silver cube — reads as a missile body even at chase
     // distance. Smoke trail comes from updateProjectile's particle
     // emission, not the render path.

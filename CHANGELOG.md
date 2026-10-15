@@ -10,6 +10,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 ## [Unreleased]
 
 ### Added
+- Guided-missile model (`missile.obj`): grey rear body with a black band, white nose section, black seeker, four swept fins. Used for the homing Missile, the Cluster carrier (orange) and cluster submunitions (orange, smaller), oriented along their flight path
 - Slice C C.4 (F-023), the radar network:
   - Bases, radar towers and boosters link within 400 m. Clusters containing a base are online.
   - Relay chains of towers every 350 m join each base to its two nearest bases, in both modes.

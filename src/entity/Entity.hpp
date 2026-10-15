@@ -288,6 +288,10 @@ struct Entity {
   uint8_t routeRamp = 0;
   Vector3 routePoint = {0, 0, 0};
 
+  // Projectile: a Cluster submunition (a Missile spawned by the split).
+  // Drawn as a small orange missile.
+  bool clusterChild = false;
+
   // Slice C C.4 — radar network node state, recomputed every tick: true
   // when this node's linked cluster contains a living base.
   bool networkOnline = false;
