@@ -19,6 +19,7 @@ const char *MeshRegistry::filenameFor(EntityType type) {
   case EntityType::RepairStation:return "repair_station.obj";
   case EntityType::RadarBooster: return "radar_booster.obj";
   case EntityType::Base:         return "base.obj";
+  case EntityType::RadarStation: return "radar_station.obj";
   // EntityType::Projectile is shared across kinds; the registry
   // doesn't try to disambiguate (cannon vs plasma vs missile vs ...)
   // because that requires the projectile kind, not just EntityType.

@@ -10,6 +10,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 ## [Unreleased]
 
 ### Added
+- Radar tower model (`radar_station.obj` + sidecar): a red/white lattice tower with a deck and white radome. It has its own radar blip, a green radome-on-mast icon. Radar towers pulse 500 ms after the player's pulse; each 300 m ring is drawn on the player's disc at true scale and fades out over its last 50 m. Wave mode now also places 3 extra bases with landing platforms, and 4 radar towers, across the map
 - Slice C C.2 (F-021): bases under attack launch allied Fighter defenders (up to 3 each), which are leashed to their base and land when idle. Bases stand on raised 36 m landing platforms, with the control tower in the NE corner and ramps on the south and east sides that Collectors use to drive on and off. Landing or hovering low anywhere on the platform repairs and rearms the player (HUD: ON PAD). Both work in every mode. Fighters, Drones and Tanks now attack nearby friendlies (about a third of them are raiders that prefer friendlies), and Landers besiege nearby bases. New radar station entity as the network node. Base mode now places 8 bases and 6 radar stations ([D-030](DECISIONS.md#d-030-base-defenders-reuse-the-allied-fighter-path-pads-replace-repair-stations-in-base-mode))
 - Old-style pulse radar: a ring sweeps out every second and paints contacts, which fade until the next pulse (F-028, [D-026](DECISIONS.md#d-026-old-style-pulse-radar), `50506fc`)
 - `Planet::nearestCopy()` and `Planet::isGrassland()`; `BIOME_*` band thresholds centralised in `Config.hpp` (`7e846c3`)
@@ -28,6 +29,8 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Stale duplicate of `game_modes_and_features.md` at the repo root
 
 ### Fixed
+- Base defenders never fired at drones circling them, because they couldn't turn tightly enough for the 16° fire cone. Allied ships now fire within about 45°. Bases also scramble defenders when a hostile is within 220 m, not only when hit, and the base turret range rises from 110 m to 160 m
+- Gameplay and radar ignored the world wrap. After crossing a world edge, nearby radar towers had no blip or pulse, and back at base enemies, the base turret and defenders stopped engaging. The simulation is now re-centred on the player every tick ([BUG-007](BUGS.md#bug-007-ai-collision-and-radar-distances-ignore-the-toroidal-wrap))
 - Rebuilding a terrain chunk (base aprons, DEV F5 reseed) crashed because of stale mesh ids after unload ([BUG-027](BUGS.md#bug-027-rebuilding-a-terrain-chunk-crashes-stale-mesh-ids-after-unload))
 - Enemy fire never damaged friendly structures or allied ships, so friendlies were invulnerable and the "friendlies lost" defeat could never trigger ([BUG-026](BUGS.md#bug-026-enemy-fire-never-damages-friendly-structures-or-allied-ships))
 - Infected ships showed as hostile (red) on radar ([BUG-009](BUGS.md#bug-009-infected-ships-still-show-as-hostile-on-radar))

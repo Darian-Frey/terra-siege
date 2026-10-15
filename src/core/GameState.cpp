@@ -426,6 +426,17 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
     return pos;
   };
 
+  // Radar towers stand on the natural ground; just clear decorations so
+  // trees don't grow through the lattice.
+  auto spawnRadarStation = [&](Vector3 pos) {
+    m_decorations.clearSquare(m_planet, pos.x, pos.z,
+                              Config::RADAR_STATION_CLEAR_HALF,
+                              Config::RADAR_STATION_CLEAR_HALF);
+    pos.y = m_planet.heightAt(pos.x, pos.z);
+    m_em.spawnEnemy(EntityType::RadarStation, pos);
+    placed.push_back(pos);
+  };
+
   // Slice C C.1 — Base mode places a NETWORK of friendly bases per
   // base_mode_v2.md ("All friendly bases pre-placed; radar network
   // live and fully connected"). Wave mode keeps the original single-
@@ -451,11 +462,8 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
     // Slice C C.2 — radar stations are the network nodes (C.4 adds the
     // link graph). No Repair Stations or Radar Boosters in this mode:
     // base landing pads repair + rearm, and boosters are Wave-mode only.
-    for (int i = 0; i < Config::BASE_MODE_RADAR_STATION_COUNT; ++i) {
-      Vector3 pos = pickGrassSpot();
-      m_em.spawnEnemy(EntityType::RadarStation, pos);
-      placed.push_back(pos);
-    }
+    for (int i = 0; i < Config::BASE_MODE_RADAR_STATION_COUNT; ++i)
+      spawnRadarStation(pickGrassSpot());
 
     // Slice C C.3 — drop in N grounded landers. Spec table:
     //   Easy 3 / Normal 5 / Hard 7 landers. Difficulty presets come
@@ -541,6 +549,12 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
     m_em.spawnEnemy(EntityType::RadarBooster, pos);
     placed.push_back(pos);
   }
+  // Extra bases (with landing platforms) and radar towers spread across
+  // the map, so there are pads to land on away from home.
+  for (int i = 0; i < Config::WAVE_MODE_EXTRA_BASE_COUNT; ++i)
+    spawnBase(pickGrassSpot());
+  for (int i = 0; i < Config::WAVE_MODE_RADAR_STATION_COUNT; ++i)
+    spawnRadarStation(pickGrassSpot());
 }
 
 // ================================================================

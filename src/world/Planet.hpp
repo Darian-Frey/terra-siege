@@ -33,10 +33,7 @@ public:
   float heightAt(float worldX, float worldZ) const;
 
   // Total world width/depth of the terrain
-  float worldSize() const {
-    return static_cast<float>(Config::HEIGHTMAP_SIZE - 1) *
-           Config::TERRAIN_SCALE;
-  }
+  float worldSize() const { return Config::WORLD_SIZE; }
 
   // Toroidal world: the copy of p (shifted by whole multiples of
   // worldSize) nearest to ref. World-fixed objects are drawn here so

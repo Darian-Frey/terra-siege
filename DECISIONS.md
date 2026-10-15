@@ -221,7 +221,7 @@ Status vocabulary: Proposed | Accepted | Superseded by D-NNN | Deprecated.
 **Consequences.**
 
 - Every distance or draw involving world-fixed objects must allow for the wrap.
-- AI, collision and radar don't yet do so ([BUG-007](BUGS.md#bug-007-ai-collision-and-radar-distances-ignore-the-toroidal-wrap)).
+- AI, collision and radar ignored the wrap until 2026-10-15 ([BUG-007](BUGS.md#bug-007-ai-collision-and-radar-distances-ignore-the-toroidal-wrap)). Now `EntityManager::rebaseAround()` shifts every entity and projectile onto the world copy nearest the player each tick, so existing AI code measures correctly without per-call-site wrap maths.
 - `Player::wrapPosition()` is a deliberate no-op kept for API compatibility.
 
 **Reversal conditions.** Revisit if float precision causes visible jitter in realistic sessions, or if making every distance query wrap-aware proves more costly than wrapping the whole simulation.
@@ -866,7 +866,7 @@ Undo is held at inspector level as full-mesh snapshots (32 deep) and is shared a
   - doesn't bleed hull;
   - engages only hostiles within `BASE_DEFENDER_LEASH` of its launch point;
   - flies home and despawns when nothing is in range.
-- **Launching.** A base launches defenders while `timeSinceHit` < `BASE_UNDER_ATTACK_WINDOW`, at most `BASE_DEFENDER_MAX` alive per base.
+- **Launching.** A base launches defenders while `timeSinceHit` < `BASE_UNDER_ATTACK_WINDOW`, or while a hostile is within `BASE_ALERT_RANGE`, at most `BASE_DEFENDER_MAX` alive per base. Allied ships fire within a wider nose cone (`ALLIED_FIRE_CONE_DOT`, about 45°), because Fighter turn rates can't line up on drones orbiting at 25–40 m. Playtesting found defenders and drones locked in a no-damage stalemate without it.
 - **Landing pads.** A landed player within `BASE_PAD_RADIUS` is healed, then rearmed after `BASE_PAD_REARM_TIME`.
 - **Base-mode placement.** Base mode places Bases and RadarStations only. Repair Stations and Radar Boosters are Wave-mode entities.
 - **Allegiance.** Friendly structures are defined once, in `isFriendlyStructure()`.
@@ -886,3 +886,24 @@ Undo is held at inspector level as full-mesh snapshots (32 deep) and is shared a
 
 - Give defenders their own state if they need behaviour the infected path can't express, such as formation flying or escorting the player.
 - Bring Repair Stations back to Base mode if pad-only repair makes the map feel too sparse.
+
+### D-031 Player's personal radar stays at 300 m in Base Defence mode
+
+**Decided:** 2026-10-15
+**Recorded:** 2026-10-15
+**Status:** Accepted
+**Authors:** Shane Hartley (with Claude Code)
+**Related:** F-023, F-028, D-026, [BUG-001](BUGS.md#bug-001-radar-shows-every-entity-on-the-map-regardless-of-range)
+
+**Context.** `base_mode_v2.md` proposed a short-range personal radar of about 150 m for C.4, with long-range awareness coming only from the base and radar-station network. The player's radar is 300 m today, and the old-style pulse sweep (D-026) is built around it.
+
+**Options.**
+
+- **A. Cut the personal radar to about 150 m, as the design proposes.** Rejected: halving it changes how the game feels and how the pulse sweep reads.
+- **B. Keep the personal radar at 300 m. The network adds coverage beyond it.** Chosen.
+
+**Decision.** In C.4 the player's personal radar stays at `RADAR_BASE_RANGE` (300 m). The radar network adds contacts beyond that range, from clusters of linked bases and radar stations.
+
+**Consequences.** C.4 still needs to settle [BUG-001](BUGS.md#bug-001-radar-shows-every-entity-on-the-map-regardless-of-range): contacts outside both the personal and the network coverage should stop showing as edge-of-disc markers.
+
+**Reversal conditions.** Revisit if playtesting shows the network adds nothing because 300 m already covers the fights that matter.

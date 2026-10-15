@@ -968,6 +968,10 @@ bool EntityManager::tickRetreat(Entity &e, float dt, const Planet &planet,
 // ====================================================================
 void EntityManager::update(float dt, const Planet &planet, Player &player,
                            ParticleSystem &particles) {
+  // Keep the simulation centred on the (unwrapped) player so AI,
+  // targeting and collisions measure across world edges correctly.
+  rebaseAround(player.position());
+
   // Base pad state is recomputed by tickBasePad each tick; the rearm
   // dwell timer restarts once the player leaves the pad.
   if (!m_playerOnPad) m_padDwell = 0.0f;
@@ -1292,7 +1296,7 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
         Vector3Normalize(Vector3Subtract(targetPos, e.pos));
     Vector3 fwd3 = {sinf(e.yaw), 0.0f, cosf(e.yaw)};
     float dot = Vector3DotProduct(fwd3, toTargetN);
-    if (dot > 0.96f) { // ~16° cone
+    if (dot > (isInfected ? Config::ALLIED_FIRE_CONE_DOT : 0.96f)) { // ~16° hostile cone
       fireFighterShot(e, targetPos, isInfected);
       e.fireTimer = Config::FIGHTER_FIRE_RATE;
     }
@@ -1491,7 +1495,7 @@ void EntityManager::updateBomber(Entity &e, float dt, const Planet &planet,
         Vector3Normalize(Vector3Subtract(targetPos, e.pos));
     Vector3 fwd3 = {sinf(e.yaw), 0.0f, cosf(e.yaw)};
     float dot = Vector3DotProduct(fwd3, toTargetN);
-    if (dot > 0.90f) { // ~25° cone
+    if (dot > (isInfected ? Config::ALLIED_FIRE_CONE_DOT : 0.90f)) { // ~25° hostile cone
       fireBomberShot(e, targetPos, isInfected);
       e.fireTimer = Config::BOMBER_FIRE_RATE;
     }
@@ -2266,10 +2270,22 @@ void EntityManager::updateCollector(Entity &e, float dt, const Planet &planet) {
 void EntityManager::updateBase(Entity &e, float dt, Player &player) {
   tickBasePad(e, dt, player);
   // Defender launch cooldown lives in stateTimer (the turret uses
-  // fireTimer). Launch only while under attack and below the cap.
+  // fireTimer). Launch while under attack — recently hit, or a hostile
+  // inside BASE_ALERT_RANGE — and below the cap.
   if (e.stateTimer > 0.0f) e.stateTimer -= dt;
-  if (e.timeSinceHit < Config::BASE_UNDER_ATTACK_WINDOW &&
-      e.stateTimer <= 0.0f) {
+  bool alert = e.timeSinceHit < Config::BASE_UNDER_ATTACK_WINDOW;
+  if (!alert && e.stateTimer <= 0.0f) {
+    const float r2 = Config::BASE_ALERT_RANGE * Config::BASE_ALERT_RANGE;
+    for (const Entity &o : m_entities) {
+      if (!isAutoAimTarget(o)) continue;
+      Vector3 d = Vector3Subtract(o.pos, e.pos);
+      if (d.x * d.x + d.y * d.y + d.z * d.z < r2) {
+        alert = true;
+        break;
+      }
+    }
+  }
+  if (alert && e.stateTimer <= 0.0f) {
     int live = 0;
     for (const Entity &o : m_entities)
       if (o.alive && o.homeBaseId == e.id) ++live;
@@ -2453,6 +2469,32 @@ uint32_t EntityManager::nearestFriendly(Vector3 origin,
     }
   }
   return bestId;
+}
+
+void EntityManager::rebaseAround(Vector3 centre) {
+  const float ws = Config::WORLD_SIZE;
+  auto shiftFor = [&](Vector3 p) {
+    return Vector3{-roundf((p.x - centre.x) / ws) * ws, 0.0f,
+                   -roundf((p.z - centre.z) / ws) * ws};
+  };
+  for (Entity &e : m_entities) {
+    if (!e.alive) continue;
+    Vector3 s = shiftFor(e.pos);
+    if (s.x == 0.0f && s.z == 0.0f) continue;
+    // Every absolute position on the entity moves together. Drones use
+    // targetPos as a unit bearing, not a position; a Collector's (0, 0)
+    // targetPos means "no pickup chosen yet".
+    e.pos = Vector3Add(e.pos, s);
+    e.spawnPos = Vector3Add(e.spawnPos, s);
+    e.routePoint = Vector3Add(e.routePoint, s);
+    if (e.type == EntityType::Collector &&
+        !(e.targetPos.x == 0.0f && e.targetPos.z == 0.0f))
+      e.targetPos = Vector3Add(e.targetPos, s);
+  }
+  for (Entity &p : m_projectiles) {
+    if (!p.alive) continue;
+    p.pos = Vector3Add(p.pos, shiftFor(p.pos));
+  }
 }
 
 float EntityManager::surfaceHeightAt(const Planet &planet, float x,
@@ -3596,28 +3638,26 @@ void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
     break;
   }
   case EntityType::RadarStation: {
-    // Slice C C.2 — procedural until an OBJ is authored: concrete
-    // footing, tall mast, wide rotating dish, beacon. Taller than the
-    // Radar Booster so network nodes read at distance.
-    Color footing = {110, 115, 120, 255};
-    Color mast = {150, 160, 175, 255};
-    Color dish = {210, 225, 240, 255};
-    if (e.damageFlashTimer > 0.0f) footing = mast = dish = {255, 255, 255, 255};
-    DrawCubeV({e.pos.x, e.pos.y + 0.3f, e.pos.z}, {4.0f, 0.6f, 4.0f}, footing);
-    DrawCubeV({e.pos.x, e.pos.y + 3.6f, e.pos.z}, {0.9f, 6.6f, 0.9f}, mast);
-    DrawCubeV({e.pos.x, e.pos.y + 1.6f, e.pos.z}, {1.8f, 0.4f, 1.8f}, mast);
-    float dx = sinf(e.yaw), dz = cosf(e.yaw);
-    // Dish: a broad panel facing along yaw, offset forward of the mast.
-    Vector3 dishPos = {e.pos.x + dx * 0.7f, e.pos.y + 7.2f, e.pos.z + dz * 0.7f};
-    Vector3 dishSize = {fabsf(dz) * 3.6f + fabsf(dx) * 0.4f, 2.0f,
-                        fabsf(dx) * 3.6f + fabsf(dz) * 0.4f};
-    DrawCubeV(dishPos, dishSize, dish);
-    DrawCubeV({e.pos.x + dx * 1.8f, e.pos.y + 7.2f, e.pos.z + dz * 1.8f},
-              {0.35f, 0.35f, 0.35f}, {255, 220, 100, 255});
-    DrawCubeV({e.pos.x, e.pos.y + 8.6f, e.pos.z}, {0.5f, 0.5f, 0.5f},
-              {255, 70, 60, 255});
+    // Slice C C.2 — red/white lattice tower with a deck and white radome
+    // (radar_station.obj, ~21 m tall). The procedural mast + spinning
+    // dish is the fallback when the OBJ is missing.
+    if (registry && registry->has(EntityType::RadarStation)) {
+      registry->draw(EntityType::RadarStation, e.pos, 0.0f, 1.0f, WHITE);
+    } else {
+      Color footing = {110, 115, 120, 255};
+      Color mast = {150, 160, 175, 255};
+      Color dish = {210, 225, 240, 255};
+      if (e.damageFlashTimer > 0.0f) footing = mast = dish = {255, 255, 255, 255};
+      DrawCubeV({e.pos.x, e.pos.y + 0.3f, e.pos.z}, {4.0f, 0.6f, 4.0f}, footing);
+      DrawCubeV({e.pos.x, e.pos.y + 3.6f, e.pos.z}, {0.9f, 6.6f, 0.9f}, mast);
+      float dx = sinf(e.yaw), dz = cosf(e.yaw);
+      Vector3 dishPos = {e.pos.x + dx * 0.7f, e.pos.y + 7.2f, e.pos.z + dz * 0.7f};
+      Vector3 dishSize = {fabsf(dz) * 3.6f + fabsf(dx) * 0.4f, 2.0f,
+                          fabsf(dx) * 3.6f + fabsf(dz) * 0.4f};
+      DrawCubeV(dishPos, dishSize, dish);
+    }
     if (e.hullMax > 0.0f) {
-      drawHpBar(e.pos, 9.6f, 4.0f, e.hullHP / e.hullMax,
+      drawHpBar(e.pos, 23.0f, 4.0f, e.hullHP / e.hullMax,
                 {80, 220, 100, 220}, camPos);
     }
     break;

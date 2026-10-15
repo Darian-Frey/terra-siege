@@ -108,6 +108,8 @@ constexpr int CHUNK_VERTS = 32;      // quads per chunk edge
 constexpr float TERRAIN_SCALE =
     8.0f; // world units per heightmap cell (world ~8192×8192)
 constexpr float TERRAIN_HEIGHT_MAX = 220.0f;  // peak elevation, world units
+// Toroidal world period (both axes). Planet::worldSize() returns this.
+constexpr float WORLD_SIZE = static_cast<float>(HEIGHTMAP_SIZE - 1) * TERRAIN_SCALE;
 constexpr float TERRAIN_CURVATURE = 0.00015f; // curvature cosine coefficient
 constexpr float FOG_NEAR = 700.0f;
 constexpr float FOG_FAR = 2000.0f;
@@ -349,6 +351,14 @@ constexpr float RADAR_BOOST_RANGE = 500.0f;     // with Radar Booster alive
 constexpr float RADAR_ALT_STRIP_RANGE = 150.0f; // ±units shown on alt strip
 constexpr float RADAR_PULSE_PERIOD = 1.0f;      // sec between pulses
 constexpr float RADAR_PULSE_SWEEP_TIME = 0.6f;  // sec for ring to reach rim
+// Radar towers (RadarStation) pulse on the same period, offset from the
+// player's pulse, with a ring that travels at the same speed as the
+// player's. The ring is drawn on the player's disc at true scale and
+// fades out over the last RADAR_STATION_PULSE_FADE metres of its range.
+constexpr float RADAR_STATION_RANGE = 300.0f;        // TUNE — tower radar range (m)
+constexpr float RADAR_STATION_PULSE_OFFSET = 0.5f;   // s after the player's pulse
+constexpr float RADAR_STATION_PULSE_FADE = 50.0f;    // m of fade at the end of the ring
+constexpr int RADAR_STATION_PULSE_MAX = 16;          // towers tracked for pulse rings
 constexpr float RADAR_PAINT_MIN_ALPHA = 0.25f;  // echo brightness just before repaint
 constexpr float RADAR_GHOST_LIFETIME = 8.0f;    // ghost blip persistence
 constexpr float RADAR_VECTOR_MAX_LEN = 18.0f;   // px at max world speed
@@ -373,6 +383,10 @@ constexpr float AI_ATTACK_RANGE = 60.0f;
 // of fizzling out mid-air. aiAttackRange still governs when a ship
 // commits (eases throttle, lines up); this governs the trigger.
 constexpr float ENEMY_FIRE_RANGE_FRAC = 0.9f;
+// Allied ships (base defenders, infected ships) fire within this wider
+// nose cone. Their shots are aimed straight at the target, so the narrow
+// hostile cone only stopped them firing at drones orbiting close by.
+constexpr float ALLIED_FIRE_CONE_DOT = 0.70f; // ~45°
 // Fighters, Drones and Tanks go after the nearest friendly (structure or
 // allied ship) inside their detection range instead of the player when
 // it is closer than the player × this. Bombers use their own, stronger
@@ -660,7 +674,7 @@ constexpr int COLLECTOR_DELIVERY_SCORE = 25; // points per successful delivery
 // modest so the player still has to defend it.
 constexpr float BASE_HULL = 240.0f;
 constexpr float BASE_HIT_RADIUS = 4.5f;
-constexpr float BASE_TURRET_RANGE = 110.0f;       // engagement radius
+constexpr float BASE_TURRET_RANGE = 160.0f;       // engagement radius
 constexpr float BASE_TURRET_AIM_RATE = 2.2f;      // rad/s rotation
 constexpr float BASE_TURRET_FIRE_RATE = 0.45f;    // sec between shots
 constexpr float BASE_TURRET_DAMAGE = 7.0f;        // per shot (15 DPS)
@@ -672,6 +686,7 @@ constexpr float BASE_TURRET_BARREL_HEIGHT = 5.0f; // muzzle Y above the platform
 // defenders, and a landed player on the pad is repaired and rearmed.
 // Applies in both game modes.
 constexpr float BASE_UNDER_ATTACK_WINDOW = 8.0f;  // s since last hit = "under attack"
+constexpr float BASE_ALERT_RANGE = 220.0f;        // TUNE — a hostile this close also scrambles defenders
 constexpr int BASE_DEFENDER_MAX = 3;              // TUNE — live defenders per base
 constexpr float BASE_DEFENDER_LAUNCH_INTERVAL = 1.5f; // TUNE — s between launches
 constexpr float BASE_DEFENDER_LAUNCH_HEIGHT = 10.0f;  // spawn this far above the pad
@@ -725,6 +740,11 @@ constexpr float FRIENDLY_SPAWN_MAX_SLOPE = 0.30f; // rise per metre
 // replaces Repair Stations in this mode.
 constexpr int BASE_MODE_BASE_COUNT = 8;          // TUNE — C.8 makes this per-difficulty
 constexpr int BASE_MODE_RADAR_STATION_COUNT = 6; // TUNE
+// Wave mode also scatters extra bases (each with a landing platform) and
+// radar towers across the grassland, beyond the home Base by the player.
+constexpr int WAVE_MODE_EXTRA_BASE_COUNT = 3;     // TUNE
+constexpr int WAVE_MODE_RADAR_STATION_COUNT = 4;  // TUNE
+constexpr float RADAR_STATION_CLEAR_HALF = 5.0f;  // decoration-free square at a tower's foot
 
 // Bomber engagement of friendlies — preference threshold. If the
 // nearest friendly is closer than (dist to player × FRIENDLY_PRIORITY),

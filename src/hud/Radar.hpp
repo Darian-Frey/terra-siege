@@ -39,6 +39,7 @@ enum class BlipType : uint8_t {
   Pickup,
   Base,
   LaunchPad,
+  RadarStation, // C.2 network node — radome-on-mast icon
   Ghost,
 };
 
@@ -95,6 +96,8 @@ private:
   void drawBlip(Vector2 radarPos, BlipType type, Color col,
                 Vector3 velocity, float playerYaw) const;
   void drawPulse(Vector2 centre, float radius) const;
+  // Radar-tower pulse rings, clipped to the player's disc.
+  void drawStationPulses(Vector2 centre, float radius) const;
 
   // Ego-centric coordinate transform — rotates world XZ by -playerYaw
   // so the player's nose direction is always "up" on the disc.
@@ -135,6 +138,10 @@ private:
     float time = 0.0f;
   };
   std::array<PaintState, Config::ENTITY_POOL_SIZE> m_paint{};
+
+  // Radar-tower positions this tick (pre-allocated; no heap).
+  std::array<Vector3, Config::RADAR_STATION_PULSE_MAX> m_stations{};
+  int m_stationCount = 0;
 
   bool m_boosted = false; // wired to RadarBooster friendly when alive
 

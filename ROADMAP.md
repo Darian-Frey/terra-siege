@@ -12,7 +12,7 @@ Phases are append-only: completed phases are marked with an ISO date, never dele
 
 ## Current focus
 
-**Slice C — Base Defence mode.** C.2 is done (2026-10-15). Next comes **C.4, the radar network** (F-023), which also settles [BUG-001](BUGS.md#bug-001-radar-shows-every-entity-on-the-map-regardless-of-range) and [BUG-002](BUGS.md#bug-002-one-radar-booster-anywhere-boosts-radar-range-globally). Decide the player's personal radar range first: the design says about 150 m, against today's 300 m. C.3 follow-ups (Lander production) can be done before or after.
+**Slice C — Base Defence mode.** C.2 is done (2026-10-15). Next comes **C.4, the radar network** (F-023), which also settles [BUG-001](BUGS.md#bug-001-radar-shows-every-entity-on-the-map-regardless-of-range) and [BUG-002](BUGS.md#bug-002-one-radar-booster-anywhere-boosts-radar-range-globally). The personal radar stays at 300 m ([D-031](DECISIONS.md#d-031-players-personal-radar-stays-at-300-m-in-base-defence-mode)). C.3 follow-ups (Lander production) can be done before or after.
 
 Recommended order from here:
 

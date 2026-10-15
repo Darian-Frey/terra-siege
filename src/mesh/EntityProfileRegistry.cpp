@@ -18,6 +18,7 @@ const char *EntityProfileRegistry::filenameFor(EntityType type) {
   case EntityType::RepairStation: return "repair_station.meta.json";
   case EntityType::RadarBooster:  return "radar_booster.meta.json";
   case EntityType::Base:          return "base.meta.json";
+  case EntityType::RadarStation:  return "radar_station.meta.json";
   default: return "";
   }
 }

@@ -260,14 +260,14 @@ Players who want a modern take on the 1988 Argonaut game *Virus*: flat-shaded lo
 **Status:** Complete (2026-10-15)
 **Acceptance:**
 
-- A base that has been hit in the last `BASE_UNDER_ATTACK_WINDOW` seconds launches allied Fighter defenders, up to `BASE_DEFENDER_MAX` per base. Defenders engage hostiles within `BASE_DEFENDER_LEASH` of home and land (despawn) when none remain
+- A base that has been hit in the last `BASE_UNDER_ATTACK_WINDOW` seconds, or has a hostile within `BASE_ALERT_RANGE`, launches allied Fighter defenders, up to `BASE_DEFENDER_MAX` per base. Defenders engage hostiles within `BASE_DEFENDER_LEASH` of home and land (despawn) when none remain
 - Each base stands on a raised 36 m landing platform (`BASE_PAD_HALF_SIZE`, `BASE_PAD_HEIGHT`) on levelled terrain with decorations cleared, with the control tower at its NE corner. The south and east sides get a ramp wherever they stand above the adjacent ground. Collectors reach and leave the platform only by those ramps, detouring around the platform when needed. A player docked anywhere on the platform (landed, or hovering below `BASE_PAD_HOVER_AGL` at under `BASE_PAD_HOVER_SPEED`) is repaired continuously and fully rearmed after `BASE_PAD_REARM_TIME`. The HUD shows ON PAD
 - A radar station entity exists as a network node, ready for C.4
 - Defenders and pads work in both game modes. Base-mode placement uses bases and radar stations, with no Repair Stations or Radar Boosters
 - Enemy fire can damage friendly structures and allied ships ([BUG-026](BUGS.md#bug-026-enemy-fire-never-damages-friendly-structures-or-allied-ships))
 - Fighters, Drones and Tanks attack a nearby friendly instead of the player when it is closer (`ENEMY_FRIENDLY_PRIORITY`). A fixed share of them (`ENEMY_RAIDER_PERCENT`, "raiders") always prefer friendlies in range. Landers deploy drones when any friendly is in range
 
-**Notes:** [D-030](DECISIONS.md#d-030-base-defenders-reuse-the-allied-fighter-path-pads-replace-repair-stations-in-base-mode). The radar station renders procedurally until an OBJ and sidecar are authored. Losing all bases (not every friendly) ends a Base-mode round.
+**Notes:** [D-030](DECISIONS.md#d-030-base-defenders-reuse-the-allied-fighter-path-pads-replace-repair-stations-in-base-mode). Radar stations use `radar_station.obj`: a red/white lattice tower with a white radome, about 21 m tall, 476 tris (above the 200-tri guideline for the lattice silhouette; only a handful exist at once). Wave mode also places `WAVE_MODE_EXTRA_BASE_COUNT` extra bases and `WAVE_MODE_RADAR_STATION_COUNT` radar towers across the map. Losing all bases (not every friendly) ends a Base-mode round.
 
 ### F-022 Lander entity (C.3)
 
@@ -342,8 +342,9 @@ Players who want a modern take on the 1988 Argonaut game *Virus*: flat-shaded lo
 **Status:** Complete (2026-06-01, `6d3a339`; pulse sweep 2026-10-15, `50506fc`)
 **Acceptance:**
 
-- Heading-up disc with IFF-coloured blip shapes per type and an altitude strip with altitude tint
+- Heading-up disc with IFF-coloured blip shapes per type (radar towers use a radome-on-mast icon) and an altitude strip with altitude tint
 - Old-style pulse: a ring expands every second, blips are painted when the ring reaches them, and they fade until the next pulse
+- Radar towers pulse `RADAR_STATION_PULSE_OFFSET` (0.5 s) after the player. Each ring (`RADAR_STATION_RANGE`, 300 m) is drawn on the player's disc at true scale, clipped to the disc, and fades over its last `RADAR_STATION_PULSE_FADE` (50 m). It is visual only until C.4 lets tower pulses reveal contacts
 - Real-time missile-warning arrows, Carrier jamming jitter, velocity arrows and ghost blips (32-slot pool)
 - Range 300 m, or 500 m with a live Radar Booster
 

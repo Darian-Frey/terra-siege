@@ -57,7 +57,7 @@ Created 2026-10-15 ([D-001](DECISIONS.md#d-001-adopt-the-development-documentati
 **History.**
 
 - Decorations and entities vanished past the edge; fixed 2026-10-15 (`7e846c3`).
-- AI, collision and radar distances are still unwrapped: [BUG-007](BUGS.md#bug-007-ai-collision-and-radar-distances-ignore-the-toroidal-wrap).
+- AI, collision and radar distances ignored the wrap: [BUG-007](BUGS.md#bug-007-ai-collision-and-radar-distances-ignore-the-toroidal-wrap). Fixed 2026-10-15: the radar measures to the nearest copy, and `EntityManager::rebaseAround()` re-centres the simulation on the player every tick.
 
 ### AV-014 Loading progress callback lost on terrain regeneration
 

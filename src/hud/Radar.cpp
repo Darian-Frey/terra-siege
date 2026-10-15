@@ -31,8 +31,8 @@ BlipType blipTypeFromEntity(EntityType t) {
   case EntityType::GroundTurret: return BlipType::Turret;
   case EntityType::Collector:
   case EntityType::RepairStation:
-  case EntityType::RadarBooster:
-  case EntityType::RadarStation: return BlipType::Friendly;
+  case EntityType::RadarBooster: return BlipType::Friendly;
+  case EntityType::RadarStation: return BlipType::RadarStation;
   case EntityType::Base:         return BlipType::Base;
   default:                       return BlipType::Fighter;
   }
@@ -40,13 +40,23 @@ BlipType blipTypeFromEntity(EntityType t) {
 
 Color baseColourForBlip(BlipType t) {
   switch (t) {
-  case BlipType::Friendly:  return COL_FRIENDLY;
+  case BlipType::Friendly:
+  case BlipType::RadarStation: return COL_FRIENDLY;
   case BlipType::Pickup:    return COL_PICKUP;
   case BlipType::Base:
   case BlipType::LaunchPad: return COL_BASE;
   case BlipType::Ghost:     return {180, 60, 60, 120};
   default:                  return COL_ENEMY_CRAFT;
   }
+}
+
+// Toroidal world: the copy of p nearest ref, so contacts across a world
+// edge are measured and drawn where the player actually sees them.
+inline Vector3 nearestCopy(Vector3 p, Vector3 ref) {
+  const float ws = Config::WORLD_SIZE;
+  p.x -= roundf((p.x - ref.x) / ws) * ws;
+  p.z -= roundf((p.z - ref.z) / ws) * ws;
+  return p;
 }
 
 inline unsigned char clampU(float v) {
@@ -79,6 +89,7 @@ void Radar::update(float dt, const EntityManager &entities, Vector3 playerPos,
                             : Config::RADAR_BASE_RANGE;
 
   m_contacts.clear();
+  m_stationCount = 0;
   // Tier 2 jam factor — scan for the nearest live Carrier. Inside
   // RADAR_JAM_RANGE, jamFactor lerps 0 → 1 as the player closes.
   // Friendlies and other enemy types don't jam.
@@ -89,12 +100,16 @@ void Radar::update(float dt, const EntityManager &entities, Vector3 playerPos,
     if (!e.alive) continue;
     if (e.type == EntityType::Projectile) continue;
 
+    const Vector3 epos = nearestCopy(e.pos, playerPos);
     if (e.type == EntityType::Carrier) {
-      float d = Vector3Distance(e.pos, playerPos);
+      float d = Vector3Distance(epos, playerPos);
       if (d < carrierDist) carrierDist = d;
     }
+    if (e.type == EntityType::RadarStation &&
+        m_stationCount < Config::RADAR_STATION_PULSE_MAX)
+      m_stations[static_cast<size_t>(m_stationCount++)] = epos;
 
-    Vector3 d = Vector3Subtract(e.pos, playerPos);
+    Vector3 d = Vector3Subtract(epos, playerPos);
     float horiz = sqrtf(d.x * d.x + d.z * d.z);
 
     // Paint when the pulse front sweeps past this contact. Contacts
@@ -105,7 +120,7 @@ void Radar::update(float dt, const EntityManager &entities, Vector3 playerPos,
     float frac = std::min(horiz / m_activeRange, 1.0f);
     if (pulseCrossed(frac, t0, gameTime)) {
       ps.painted = true;
-      ps.pos = e.pos;
+      ps.pos = epos;
       ps.vel = e.vel;
       ps.time = gameTime;
     }
@@ -119,11 +134,11 @@ void Radar::update(float dt, const EntityManager &entities, Vector3 playerPos,
       col = COL_FRIENDLY;
 
     RadarContact c;
-    c.position = ps.pos;
+    c.position = nearestCopy(ps.pos, playerPos);
     c.velocity = ps.vel;
     c.blipType = bt;
     c.distance = horiz;
-    c.altDelta = ps.pos.y - playerPos.y;
+    c.altDelta = c.position.y - playerPos.y;
     c.paintAge = gameTime - ps.time;
     c.colour = col;
     c.id = e.id;
@@ -189,7 +204,8 @@ void Radar::update(float dt, const EntityManager &entities, Vector3 playerPos,
   for (const Entity &p : entities.projectiles()) {
     if (!p.alive) continue;
     if (p.owner != ProjectileOwner::Enemy) continue;
-    Vector3 rel = Vector3Subtract(playerPos, p.pos);
+    const Vector3 ppos = nearestCopy(p.pos, playerPos);
+    Vector3 rel = Vector3Subtract(playerPos, ppos);
     float dist = Vector3Length(rel);
     if (dist > Config::RADAR_MISSILE_WARN_MIN) continue;
     // Closing rate = -d/dt(distance) = dot(rel, p.vel) / |rel|.
@@ -202,8 +218,8 @@ void Radar::update(float dt, const EntityManager &entities, Vector3 playerPos,
 
     // Bearing in ship-local space. Same world→local rotation as
     // worldToRadar uses.
-    float dx = p.pos.x - playerPos.x;
-    float dz = p.pos.z - playerPos.z;
+    float dx = ppos.x - playerPos.x;
+    float dz = ppos.z - playerPos.z;
     float c = cosf(playerYaw);
     float s = sinf(playerYaw);
     float lx = dx * c - dz * s;
@@ -379,6 +395,60 @@ void Radar::drawPulse(Vector2 centre, float radius) const {
 }
 
 // ====================================================================
+// Radar-tower pulses — each tower's ring expands from its position on the
+// disc at the same speed as the player's ring, starting
+// RADAR_STATION_PULSE_OFFSET after it. Drawn at true scale and clipped to
+// the disc, so a tower's pulse first shows once the player is within
+// RADAR_STATION_RANGE + the player's range of it. The ring fades out over
+// its last RADAR_STATION_PULSE_FADE metres.
+// ====================================================================
+void Radar::drawStationPulses(Vector2 centre, float radius) const {
+  if (m_stationCount == 0) return;
+  const float period = Config::RADAR_PULSE_PERIOD;
+  const float range = Config::RADAR_STATION_RANGE;
+  // Same ground speed as the player's ring (range per sweep time).
+  const float speed = Config::RADAR_BASE_RANGE / Config::RADAR_PULSE_SWEEP_TIME;
+  float phase = fmodf(m_gameTime - Config::RADAR_STATION_PULSE_OFFSET, period);
+  if (phase < 0.0f) phase += period;
+  const float rWorld = phase * speed;
+  if (rWorld <= 0.0f || rWorld >= range) return;
+  float fade = (range - rWorld) / Config::RADAR_STATION_PULSE_FADE;
+  if (fade > 1.0f) fade = 1.0f;
+  const float scale = radius / m_activeRange;
+  const float rPx = rWorld * scale;
+  const unsigned char a = clampU(200.0f * fade);
+  const Color front = {110, 235, 205, a};
+  const Color trail = {70, 200, 170, static_cast<unsigned char>(a / 4)};
+  const float r2 = radius * radius;
+  constexpr int kSegs = 72;
+  for (int s = 0; s < m_stationCount; ++s) {
+    Vector2 c = worldToRadar(m_stations[static_cast<size_t>(s)], centre, radius);
+    // Skip towers whose ring can't reach the disc yet.
+    float dx = c.x - centre.x, dy = c.y - centre.y;
+    float dc = sqrtf(dx * dx + dy * dy);
+    if (dc - rPx > radius) continue;
+    // Polyline ring; segments with an end outside the disc are dropped,
+    // which clips the ring to the disc.
+    for (int pass = 0; pass < 2; ++pass) {
+      float rr = pass == 0 ? rPx : fmaxf(rPx - 5.0f, 0.0f);
+      float thick = pass == 0 ? 2.0f : 4.0f;
+      Color col = pass == 0 ? front : trail;
+      Vector2 prev{};
+      bool prevIn = false;
+      for (int k = 0; k <= kSegs; ++k) {
+        float ang = 6.28318f * static_cast<float>(k) / kSegs;
+        Vector2 p = {c.x + cosf(ang) * rr, c.y + sinf(ang) * rr};
+        float px = p.x - centre.x, py = p.y - centre.y;
+        bool in = px * px + py * py <= r2;
+        if (k > 0 && in && prevIn) DrawLineEx(prev, p, thick, col);
+        prev = p;
+        prevIn = in;
+      }
+    }
+  }
+}
+
+// ====================================================================
 // Altitude strip — vertical bar showing contacts' Y delta from player.
 // Player is at the midline; strip half-height maps to RADAR_ALT_STRIP_RANGE.
 // ====================================================================
@@ -456,6 +526,13 @@ void Radar::drawBlip(Vector2 radarPos, BlipType type, Color col,
              col);
     break;
   case BlipType::Friendly: DrawCircleV(radarPos, 4.0f, col); break;
+  case BlipType::RadarStation:
+    // Radome on a mast: hollow dome above a short stem, so radar
+    // towers read differently from the solid friendly dots.
+    DrawRing({radarPos.x, radarPos.y - 2.5f}, 2.6f, 4.2f, 0.0f, 360.0f, 16, col);
+    DrawLineEx({radarPos.x, radarPos.y + 1.5f}, {radarPos.x, radarPos.y + 6.0f},
+               1.6f, col);
+    break;
   case BlipType::Pickup:   drawStarBlip(radarPos, col, 4.0f); break;
   case BlipType::Base:
   case BlipType::LaunchPad:
@@ -471,12 +548,14 @@ void Radar::drawBlip(Vector2 radarPos, BlipType type, Color col,
 // ====================================================================
 void Radar::draw(Vector2 discCentre, float discRadius) const {
   drawDisc(discCentre, discRadius);
+  drawStationPulses(discCentre, discRadius);
 
   // Ghost blips first — drawn underneath active blips so a fresh
   // contact at the same position overdraws cleanly.
   for (const GhostBlip &g : m_ghosts) {
     if (!g.active) continue;
-    Vector2 rp = worldToRadar(g.lastPos, discCentre, discRadius);
+    Vector2 rp = worldToRadar(nearestCopy(g.lastPos, m_playerPos), discCentre,
+                              discRadius);
     Vector2 toGhost = {rp.x - discCentre.x, rp.y - discCentre.y};
     float bDist = sqrtf(toGhost.x * toGhost.x + toGhost.y * toGhost.y);
     if (bDist > discRadius) continue; // out of range — drop ghost from view

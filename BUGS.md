@@ -49,16 +49,6 @@ The register was created on 2026-10-15 ([D-001](DECISIONS.md#d-001-adopt-the-dev
 **Reproduction.** With flight assist ≥1, bank the craft with the mouse, then hold Q. Roll stays put until Q is released.
 **Notes.** Low impact because colour selection is normally a tap. Fix: base `rollInput` on mouse roll only, or remove it.
 
-### BUG-007: AI, collision and radar distances ignore the toroidal wrap
-
-**Status:** open
-**Found:** 2026-10-15 (`7e846c3`)
-**Location:** cross-cutting: [src/entity/EntityManager.cpp](src/entity/EntityManager.cpp) AI and collision, [src/hud/Radar.cpp](src/hud/Radar.cpp)
-**Severity:** medium
-**Description.** Rendering is wrap-aware (`Planet::nearestCopy()`), but gameplay distances use raw coordinates. Once the unwrapped player crosses a world edge, or friendlies spread world-wide, three things go wrong. Enemies pursue targets the long way round the map. Radar bearings point the long way. Entities close across the seam don't collide or detect each other.
-**Reproduction.** Fly more than about 4 km from spawn in one direction. Radar blips for friendlies near spawn point backwards instead of towards the nearer copy across the seam.
-**Notes.** Needs a shared wrapped-delta helper used by all distance queries. Related: [AV-005](ATTACK_VECTORS.md#av-005-world-fixed-objects-drawn-or-measured-without-the-toroidal-wrap), [D-007](DECISIONS.md#d-007-unwrapped-player-coordinates-on-a-toroidal-world).
-
 ### BUG-008: Landers and other unmapped types show as Fighter blips
 
 **Status:** open
@@ -298,6 +288,17 @@ The 5g commit says strafe runs "fire at the friendly", but the friendly-hit chec
 **Description.** `unload()` called `UnloadModel(m_model)` but left the chunk's separate `Mesh m_mesh` copy holding the freed GPU ids and vertex pointers. On the next `build()`, raylib's `UploadMesh` saw a non-zero VAO id and refused ("Trying to re-load an already loaded mesh"), so the new model referenced freed memory and the game crashed when drawing it. Any chunk rebuild was affected, including the DEV F5 terrain reseed (`Planet::generate` unloads and rebuilds every chunk).
 **Reproduction.** Before the fix: start a round (base aprons rebuild nearby chunks), or press F5 in a DEV build. The log shows the "already loaded" warning, followed by a segfault.
 **Notes.** Fixed 2026-10-15: `unload()` now resets `m_mesh` and `m_model` to `{}`. A startup smoke test confirms clean re-uploads with no warnings.
+
+### BUG-007: AI, collision and radar distances ignore the toroidal wrap
+
+**Status:** fixed (2026-10-15)
+**Found:** 2026-10-15 (`7e846c3`)
+**Location:** cross-cutting: [src/entity/EntityManager.cpp](src/entity/EntityManager.cpp) AI and collision, [src/hud/Radar.cpp](src/hud/Radar.cpp)
+**Severity:** medium
+**Description.** Rendering is wrap-aware (`Planet::nearestCopy()`), but gameplay distances use raw coordinates. Once the unwrapped player crosses a world edge, or friendlies spread world-wide, three things go wrong. Enemies pursue targets the long way round the map. Radar bearings point the long way. Entities close across the seam don't collide or detect each other.
+**Reproduction.** Fly more than about 4 km from spawn in one direction. Radar blips for friendlies near spawn point backwards instead of towards the nearer copy across the seam.
+**Notes.** Fixed 2026-10-15 in two steps. Gameplay: `EntityManager::rebaseAround()` runs at the start of every update and shifts each entity and projectile (with its `spawnPos`, `routePoint` and Collector `targetPos`) onto the world copy nearest the player, so all distances near the player are correct. Found when, after flying back to the base across an edge, enemies, the base turret and defenders stopped engaging. Known limitation: two entities about half a world from the player can end up on opposite sides of the rebase line; that only affects fights roughly 4 km away. Radar: `Radar` now measures every contact, painted echo, ghost, tower pulse and missile warning to the nearest toroidal copy (`Config::WORLD_SIZE`). Found when a tower in front of a player past the southern edge had no blip or pulse. Related: [AV-005](ATTACK_VECTORS.md#av-005-world-fixed-objects-drawn-or-measured-without-the-toroidal-wrap), [D-007](DECISIONS.md#d-007-unwrapped-player-coordinates-on-a-toroidal-world).
+
 
 ## Won't Fix
 

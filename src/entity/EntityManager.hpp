@@ -253,6 +253,10 @@ private:
   void updateGroundTurret(Entity &e, float dt, const Planet &planet,
                           const Player &player);
   void fireTurretShot(Entity &e, Vector3 targetPos);
+  // Toroidal world: shift every entity and projectile onto the copy of
+  // the world nearest `centre` (the player), so all gameplay distances
+  // near the player are correct after crossing a world edge.
+  void rebaseAround(Vector3 centre);
   // Ground height including base platforms and their ramps (C.2), for
   // ground vehicles. Falls back to the terrain.
   float surfaceHeightAt(const Planet &planet, float x, float z) const;
