@@ -208,6 +208,12 @@ void TerrainChunk::draw(Vector3 offset) const {
 void TerrainChunk::unload() {
   if (m_built) {
     UnloadModel(m_model);
+    // UnloadModel frees the GPU buffers and vertex arrays, but m_mesh is
+    // a separate copy still holding the old ids/pointers. Clear both so
+    // the next build() uploads a fresh mesh instead of raylib refusing
+    // ("already loaded") and the model referencing freed memory.
+    m_mesh = {};
+    m_model = {};
     m_built = false;
   }
 }
