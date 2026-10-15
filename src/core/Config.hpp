@@ -347,7 +347,6 @@ constexpr float SHIELD_RECHARGE_DELAY = 3.0f; // sec after last hit
 // later doesn't require Config changes.
 // ----------------------------------------------------------------
 constexpr float RADAR_BASE_RANGE = 300.0f;      // world units (default)
-constexpr float RADAR_BOOST_RANGE = 500.0f;     // with Radar Booster alive
 constexpr float RADAR_ALT_STRIP_RANGE = 150.0f; // ±units shown on alt strip
 constexpr float RADAR_PULSE_PERIOD = 1.0f;      // sec between pulses
 constexpr float RADAR_PULSE_SWEEP_TIME = 0.6f;  // sec for ring to reach rim
@@ -358,7 +357,21 @@ constexpr float RADAR_PULSE_SWEEP_TIME = 0.6f;  // sec for ring to reach rim
 constexpr float RADAR_STATION_RANGE = 300.0f;        // TUNE — tower radar range (m)
 constexpr float RADAR_STATION_PULSE_OFFSET = 0.5f;   // s after the player's pulse
 constexpr float RADAR_STATION_PULSE_FADE = 50.0f;    // m of fade at the end of the ring
-constexpr int RADAR_STATION_PULSE_MAX = 24;          // towers tracked for pulse rings
+constexpr int RADAR_NODE_MAX = 128;                  // online detection nodes tracked by the radar
+
+// Slice C C.4 — radar network. Bases, radar towers and Radar Boosters are
+// nodes; two nodes are linked within NETWORK_LINK_RANGE. A linked cluster
+// is online while it contains a living base, and every online tower /
+// booster detects contacts within RADAR_STATION_RANGE for the player.
+constexpr float NETWORK_LINK_RANGE = 400.0f;      // TUNE
+// Relay chains: towers every NETWORK_CHAIN_SPACING along a line from each
+// base to its NETWORK_CHAIN_NEIGHBOURS nearest bases, so links hold.
+constexpr float NETWORK_CHAIN_SPACING = 350.0f;   // must stay below NETWORK_LINK_RANGE
+constexpr int NETWORK_CHAIN_NEIGHBOURS = 2;
+constexpr int NETWORK_MAX_CHAIN_TOWERS = 120;     // cap across all chains
+constexpr float NETWORK_CHAIN_MIN_SEP = 60.0f;    // skip a chain tower this close to another friendly
+static_assert(NETWORK_CHAIN_SPACING < NETWORK_LINK_RANGE,
+              "relay chain spacing must be inside link range"); 
 constexpr float RADAR_PAINT_MIN_ALPHA = 0.25f;  // echo brightness just before repaint
 constexpr float RADAR_GHOST_LIFETIME = 8.0f;    // ghost blip persistence
 constexpr float RADAR_VECTOR_MAX_LEN = 18.0f;   // px at max world speed
@@ -761,7 +774,7 @@ constexpr float RADAR_STATION_CLEAR_HALF = 5.0f;  // decoration-free square at a
 constexpr float BOMBER_FRIENDLY_PRIORITY = 2.0f;
 
 // Pool sizes — pre-allocated, no heap in hot path
-constexpr int ENTITY_POOL_SIZE = 256;     // enemies + friendlies
+constexpr int ENTITY_POOL_SIZE = 512;     // enemies + friendlies (incl. radar relay towers)
 constexpr int PROJECTILE_POOL_SIZE = 512; // player + enemy projectiles
 
 // Wave manager — staggered spawning + intermission between waves.

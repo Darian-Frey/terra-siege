@@ -971,6 +971,7 @@ void EntityManager::update(float dt, const Planet &planet, Player &player,
   // Keep the simulation centred on the (unwrapped) player so AI,
   // targeting and collisions measure across world edges correctly.
   rebaseAround(player.position());
+  updateRadarNetwork();
 
   // Base pad state is recomputed by tickBasePad each tick; the rearm
   // dwell timer restarts once the player leaves the pad.
@@ -2419,9 +2420,8 @@ void EntityManager::updateRepairStation(Entity &e, float dt, Player &player) {
 }
 
 // ====================================================================
-// Radar Booster — purely passive. While alive, Radar reads
-// anyRadarBoosterAlive() and switches its display range from
-// RADAR_BASE_RANGE to RADAR_BOOST_RANGE. The only per-tick work here
+// Radar Booster — a Wave-mode radar network node (C.4); detects like a
+// radar tower while its cluster is online. The only per-tick work here
 // is animating the rotating dish visual (yaw).
 // ====================================================================
 void EntityManager::updateRadarBooster(Entity &e, float dt) {
@@ -2436,11 +2436,50 @@ void EntityManager::updateRadarStation(Entity &e, float dt) {
   if (e.yaw > 6.28318f) e.yaw -= 6.28318f;
 }
 
-bool EntityManager::anyRadarBoosterAlive() const {
-  for (const Entity &e : m_entities) {
-    if (e.alive && e.type == EntityType::RadarBooster) return true;
+void EntityManager::updateRadarNetwork() {
+  // Union–find over the network nodes (≤ ENTITY_POOL_SIZE, fixed arrays,
+  // no heap). Distances use the nearest toroidal copy so links that span
+  // a world edge, or the far side of the rebase, still connect.
+  static std::array<int, Config::ENTITY_POOL_SIZE> parent;
+  static std::array<bool, Config::ENTITY_POOL_SIZE> hasBase;
+  int idx[Config::ENTITY_POOL_SIZE];
+  int n = 0;
+  for (int i = 0; i < Config::ENTITY_POOL_SIZE; ++i) {
+    Entity &e = m_entities[static_cast<size_t>(i)];
+    e.networkOnline = false;
+    if (e.alive && isNetworkNode(e.type)) idx[n++] = i;
   }
-  return false;
+  auto find = [&](int a) {
+    while (parent[static_cast<size_t>(a)] != a) {
+      parent[static_cast<size_t>(a)] =
+          parent[static_cast<size_t>(parent[static_cast<size_t>(a)])];
+      a = parent[static_cast<size_t>(a)];
+    }
+    return a;
+  };
+  for (int k = 0; k < n; ++k) parent[static_cast<size_t>(k)] = k;
+  const float ws = Config::WORLD_SIZE;
+  const float link2 = Config::NETWORK_LINK_RANGE * Config::NETWORK_LINK_RANGE;
+  for (int a = 0; a < n; ++a) {
+    const Vector3 pa = m_entities[static_cast<size_t>(idx[a])].pos;
+    for (int b = a + 1; b < n; ++b) {
+      const Vector3 pb = m_entities[static_cast<size_t>(idx[b])].pos;
+      float dx = pb.x - pa.x, dz = pb.z - pa.z;
+      dx -= roundf(dx / ws) * ws;
+      dz -= roundf(dz / ws) * ws;
+      if (dx * dx + dz * dz <= link2) {
+        int ra = find(a), rb = find(b);
+        if (ra != rb) parent[static_cast<size_t>(ra)] = rb;
+      }
+    }
+  }
+  for (int k = 0; k < n; ++k) hasBase[static_cast<size_t>(k)] = false;
+  for (int k = 0; k < n; ++k)
+    if (m_entities[static_cast<size_t>(idx[k])].type == EntityType::Base)
+      hasBase[static_cast<size_t>(find(k))] = true;
+  for (int k = 0; k < n; ++k)
+    m_entities[static_cast<size_t>(idx[k])].networkOnline =
+        hasBase[static_cast<size_t>(find(k))];
 }
 
 int EntityManager::liveFriendlyCount() const {

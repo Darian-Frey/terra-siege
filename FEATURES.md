@@ -284,15 +284,16 @@ Players who want a modern take on the 1988 Argonaut game *Virus*: flat-shaded lo
 ### F-023 Radar network (C.4)
 
 **Priority:** Must
-**Status:** Not started
+**Status:** Complete (2026-10-15)
 **Acceptance:**
 
-- A node connectivity graph shares detection across connected radar nodes
-- HUD areas the network doesn't reach are fogged
-- The player keeps a short-range personal radar throughout
-- Coverage degrades as nodes are lost
+- Bases, radar towers and Radar Boosters are nodes, linked within `NETWORK_LINK_RANGE` (400 m). A linked cluster is online while it contains a living base
+- Relay chains of towers every `NETWORK_CHAIN_SPACING` (350 m) join each base to its `NETWORK_CHAIN_NEIGHBOURS` nearest bases, in both game modes
+- The player's personal radar covers 300 m ([D-031](DECISIONS.md#d-031-players-personal-radar-stays-at-300-m-in-base-defence-mode)). Each online tower or booster covers `RADAR_STATION_RANGE` (300 m)
+- Contacts show only while covered. Beyond 300 m they appear as rim markers, painted by the covering tower's pulse. Uncovered contacts disappear, and contacts leaving coverage leave a ghost
+- Offline towers don't pulse, so coverage visibly degrades as bases or chain links fall
 
-**Notes:** Interacts with [BUG-001](BUGS.md#bug-001-radar-shows-every-entity-on-the-map-regardless-of-range) and [BUG-002](BUGS.md#bug-002-one-radar-booster-anywhere-boosts-radar-range-globally).
+**Notes:** [D-032](DECISIONS.md#d-032-radar-network-relay-chains-base-anchored-clusters-pulse-painted-rim-markers). Fixes [BUG-001](BUGS.md#bug-001-radar-shows-every-entity-on-the-map-regardless-of-range) and [BUG-002](BUGS.md#bug-002-one-radar-booster-anywhere-boosts-radar-range-globally). A zoomed-out network map view is a candidate follow-up.
 
 ### F-024 Help calls (C.5)
 

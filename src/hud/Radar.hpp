@@ -116,6 +116,9 @@ private:
   // True when the pulse front passed radius fraction f (0 = centre,
   // 1 = rim) during the time window (t0, t1].
   static bool pulseCrossed(float f, float t0, float t1);
+  // True when a pulse front reaching this point `offset` seconds into
+  // each period passed it during (t0, t1].
+  static bool pulseCrossedAt(float offset, float t0, float t1);
   // Alpha multiplier for a blip painted `age` seconds ago.
   static float paintFade(float age);
 
@@ -139,11 +142,12 @@ private:
   };
   std::array<PaintState, Config::ENTITY_POOL_SIZE> m_paint{};
 
-  // Radar-tower positions this tick (pre-allocated; no heap).
-  std::array<Vector3, Config::RADAR_STATION_PULSE_MAX> m_stations{};
+  // Online detection nodes (radar towers / boosters in an online network
+  // cluster) this tick, nearest copy to the player. Pre-allocated.
+  std::array<Vector3, Config::RADAR_NODE_MAX> m_stations{};
   int m_stationCount = 0;
 
-  bool m_boosted = false; // wired to RadarBooster friendly when alive
+  bool m_boosted = false; // true while the radar network feeds the player
 
   // Tier 2/3 state
   // Snapshot of last-tick contacts so we can spot disappearances

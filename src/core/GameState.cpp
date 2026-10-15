@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <string>
+#include <algorithm>
 #include <vector>
 
 #ifdef DEV_MODE
@@ -320,8 +321,11 @@ void GameState::loadWorld(uint32_t seed) {
 // world seed so placement is reproducible per seed.
 // ====================================================================
 int GameState::liveDefendedCount() const {
-  return m_gameMode == GameMode::Base ? m_em.liveEnemyOfType(EntityType::Base)
-                                      : m_em.liveFriendlyCount();
+  // Radar towers are network infrastructure, not part of the defended
+  // tally (relay chains would otherwise make Wave mode near-unlosable).
+  return m_gameMode == GameMode::Base
+             ? m_em.liveEnemyOfType(EntityType::Base)
+             : m_em.liveFriendlyCount() - m_em.liveEnemyOfType(EntityType::RadarStation);
 }
 
 void GameState::spawnFriendliesForRound(Vector3 playerStart) {
@@ -419,6 +423,7 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
   // under the platform and its ramps, clear decorations off the site,
   // seat the base at platform-top height, and add a ramp on the south
   // and east sides wherever that side stands above the ground beside it.
+  std::vector<Vector3> basesPlaced;
   auto spawnBase = [&](Vector3 pos) {
     const float site = Config::BASE_PAD_HALF_SIZE + Config::BASE_RAMP_LENGTH + 2.0f;
     float h = m_planet.flattenPad(pos.x, pos.z, site, Config::BASE_PAD_BLEND);
@@ -439,7 +444,84 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
                     {pos.x - Config::BASE_EAST_SIGN * Config::BASE_TOWER_OFFSET, pos.y,
                      pos.z + Config::BASE_TOWER_OFFSET});
     placed.push_back(pos);
+    basesPlaced.push_back(pos);
     return pos;
+  };
+
+  // DEV aid: how big the radar network is and how much of it is online.
+  auto logRadarNetwork = [&]() {
+    m_em.updateRadarNetwork();
+    int towers = 0, online = 0;
+    for (const Entity &e : m_em.entities()) {
+      if (!e.alive || !isDetectionNode(e.type)) continue;
+      ++towers;
+      if (e.networkOnline) ++online;
+    }
+    TraceLog(LOG_INFO, "RADAR NET: %d bases, %d detection nodes, %d online",
+             static_cast<int>(basesPlaced.size()), towers, online);
+  };
+
+  // Slice C C.4 — relay chains. Link each base to its nearest
+  // NETWORK_CHAIN_NEIGHBOURS bases with towers every
+  // NETWORK_CHAIN_SPACING along the straight (wrap-aware) line, so the
+  // radar network connects. Towers stand on terrain or the sea surface;
+  // a spot already near another friendly is skipped (the nearby node
+  // keeps the chain linked).
+  auto placeRelayChains = [&]() {
+    const float ws = m_planet.worldSize();
+    const float seaY = Config::SEA_LEVEL * Config::TERRAIN_HEIGHT_MAX;
+    auto wrapDelta = [ws](Vector3 a, Vector3 b) {
+      float dx = b.x - a.x, dz = b.z - a.z;
+      dx -= roundf(dx / ws) * ws;
+      dz -= roundf(dz / ws) * ws;
+      return Vector3{dx, 0.0f, dz};
+    };
+    const int nb = static_cast<int>(basesPlaced.size());
+    std::vector<std::pair<int, int>> links;
+    for (int i = 0; i < nb; ++i) {
+      // Nearest neighbours of base i by wrapped distance.
+      std::vector<std::pair<float, int>> byDist;
+      for (int j = 0; j < nb; ++j) {
+        if (j == i) continue;
+        Vector3 d = wrapDelta(basesPlaced[i], basesPlaced[j]);
+        byDist.push_back({d.x * d.x + d.z * d.z, j});
+      }
+      std::sort(byDist.begin(), byDist.end());
+      for (int k = 0; k < Config::NETWORK_CHAIN_NEIGHBOURS &&
+                      k < static_cast<int>(byDist.size());
+           ++k) {
+        int a = i, b = byDist[k].second;
+        if (a > b) std::swap(a, b);
+        if (std::find(links.begin(), links.end(), std::make_pair(a, b)) == links.end())
+          links.push_back({a, b});
+      }
+    }
+    int towers = 0;
+    const float sep2 = Config::NETWORK_CHAIN_MIN_SEP * Config::NETWORK_CHAIN_MIN_SEP;
+    for (const auto &l : links) {
+      Vector3 a = basesPlaced[l.first];
+      Vector3 d = wrapDelta(a, basesPlaced[l.second]);
+      float len = sqrtf(d.x * d.x + d.z * d.z);
+      int count = static_cast<int>(ceilf(len / Config::NETWORK_CHAIN_SPACING)) - 1;
+      for (int k = 1; k <= count; ++k) {
+        if (towers >= Config::NETWORK_MAX_CHAIN_TOWERS) return;
+        float t = static_cast<float>(k) / static_cast<float>(count + 1);
+        Vector3 p = {a.x + d.x * t, 0.0f, a.z + d.z * t};
+        bool crowded = false;
+        for (const Vector3 &q : placed) {
+          Vector3 e = wrapDelta(p, q);
+          if (e.x * e.x + e.z * e.z < sep2) { crowded = true; break; }
+        }
+        if (crowded) continue;
+        m_decorations.clearSquare(m_planet, p.x, p.z,
+                                  Config::RADAR_STATION_CLEAR_HALF,
+                                  Config::RADAR_STATION_CLEAR_HALF);
+        p.y = fmaxf(m_planet.heightAt(p.x, p.z), seaY);
+        m_em.spawnEnemy(EntityType::RadarStation, p);
+        placed.push_back(p);
+        ++towers;
+      }
+    }
   };
 
   // Slice C C.1 — Base mode places a NETWORK of friendly bases per
@@ -469,6 +551,8 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
     // base landing pads repair + rearm, and boosters are Wave-mode only.
     for (int i = 0; i < Config::BASE_MODE_RADAR_STATION_COUNT; ++i)
       spawnRadarStation(pickGrassSpot());
+    placeRelayChains();
+    logRadarNetwork();
 
     // Slice C C.3 — drop in N grounded landers. Spec table:
     //   Easy 3 / Normal 5 / Hard 7 landers. Difficulty presets come
@@ -560,6 +644,8 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
     spawnBase(pickGrassSpot());
   for (int i = 0; i < Config::WAVE_MODE_RADAR_STATION_COUNT; ++i)
     spawnRadarStation(pickGrassSpot());
+  placeRelayChains();
+  logRadarNetwork();
 }
 
 // ================================================================

@@ -9,26 +9,6 @@ The register was created on 2026-10-15 ([D-001](DECISIONS.md#d-001-adopt-the-dev
 
 ## Open
 
-### BUG-001: Radar shows every entity on the map regardless of range
-
-**Status:** open
-**Found:** 2026-10-15 (radar review session)
-**Location:** [src/hud/Radar.cpp](src/hud/Radar.cpp) `Radar::update()` and `Radar::draw()`
-**Severity:** medium
-**Description.** `Radar::update()` adds every live entity in the pool as a contact, and `draw()` pins out-of-range contacts to the edge of the disc. `RADAR_BASE_RANGE` and `RADAR_BOOST_RANGE` therefore only change the disc scale, not what can be detected. The player has a full-map direction finder, which undercuts the Slice C radar network design (F-023), where coverage is meant to be limited and to degrade as nodes are lost.
-**Reproduction.** Start a Wave or Base round. Every enemy on the map appears as a blip on the edge of the disc, however far away it is.
-**Notes.** Settle this before C.4 (F-023). Options: drop contacts beyond range, or keep edge markers only for contacts reported by the radar network. Related: BUG-002.
-
-### BUG-002: One Radar Booster anywhere boosts radar range globally
-
-**Status:** open
-**Found:** 2026-10-15 (radar review session)
-**Location:** [src/hud/Radar.cpp](src/hud/Radar.cpp) `Radar::update()`; `EntityManager::anyRadarBoosterAlive()`
-**Severity:** low
-**Description.** The boosted range applies if any Radar Booster is alive anywhere. Since `7e846c3`, boosters spawn across the whole world, so one booster thousands of metres away still gives the player the full 500 m range.
-**Reproduction.** Start a Wave round. The radar border is bright green (boosted) even when the only booster is far out of sight.
-**Notes.** Natural fix is proximity or network-connectivity gating, which belongs with F-023. Related: BUG-001.
-
 ### BUG-004: ThreatLock camera view is a stub
 
 **Status:** open
@@ -308,6 +288,28 @@ The 5g commit says strafe runs "fire at the friendly", but the friendly-hit chec
 **Description.** Rendering is wrap-aware (`Planet::nearestCopy()`), but gameplay distances use raw coordinates. Once the unwrapped player crosses a world edge, or friendlies spread world-wide, three things go wrong. Enemies pursue targets the long way round the map. Radar bearings point the long way. Entities close across the seam don't collide or detect each other.
 **Reproduction.** Fly more than about 4 km from spawn in one direction. Radar blips for friendlies near spawn point backwards instead of towards the nearer copy across the seam.
 **Notes.** Fixed 2026-10-15 in two steps. Gameplay: `EntityManager::rebaseAround()` runs at the start of every update and shifts each entity and projectile (with its `spawnPos`, `routePoint` and Collector `targetPos`) onto the world copy nearest the player, so all distances near the player are correct. Found when, after flying back to the base across an edge, enemies, the base turret and defenders stopped engaging. Known limitation: two entities about half a world from the player can end up on opposite sides of the rebase line; that only affects fights roughly 4 km away. Radar: `Radar` now measures every contact, painted echo, ghost, tower pulse and missile warning to the nearest toroidal copy (`Config::WORLD_SIZE`). Found when a tower in front of a player past the southern edge had no blip or pulse. Related: [AV-005](ATTACK_VECTORS.md#av-005-world-fixed-objects-drawn-or-measured-without-the-toroidal-wrap), [D-007](DECISIONS.md#d-007-unwrapped-player-coordinates-on-a-toroidal-world).
+
+
+### BUG-001: Radar shows every entity on the map regardless of range
+
+**Status:** fixed (2026-10-15)
+**Found:** 2026-10-15 (radar review session)
+**Location:** [src/hud/Radar.cpp](src/hud/Radar.cpp) `Radar::update()` and `Radar::draw()`
+**Severity:** medium
+**Description.** `Radar::update()` adds every live entity in the pool as a contact, and `draw()` pins out-of-range contacts to the edge of the disc. `RADAR_BASE_RANGE` and `RADAR_BOOST_RANGE` therefore only change the disc scale, not what can be detected. The player has a full-map direction finder, which undercuts the Slice C radar network design (F-023), where coverage is meant to be limited and to degrade as nodes are lost.
+**Reproduction.** Start a Wave or Base round. Every enemy on the map appears as a blip on the edge of the disc, however far away it is.
+**Notes.** Fixed 2026-10-15 by C.4 (F-023): contacts show only inside the player's 300 m or an online network node's coverage. The original note said to settle this before C.4 (F-023). Options: drop contacts beyond range, or keep edge markers only for contacts reported by the radar network. Related: BUG-002.
+
+
+### BUG-002: One Radar Booster anywhere boosts radar range globally
+
+**Status:** fixed (2026-10-15)
+**Found:** 2026-10-15 (radar review session)
+**Location:** [src/hud/Radar.cpp](src/hud/Radar.cpp) `Radar::update()`; `EntityManager::anyRadarBoosterAlive()`
+**Severity:** low
+**Description.** The boosted range applies if any Radar Booster is alive anywhere. Since `7e846c3`, boosters spawn across the whole world, so one booster thousands of metres away still gives the player the full 500 m range.
+**Reproduction.** Start a Wave round. The radar border is bright green (boosted) even when the only booster is far out of sight.
+**Notes.** Fixed 2026-10-15 by C.4: the booster is now an ordinary network node that covers 300 m around itself while its cluster is online. The global 500 m boost (`RADAR_BOOST_RANGE`) is gone. Related: BUG-001.
 
 
 ## Won't Fix

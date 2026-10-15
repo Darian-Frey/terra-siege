@@ -907,3 +907,41 @@ Undo is held at inspector level as full-mesh snapshots (32 deep) and is shared a
 **Consequences.** C.4 still needs to settle [BUG-001](BUGS.md#bug-001-radar-shows-every-entity-on-the-map-regardless-of-range): contacts outside both the personal and the network coverage should stop showing as edge-of-disc markers.
 
 **Reversal conditions.** Revisit if playtesting shows the network adds nothing because 300 m already covers the fights that matter.
+
+### D-032 Radar network: relay chains, base-anchored clusters, pulse-painted rim markers
+
+**Decided:** 2026-10-15
+**Recorded:** 2026-10-15
+**Status:** Accepted
+**Authors:** Shane Hartley (with Claude Code)
+**Related:** F-023, F-028, D-020, D-026, D-031, [BUG-001](BUGS.md#bug-001-radar-shows-every-entity-on-the-map-regardless-of-range), [BUG-002](BUGS.md#bug-002-one-radar-booster-anywhere-boosts-radar-range-globally)
+
+**Context.** C.4 needs a radar network whose coverage degrades as nodes fall. Towers were scattered at least 500 m apart, so with a link range of about 300–400 m almost nothing linked. The player's personal radar stays at 300 m (D-031).
+
+**Options.**
+
+- **Placement.** Choices were relay chains between bases (chosen), more random towers, or an even grid.
+- **Which clusters feed the player.** Choices were clusters containing a base (chosen), only the cluster the player is near, or the whole network.
+- **Showing contacts beyond 300 m.** Choices were rim markers painted by tower pulses (chosen), or adding a zoomed-out network map (deferred).
+- **Modes.** The network applies in both modes (chosen) rather than Base Defence only.
+
+**Decision.**
+
+- **Nodes and links.** Nodes are bases, radar towers and Radar Boosters, linked within `NETWORK_LINK_RANGE` (400 m, wrap-aware). `EntityManager::updateRadarNetwork()` runs union–find every tick with fixed arrays, and a cluster is online while it contains a living base.
+- **Relay chains.** Towers every 350 m join each base to its 2 nearest bases, up to `NETWORK_MAX_CHAIN_TOWERS`.
+- **Coverage.** The player covers 300 m. Each online tower or booster covers `RADAR_STATION_RANGE` (300 m).
+- **Painting.** A contact shows only while covered. It is painted by the player's pulse, or by a covering node's pulse at `RADAR_STATION_PULSE_OFFSET` plus its distance divided by the ring speed. Uncovered contacts are dropped; the existing ghost logic marks their last position.
+- **Booster.** The Wave-mode Booster becomes an ordinary node, removing the global 500 m boost.
+- **Defended count.** Radar towers no longer count towards the defended-friendlies total.
+
+**Consequences.**
+
+- Fixes BUG-001 and BUG-002.
+- Wave mode gets about 40 relay towers, so `ENTITY_POOL_SIZE` was raised to 512.
+- Raiders target towers as friendlies, so chains erode under attack and coverage visibly degrades.
+- Help calls (C.5) can propagate along the same graph.
+
+**Reversal conditions.**
+
+- Add the network map view if rim markers alone leave players unable to read where coverage gaps are.
+- Revisit chain density if tower counts hurt frame rate or crowd the landscape.

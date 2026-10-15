@@ -82,19 +82,28 @@ void Radar::update(float dt, const EntityManager &entities, Vector3 playerPos,
   const float t0 = m_prevGameTime < 0.0f ? gameTime : m_prevGameTime;
   m_prevGameTime = gameTime;
   m_gameTime = gameTime;
-  // 5g: a live RadarBooster friendly bumps the disc range to
-  // RADAR_BOOST_RANGE. Border tint also flips green via boosted().
-  m_boosted = entities.anyRadarBoosterAlive();
-  m_activeRange = m_boosted ? Config::RADAR_BOOST_RANGE
-                            : Config::RADAR_BASE_RANGE;
-
+  m_activeRange = Config::RADAR_BASE_RANGE;
   m_contacts.clear();
+
+  // C.4 — online detection nodes (towers / boosters whose cluster holds a
+  // living base). They extend coverage and paint contacts with their
+  // own pulse; the disc border brightens while the network feeds you.
   m_stationCount = 0;
+  const auto &pool = entities.entities();
+  for (const Entity &e : pool) {
+    if (!e.alive || !e.networkOnline || !isDetectionNode(e.type)) continue;
+    if (m_stationCount >= Config::RADAR_NODE_MAX) break;
+    m_stations[static_cast<size_t>(m_stationCount++)] = nearestCopy(e.pos, playerPos);
+  }
+  m_boosted = m_stationCount > 0;
+  // Tower rings travel at the player's ring speed, starting
+  // RADAR_STATION_PULSE_OFFSET into each period.
+  const float ringSpeed = Config::RADAR_BASE_RANGE / Config::RADAR_PULSE_SWEEP_TIME;
+  const float nodeR2 = Config::RADAR_STATION_RANGE * Config::RADAR_STATION_RANGE;
   // Tier 2 jam factor — scan for the nearest live Carrier. Inside
   // RADAR_JAM_RANGE, jamFactor lerps 0 → 1 as the player closes.
   // Friendlies and other enemy types don't jam.
   float carrierDist = 1e9f;
-  const auto &pool = entities.entities();
   for (size_t i = 0; i < pool.size(); ++i) {
     const Entity &e = pool[i];
     if (!e.alive) continue;
@@ -105,20 +114,34 @@ void Radar::update(float dt, const EntityManager &entities, Vector3 playerPos,
       float d = Vector3Distance(epos, playerPos);
       if (d < carrierDist) carrierDist = d;
     }
-    if (e.type == EntityType::RadarStation &&
-        m_stationCount < Config::RADAR_STATION_PULSE_MAX)
-      m_stations[static_cast<size_t>(m_stationCount++)] = epos;
-
     Vector3 d = Vector3Subtract(epos, playerPos);
     float horiz = sqrtf(d.x * d.x + d.z * d.z);
 
-    // Paint when the pulse front sweeps past this contact. Contacts
-    // beyond range sit on the rim, so they paint as the ring arrives
-    // there. Between pulses the echo stays where it was painted.
+    // Coverage (C.4): the player's own range, or within range of any
+    // online network node. Uncovered contacts aren't shown at all.
+    // Paint when a covering pulse front sweeps past the contact — the
+    // player's ring, or a node's ring half a period later. Between
+    // pulses the echo stays where it was painted.
     PaintState &ps = m_paint[i];
     if (ps.id != e.id) ps = PaintState{e.id};
-    float frac = std::min(horiz / m_activeRange, 1.0f);
-    if (pulseCrossed(frac, t0, gameTime)) {
+    bool covered = horiz <= m_activeRange;
+    bool paintNow = covered && pulseCrossed(horiz / m_activeRange, t0, gameTime);
+    for (int s = 0; s < m_stationCount; ++s) {
+      const Vector3 &n = m_stations[static_cast<size_t>(s)];
+      float nx = epos.x - n.x, nz = epos.z - n.z;
+      float dn2 = nx * nx + nz * nz;
+      if (dn2 > nodeR2) continue;
+      covered = true;
+      if (!paintNow &&
+          pulseCrossedAt(Config::RADAR_STATION_PULSE_OFFSET + sqrtf(dn2) / ringSpeed,
+                         t0, gameTime))
+        paintNow = true;
+    }
+    if (!covered) {
+      ps.painted = false;
+      continue;
+    }
+    if (paintNow) {
       ps.painted = true;
       ps.pos = epos;
       ps.vel = e.vel;
@@ -621,7 +644,10 @@ Color Radar::altitudeTint(Color base, float altDelta) {
 // check it falls inside the window.
 // ====================================================================
 bool Radar::pulseCrossed(float f, float t0, float t1) {
-  const float offset = f * Config::RADAR_PULSE_SWEEP_TIME;
+  return pulseCrossedAt(f * Config::RADAR_PULSE_SWEEP_TIME, t0, t1);
+}
+
+bool Radar::pulseCrossedAt(float offset, float t0, float t1) {
   float k = floorf((t1 - offset) / Config::RADAR_PULSE_PERIOD);
   float hit = k * Config::RADAR_PULSE_PERIOD + offset;
   return hit > t0;

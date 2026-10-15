@@ -10,6 +10,11 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 ## [Unreleased]
 
 ### Added
+- Slice C C.4 (F-023), the radar network:
+  - Bases, radar towers and boosters link within 400 m. Clusters containing a base are online.
+  - Relay chains of towers every 350 m join each base to its two nearest bases, in both modes.
+  - Contacts show only inside your 300 m or an online tower's 300 m. Beyond 300 m they appear as rim markers, painted by tower pulses.
+  - Offline towers go dark ([D-032](DECISIONS.md#d-032-radar-network-relay-chains-base-anchored-clusters-pulse-painted-rim-markers))
 - Base control tower and turret doubled in size (`BASE_TOWER_SCALE`) so they hold their own next to the radar tower
 - Every base now has its own radar tower on the platform's compass-NW corner, opposite the control tower (NE). Base layout (towers and east ramp) now follows the compass via `BASE_EAST_SIGN`, working around the mirrored 3D view ([BUG-028](BUGS.md#bug-028-3d-view-is-mirrored-eastwest-relative-to-the-compass-and-heading))
 - Radar tower model (`radar_station.obj` + sidecar): a red/white lattice tower with a deck and white radome. It has its own radar blip, a green radome-on-mast icon. Radar towers pulse 500 ms after the player's pulse; each 300 m ring is drawn on the player's disc at true scale and fades out over its last 50 m. Wave mode now also places 3 extra bases with landing platforms, and 4 radar towers, across the map
@@ -31,6 +36,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Stale duplicate of `game_modes_and_features.md` at the repo root
 
 ### Fixed
+- The radar showed every entity on the map and one booster anywhere boosted range globally; both now follow network coverage ([BUG-001](BUGS.md#bug-001-radar-shows-every-entity-on-the-map-regardless-of-range), [BUG-002](BUGS.md#bug-002-one-radar-booster-anywhere-boosts-radar-range-globally))
 - Base defenders never fired at drones circling them, because they couldn't turn tightly enough for the 16° fire cone. Allied ships now fire within about 45°. Bases also scramble defenders when a hostile is within 220 m, not only when hit, and the base turret range rises from 110 m to 160 m
 - Gameplay and radar ignored the world wrap. After crossing a world edge, nearby radar towers had no blip or pulse, and back at base enemies, the base turret and defenders stopped engaging. The simulation is now re-centred on the player every tick ([BUG-007](BUGS.md#bug-007-ai-collision-and-radar-distances-ignore-the-toroidal-wrap))
 - Rebuilding a terrain chunk (base aprons, DEV F5 reseed) crashed because of stale mesh ids after unload ([BUG-027](BUGS.md#bug-027-rebuilding-a-terrain-chunk-crashes-stale-mesh-ids-after-unload))

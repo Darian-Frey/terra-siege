@@ -134,7 +134,9 @@ public:
   // Friendly-side queries. Used by Radar (booster range boost), Bomber
   // AI (nearest friendly target preference), and GameState (game-over
   // when alive == 0 but total > 0).
-  bool anyRadarBoosterAlive() const;
+  // Slice C C.4 — recompute which network nodes are online (linked to a
+  // living base). Called at the start of every update.
+  void updateRadarNetwork();
   int liveFriendlyCount() const;
   // Nearest live friendly entity. Returns 0 if no friendlies alive.
   // outPos is filled with the target's world position on success.

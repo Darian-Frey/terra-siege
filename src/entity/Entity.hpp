@@ -287,7 +287,20 @@ struct Entity {
   uint8_t routeStep = 0;
   uint8_t routeRamp = 0;
   Vector3 routePoint = {0, 0, 0};
+
+  // Slice C C.4 — radar network node state, recomputed every tick: true
+  // when this node's linked cluster contains a living base.
+  bool networkOnline = false;
 };
+
+// C.4 network nodes: bases link clusters; towers and boosters also detect.
+inline bool isNetworkNode(EntityType t) {
+  return t == EntityType::Base || t == EntityType::RadarStation ||
+         t == EntityType::RadarBooster;
+}
+inline bool isDetectionNode(EntityType t) {
+  return t == EntityType::RadarStation || t == EntityType::RadarBooster;
+}
 
 // Friendly ground structures and support units — never hostile, never
 // auto-aim targets, don't count toward wave clear. One list so a new

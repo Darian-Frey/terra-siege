@@ -19,7 +19,7 @@ A C++17 / raylib 5.0 remake of *Virus* (Argonaut, 1988) for Linux: Newtonian hov
 - `src/entity/Player.*`: working. Flight, assist, shields, weapon selection. Has [BUG-005](BUGS.md#bug-005-holding-q-or-e-to-select-a-laser-colour-suppresses-auto-level-roll).
 - `src/entity/EntityManager.*`: working. Pools, all AI, projectiles, damage, infection v1, Lander (first cut), C.2 base defenders, landing pads and radar stations (procedural render; no OBJ yet). `rebaseAround()` re-centres entities and projectiles on the player each tick, so the world wrap is handled ([BUG-007](BUGS.md#bug-007-ai-collision-and-radar-distances-ignore-the-toroidal-wrap)).
 - `src/world/*`: working. Perlin terrain, lakes, decorations, wrap-aware rendering. Rivers disabled (F-003). `SkyDome` is empty.
-- `src/hud/Radar.*`: working pulse radar. Range semantics are open ([BUG-001](BUGS.md#bug-001-radar-shows-every-entity-on-the-map-regardless-of-range), [BUG-002](BUGS.md#bug-002-one-radar-booster-anywhere-boosts-radar-range-globally)).
+- `src/hud/Radar.*`: working pulse radar, coverage-gated by the C.4 network (personal 300 m plus online towers). Tower pulses paint contacts beyond 300 m as rim markers.
 - `src/audio/AudioManager.*`: working. No engine loop yet.
 - `src/mesh/*`: working. OBJ, palette, sidecars and registries are all tested.
 - `src/inspector/*`: working. Phases A, B (first cut), C, D, E and F.1–F.5. F.6 and G not started.
@@ -29,17 +29,14 @@ A C++17 / raylib 5.0 remake of *Virus* (Argonaut, 1988) for Linux: Newtonian hov
 
 ## Active task
 
-**Slice C, sub-slice C.4: radar network (F-023).** Design: [project-status/base_mode_v2.md](project-status/base_mode_v2.md), §"Radar network". C.2 (bases, defenders, pads, radar stations) landed on 2026-10-15.
-
-The player's personal radar stays at 300 m ([D-031](DECISIONS.md#d-031-players-personal-radar-stays-at-300-m-in-base-defence-mode)). The network adds coverage beyond it.
+**Slice C, sub-slice C.5: help calls (F-024).** Design: [project-status/base_mode_v2.md](project-status/base_mode_v2.md), §"Help calls". C.4 (radar network) landed on 2026-10-15. `EntityManager::updateRadarNetwork()` computes `Entity::networkOnline` every tick, and help calls should propagate along the same link graph.
 
 **Acceptance:**
 
-- Bases and radar stations within `NETWORK_LINK_RANGE` form clusters that share detection
-- The player's personal radar always works at short range; network-only contacts are drawn differently
-- Areas outside all coverage are fogged on the radar disc
-- Resolves [BUG-001](BUGS.md#bug-001-radar-shows-every-entity-on-the-map-regardless-of-range) and [BUG-002](BUGS.md#bug-002-one-radar-booster-anywhere-boosts-radar-range-globally) for Base mode
-- FEATURES F-023 and ROADMAP Slice C updated in the same commit
+- A node under attack (a base, or a tower in an online cluster) broadcasts a help call
+- The call propagates to the nodes linked to it in its network cluster
+- A HUD indicator shows where calls are coming from
+- FEATURES F-024 and ROADMAP Slice C updated in the same commit
 
 ## Architectural invariants
 
