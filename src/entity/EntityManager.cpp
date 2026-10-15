@@ -32,7 +32,7 @@ inline bool isAutoAimTarget(const Entity &e) {
 }
 
 // Base platform geometry (C.2). Ramp r = 0 is the south (−Z) side, 1 the
-// east (+X) side. top = middle of the platform edge, foot = bottom of
+// compass-east side (BASE_EAST_SIGN × X). top = middle of the platform edge, foot = bottom of
 // the ramp, approach = a few metres beyond the foot on the ramp's axis.
 // Collector ramp-route steps (Entity::routeStep).
 enum : uint8_t {
@@ -54,7 +54,7 @@ inline RampPoints rampPoints(const Entity &b, int r) {
   const float h = Config::BASE_PAD_HALF_SIZE;
   const float L = Config::BASE_RAMP_LENGTH;
   const float ground = b.pos.y - Config::BASE_PAD_HEIGHT;
-  const float dx = (r == 0) ? 0.0f : 1.0f;
+  const float dx = (r == 0) ? 0.0f : Config::BASE_EAST_SIGN; // r = 1 is compass east
   const float dz = (r == 0) ? -1.0f : 0.0f;
   return {{b.pos.x + dx * h, b.pos.y, b.pos.z + dz * h},
           {b.pos.x + dx * (h + L), ground, b.pos.z + dz * (h + L)},
@@ -99,7 +99,7 @@ inline Vector3 rampDetour(const Entity &b, int r, Vector3 from) {
     return {b.pos.x + sx * (h + 6.0f), b.pos.y, b.pos.z - out};
   }
   float sz = (from.z >= b.pos.z) ? 1.0f : -1.0f;
-  return {b.pos.x + out, b.pos.y, b.pos.z + sz * (h + 6.0f)};
+  return {b.pos.x + Config::BASE_EAST_SIGN * out, b.pos.y, b.pos.z + sz * (h + 6.0f)};
 }
 
 // Tint colour for infected / infecting entities (Slice B.4). Infected
@@ -2342,7 +2342,7 @@ void EntityManager::updateBase(Entity &e, float dt, Player &player) {
     if (dot > (1.0f - Config::BASE_TURRET_FIRE_CONE)) {
       // Muzzle sits on top of the control tower. Spawn shot slightly
       // ahead of the muzzle along the firing direction.
-      Vector3 muzzle = {e.pos.x + Config::BASE_TOWER_OFFSET,
+      Vector3 muzzle = {e.pos.x + Config::BASE_EAST_SIGN * Config::BASE_TOWER_OFFSET,
                         e.pos.y + Config::BASE_TURRET_BARREL_HEIGHT,
                         e.pos.z + Config::BASE_TOWER_OFFSET};
       Vector3 dir3 = Vector3Subtract(targetPos, muzzle);
@@ -2514,8 +2514,9 @@ float EntityManager::surfaceHeightAt(const Planet &planet, float x,
     // Ramp surfaces fall linearly from the platform edge to the ground.
     if ((b.rampMask & 1) && fabsf(dx) <= w && dz < -h && dz >= -h - L)
       y = fmaxf(y, b.pos.y - Config::BASE_PAD_HEIGHT * ((-h - dz) / L));
-    if ((b.rampMask & 2) && fabsf(dz) <= w && dx > h && dx <= h + L)
-      y = fmaxf(y, b.pos.y - Config::BASE_PAD_HEIGHT * ((dx - h) / L));
+    const float ex = dx * Config::BASE_EAST_SIGN; // distance towards compass east
+    if ((b.rampMask & 2) && fabsf(dz) <= w && ex > h && ex <= h + L)
+      y = fmaxf(y, b.pos.y - Config::BASE_PAD_HEIGHT * ((ex - h) / L));
   }
   return y;
 }
@@ -3586,7 +3587,7 @@ void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
       for (int r = 0; r < 2; ++r) {
         if (!(e.rampMask & (1u << r))) continue;
         // Axis along the ramp (outward) and across it.
-        Vector3 out = (r == 0) ? Vector3{0, 0, -1} : Vector3{1, 0, 0};
+        Vector3 out = (r == 0) ? Vector3{0, 0, -1} : Vector3{Config::BASE_EAST_SIGN, 0, 0};
         Vector3 side = (r == 0) ? Vector3{1, 0, 0} : Vector3{0, 0, 1};
         auto pt = [&](float along, float across, float y) {
           return Vector3{e.pos.x + out.x * along + side.x * across, y,
@@ -3602,37 +3603,39 @@ void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
       }
     }
 
-    // Control tower at the NE corner (+X east, +Z north).
-    const Vector3 tower = {e.pos.x + Config::BASE_TOWER_OFFSET, top,
+    // Control tower at the compass NE corner (BASE_EAST_SIGN, +Z north).
+    const Vector3 tower = {e.pos.x + Config::BASE_EAST_SIGN * Config::BASE_TOWER_OFFSET, top,
                            e.pos.z + Config::BASE_TOWER_OFFSET};
     if (registry && registry->has(EntityType::Base)) {
       // Tower + tower-top from the OBJ (centred on its origin, foot at
       // y = 0). yaw = 0 keeps it world-aligned.
-      registry->draw(EntityType::Base, tower, 0.0f, 1.0f, WHITE);
+      registry->draw(EntityType::Base, tower, 0.0f, Config::BASE_TOWER_SCALE, WHITE);
     } else {
       Color towerCol = {120, 130, 150, 255};
       Color towerTop = {200, 220, 240, 255};
       if (e.damageFlashTimer > 0.0f) towerCol = towerTop = {255, 255, 255, 255};
-      DrawCubeV({tower.x, tower.y + 2.0f, tower.z}, {2.0f, 4.0f, 2.0f}, towerCol);
-      DrawCubeV({tower.x, tower.y + 4.3f, tower.z}, {2.6f, 0.6f, 2.6f}, towerTop);
+      const float k = Config::BASE_TOWER_SCALE;
+      DrawCubeV({tower.x, tower.y + 2.0f * k, tower.z}, {2.0f * k, 4.0f * k, 2.0f * k}, towerCol);
+      DrawCubeV({tower.x, tower.y + 4.3f * k, tower.z}, {2.6f * k, 0.6f * k, 2.6f * k}, towerTop);
     }
     // Turret cap + barrel + tip — always procedural, rotates with
     // e.yaw independently of the static structure.
     Color capCol = {180, 110, 90, 255};
     Color barrelCol = {220, 220, 220, 255};
     if (e.damageFlashTimer > 0.0f) capCol = barrelCol = {255, 255, 255, 255};
+    const float ts = Config::BASE_TOWER_SCALE;
     Vector3 capPos = {tower.x, top + Config::BASE_TURRET_BARREL_HEIGHT, tower.z};
-    DrawCubeV(capPos, {1.4f, 0.8f, 1.4f}, capCol);
+    DrawCubeV(capPos, {1.4f * ts, 0.8f * ts, 1.4f * ts}, capCol);
     float dx = sinf(e.yaw), dz = cosf(e.yaw);
-    Vector3 barrel = {capPos.x + dx * 1.1f, capPos.y,
-                      capPos.z + dz * 1.1f};
-    DrawCubeV(barrel, {0.5f, 0.4f, 0.5f}, barrelCol);
-    Vector3 tip = {capPos.x + dx * 1.8f, capPos.y, capPos.z + dz * 1.8f};
-    DrawCubeV(tip, {0.4f, 0.35f, 0.4f}, {255, 220, 100, 255});
+    Vector3 barrel = {capPos.x + dx * 1.1f * ts, capPos.y,
+                      capPos.z + dz * 1.1f * ts};
+    DrawCubeV(barrel, {0.5f * ts, 0.4f * ts, 0.5f * ts}, barrelCol);
+    Vector3 tip = {capPos.x + dx * 1.8f * ts, capPos.y, capPos.z + dz * 1.8f * ts};
+    DrawCubeV(tip, {0.4f * ts, 0.35f * ts, 0.4f * ts}, {255, 220, 100, 255});
 
     // Hull bar above the tower so killing the base is visible.
     if (e.hullMax > 0.0f) {
-      drawHpBar(tower, 7.5f, 8.0f, e.hullHP / e.hullMax,
+      drawHpBar(tower, 5.5f * Config::BASE_TOWER_SCALE + 2.0f, 8.0f, e.hullHP / e.hullMax,
                 {80, 220, 100, 220}, camPos);
     }
     break;

@@ -404,6 +404,17 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
     return pickSpot();
   };
 
+  // Radar towers stand on the natural ground; just clear decorations so
+  // trees don't grow through the lattice.
+  auto spawnRadarStation = [&](Vector3 pos) {
+    m_decorations.clearSquare(m_planet, pos.x, pos.z,
+                              Config::RADAR_STATION_CLEAR_HALF,
+                              Config::RADAR_STATION_CLEAR_HALF);
+    pos.y = m_planet.heightAt(pos.x, pos.z);
+    m_em.spawnEnemy(EntityType::RadarStation, pos);
+    placed.push_back(pos);
+  };
+
   // Bases stand on a raised landing platform (C.2). Level the terrain
   // under the platform and its ramps, clear decorations off the site,
   // seat the base at platform-top height, and add a ramp on the south
@@ -418,23 +429,17 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
     if (b) {
       const float probe = Config::BASE_PAD_HALF_SIZE + Config::BASE_RAMP_LENGTH * 0.5f;
       float southGround = m_planet.heightAt(pos.x, pos.z - probe);
-      float eastGround = m_planet.heightAt(pos.x + probe, pos.z);
+      float eastGround = m_planet.heightAt(pos.x + Config::BASE_EAST_SIGN * probe, pos.z);
       if (pos.y - southGround >= Config::BASE_RAMP_MIN_RISE) b->rampMask |= 1;
       if (pos.y - eastGround >= Config::BASE_RAMP_MIN_RISE) b->rampMask |= 2;
     }
+    // Every base has its own radar tower on the platform's NW corner,
+    // opposite the control tower (NE). It is a full RadarStation.
+    m_em.spawnEnemy(EntityType::RadarStation,
+                    {pos.x - Config::BASE_EAST_SIGN * Config::BASE_TOWER_OFFSET, pos.y,
+                     pos.z + Config::BASE_TOWER_OFFSET});
     placed.push_back(pos);
     return pos;
-  };
-
-  // Radar towers stand on the natural ground; just clear decorations so
-  // trees don't grow through the lattice.
-  auto spawnRadarStation = [&](Vector3 pos) {
-    m_decorations.clearSquare(m_planet, pos.x, pos.z,
-                              Config::RADAR_STATION_CLEAR_HALF,
-                              Config::RADAR_STATION_CLEAR_HALF);
-    pos.y = m_planet.heightAt(pos.x, pos.z);
-    m_em.spawnEnemy(EntityType::RadarStation, pos);
-    placed.push_back(pos);
   };
 
   // Slice C C.1 — Base mode places a NETWORK of friendly bases per

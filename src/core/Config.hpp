@@ -358,7 +358,7 @@ constexpr float RADAR_PULSE_SWEEP_TIME = 0.6f;  // sec for ring to reach rim
 constexpr float RADAR_STATION_RANGE = 300.0f;        // TUNE — tower radar range (m)
 constexpr float RADAR_STATION_PULSE_OFFSET = 0.5f;   // s after the player's pulse
 constexpr float RADAR_STATION_PULSE_FADE = 50.0f;    // m of fade at the end of the ring
-constexpr int RADAR_STATION_PULSE_MAX = 16;          // towers tracked for pulse rings
+constexpr int RADAR_STATION_PULSE_MAX = 24;          // towers tracked for pulse rings
 constexpr float RADAR_PAINT_MIN_ALPHA = 0.25f;  // echo brightness just before repaint
 constexpr float RADAR_GHOST_LIFETIME = 8.0f;    // ghost blip persistence
 constexpr float RADAR_VECTOR_MAX_LEN = 18.0f;   // px at max world speed
@@ -679,7 +679,10 @@ constexpr float BASE_TURRET_AIM_RATE = 2.2f;      // rad/s rotation
 constexpr float BASE_TURRET_FIRE_RATE = 0.45f;    // sec between shots
 constexpr float BASE_TURRET_DAMAGE = 7.0f;        // per shot (15 DPS)
 constexpr float BASE_TURRET_FIRE_CONE = 0.12f;    // ~14° fire cone
-constexpr float BASE_TURRET_BARREL_HEIGHT = 5.0f; // muzzle Y above the platform top
+// Control tower + turret scale on the platform (1 = the original 4.6 m
+// tower). The turret muzzle sits just above the scaled tower top.
+constexpr float BASE_TOWER_SCALE = 2.0f;          // TUNE
+constexpr float BASE_TURRET_BARREL_HEIGHT = 5.0f * BASE_TOWER_SCALE; // muzzle Y above the platform top
 
 // Slice C C.2 — Base Defence mode friendly-base behaviour. Bases are
 // passive infrastructure: when hit they launch a few allied Fighter
@@ -697,7 +700,12 @@ constexpr float BASE_DEFENDER_LAND_DIST = 14.0f;  // horizontal distance to "lan
 constexpr float BASE_PAD_HALF_SIZE = 18.0f;       // half-width of the apron (36 m square)
 constexpr float BASE_PAD_BLEND = 10.0f;           // terrain blend back to natural ground
 constexpr float BASE_PAD_HEIGHT = 1.5f;           // TUNE — platform top above the levelled ground
-constexpr float BASE_TOWER_OFFSET = 14.0f;        // tower centre from pad centre, +X (east) and +Z (north)
+// World X of compass east for base layout. The 3D view is mirrored
+// east–west relative to the compass (BUG-028), so compass east is −X
+// on screen. Set to +1 once the view handedness is fixed.
+constexpr float BASE_EAST_SIGN = -1.0f;
+constexpr float BASE_TOWER_OFFSET = 14.0f;        // control tower at compass NE of the pad centre;
+                                                  // the base's radar tower mirrors it at compass NW
 // Ramps on the south and east sides let Collectors drive up onto the
 // platform. Added where that side stands at least BASE_RAMP_MIN_RISE
 // above the ground beside it.
