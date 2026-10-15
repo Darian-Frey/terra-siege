@@ -1,6 +1,6 @@
 # terra-siege — Terrain Rebuild
 
-> **⚠ Archived 2026-06-03 — NOT YET SHIPPED.** This is the one rebuild spec that has not been implemented. Current code is still Diamond-Square + smoothing + radial falloff. Original path: `terra_rebuild/terrain_rebuild.md`.
+> **⚠ Archived 2026-06-03 — OBSOLETE (corrected 2026-10-15).** Sine synthesis shipped in `50fa26e` (2026-05-03) and was replaced the same day by tileable Perlin fBM (`26495c8`) because of visible parallel ridge bands. This spec is **obsolete**; see [D-006](../../DECISIONS.md#d-006-tileable-perlin-gradient-fbm-terrain). Original path: `terra_rebuild/terrain_rebuild.md`.
 > Revisit when there's appetite to land sine-wave terrain. The toroidal-wrap implications (`Planet::heightAt` modular coords, `Player::wrapPosition` at end of physics) are noted in [`/CLAUDE.md`](../../CLAUDE.md) as pending.
 
 ## Overview

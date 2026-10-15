@@ -1,7 +1,7 @@
 # CLAUDE.md — terra-siege Project Context
 
 > **⚠ Archived 2026-06-03.** Historical reference — rebuild-era (May). Original path: `terra_rebuild/CLAUDE.md`.
-> Active replacement: [`/CLAUDE.md`](../../CLAUDE.md). Most of the rebuild specs it points at are now shipped; the exception is the sine-wave terrain rebuild ([`terrain_rebuild.md`](terrain_rebuild.md)).
+> Active replacement: [`/CLAUDE.md`](../../CLAUDE.md). All the rebuild specs it points at shipped; the sine-wave terrain rebuild ([`terrain_rebuild.md`](terrain_rebuild.md)) was then replaced by tileable Perlin fBM (corrected 2026-10-15; see [D-006](../../DECISIONS.md#d-006-tileable-perlin-gradient-fbm-terrain)).
 
 ## Read This First
 

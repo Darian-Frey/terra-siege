@@ -1,109 +1,308 @@
-# terra-siege — Roadmap
+# Roadmap
 
-Authoritative plan for what to build next. Three tracks run in parallel:
+Phased plan for terra-siege. Work runs on three tracks:
 
-| Track | Scope | Authoritative doc |
-|--|--|--|
-| **Engine** | Phased build (Phase 1–6): terrain, flight, combat foundation, shields, HUD, polish, extras | This file + [README — Status](README.md#status) |
-| **Features** | New game-modes design landing in three slices (A → B → C) | [project-status/game_modes_and_features.md](project-status/game_modes_and_features.md) |
-| **Tooling** | Inspector — OBJ editor + sidecar entity profiles for every mesh | [terra_siege_inspect_roadmap.md](terra_siege_inspect_roadmap.md) |
+| Track | Scope | Detailed design |
+| --- | --- | --- |
+| **Engine** | Phases 1–6: terrain, flight, combat, shields and HUD, polish, extras | This file |
+| **Features** | Game-mode slices A → B → C | [project-status/game_modes_and_features.md](project-status/game_modes_and_features.md) (v1), [project-status/base_mode_v2.md](project-status/base_mode_v2.md) (Slice C) |
+| **Tooling** | `terra-siege-inspect` phases A–G, F.1–F.6 | [project-status/terra_siege_inspect_roadmap.md](project-status/terra_siege_inspect_roadmap.md) |
 
-Status snapshots in any doc drift over time. `git log` is ground truth for what shipped.
+Phases are append-only: completed phases are marked with an ISO date, never deleted. Feature IDs refer to [FEATURES.md](FEATURES.md). Completion dates come from `git log`; phases completed before 2026-10-15 were backfilled when the project adopted the documentation standard ([D-001](DECISIONS.md#d-001-adopt-the-development-documentation-standard)).
 
----
+## Current focus
 
-## Current state
+**Slice C — Base Defence mode.** The next blocking item is **C.2** (friendly base and radar station entities, F-021). C.4 radar network (F-023), C.5 help calls (F-024) and C.6 infection v2 (F-025) all build on those entities. Settle [BUG-001](BUGS.md#bug-001-radar-shows-every-entity-on-the-map-regardless-of-range) and [BUG-002](BUGS.md#bug-002-one-radar-booster-anywhere-boosts-radar-range-globally) (radar range semantics) before C.4.
 
-See the [README Status table](README.md#status) for the live phase rollup. Summary:
+Recommended order from here:
 
-- **Phases 1, 1.5, 2** complete — terrain, flight model, ship + camera, ground shadow, exhaust.
-- **Phase 3** complete through **5g** — enemy roster (Drone, Fighter, Seeder, Ground Turret, Bomber, Carrier), full weapon roster (Cannon, Plasma, Beam, Missile, Cluster, Depth Charge, Auto Turret, EMP), wave manager, pre-flight loadout, friendly units (Collector, Repair Station, Radar Booster), bomber strafe AI.
-- **Phase 4** partial — player directional shields + bubble + pie HUD; radar tier 1 / 2 / 3.
-- **5h** (post-Phase 3) — Collector economy loop, Base entity (player & enemy), ground tank, base auto-turret, friendly-fire filter.
-- **OBJ mesh pipeline** + **terra-siege-inspect** binary with `Tool` registry — all 14 entity meshes migrated.
-
-Not yet started: Phase 5 polish (audio, day/night, weather), Phase 6 extras (leaderboard, cockpit cam, replay), and the entirety of the Features track (Slices A / B / C).
+1. Slice C: C.2 → C.3 follow-ups → C.4 → C.5 → C.6 → C.8
+2. Inspector F.6 (resources tool) when Slice C asset authoring needs it
+3. Engine Phase 4 finish (ThreatLock, [BUG-004](BUGS.md#bug-004-threatlock-camera-view-is-a-stub)) and Phase 5 remainder, in spare cycles
+4. Inspector B follow-ups and G, when useful
 
 ---
 
-## Engine track — remaining
+# Engine track
 
-| Phase | Remaining work | Notes |
-|--|--|--|
-| 3.5 | Atmospheric terrain objects (tree clusters, rock formations, antennas, crash sites). Functional bases + ground turrets already ship as terrain-anchored | Procedural placement table per [CLAUDE.md §3.5](CLAUDE.md) |
-| 4 | Full weapon-slot HUD, top-centre wave / enemy counter, any remaining radar polish | Most of Phase 4 already shipped — finish-line work |
-| 5 | Audio (positional miniaudio backend), day/night cycle, weather (wind drift, storm fog), post-FX (vignette, mild bloom) | Pre-allocated particle pool already shipped |
-| 6 | Leaderboard persistence, cockpit camera, replay recording, additional weapon / enemy types | Open-ended; scheduled by demand |
+## Phase 1 — Foundation
 
----
+**Goal:** CMake scaffold, raylib window, fixed-timestep core loop and first procedural terrain.
+**Status:** Complete (2026-03-31)
+**Features delivered:** — (foundation for F-001, F-006)
+**Deliverables:**
 
-## Feature track — A / B / C slicing
+- [x] CMake build fetching raylib 5.0 (`c746571`)
+- [x] `Clock` fixed-timestep accumulator at 120 Hz, `Config.hpp`, `GameState` (`c746571`)
+- [x] Heightmap, `Planet`, flat-shaded `TerrainChunk` mesh, free-roam camera (`7a17a57`)
 
-Full design lives in [project-status/game_modes_and_features.md](project-status/game_modes_and_features.md). We're not landing 1100 lines as a single PR — instead three independent slices, each shippable on its own.
-
-| Slice | Scope | New systems | Asset deps |
-|--|--|--|--|
-| **A — Visual + AI polish** *(immediate next)* | Smoke trail at <50% HP; retreat-to-base AI at <40% HP; heal-at-base | None — fits the existing enemy roster | None — pure code |
-| **B — Infection + new weapons** | Shield Laser (4th primary), Shield Missile, Infectious Missile, 4-weapon cycle, shared energy pool (120 max, 15/s recharge), infection state machine on existing entities | Energy pool, infection state machine, missile selection cycle, new projectile types | New missile mesh + sidecar weapon profiles |
-| **C — Base Mode** *(redesigned — see [base_mode_v2.md](base_mode_v2.md))* | Asymmetric defender vs invader. Friendly bases + radar network already in place; a few enemy landers already grounded at game start. Landers act as enemy bases (run their own production), expand by infecting captured friendly bases. Infection requires shields-stripped + hull ≤30%, applies symmetrically, bases can re-flip freely. Radar network degrades as nodes fall; player keeps a short-range personal radar throughout. Win: clear all landers + retake all infected bases. Lose: all friendly bases lost OR player destroyed | `GameMode` enum (Wave / Base), lander entity, network connectivity graph + help-call propagation, infection v2 (shields+hull gate, symmetric, re-flip allowed), session-result screen | Lander, friendly-base, radar station, builder, orbit-drone meshes + sidecar profiles |
-
-**Slice ordering rationale:** the infection mechanic — the standout idea in the design doc — is shippable in Slice B without committing to the full RTS build in Slice C. Slice A goes first because it's small, code-only, and proves nothing breaks.
-
-**Open design questions are resolved per-slice when that slice lands**, not upfront. Examples:
-
-- *(Slice B)* Player ship can't be infected — undercuts the theme; revisit when implementing.
-- *(Slice B)* Infected ships fight where they are until destroyed (disposable) vs being recruitable at friendly bases — revisit when implementing.
-- *(Slice C)* On a toroidal world with two front lines, is the player an *operator* of an autonomous faction or a *combatant* in their own right? Revisit when the AI economy is live and we can feel it.
+**Acceptance:** Window opens, the terrain renders flat-shaded, and the camera flies freely.
 
 ---
 
-## Tooling track — inspector
+## Phase 1.5 — Terrain scale-up
 
-Authoritative: [terra_siege_inspect_roadmap.md](terra_siege_inspect_roadmap.md). Sub-phases relevant to upcoming game work:
+**Goal:** Full-size heightmap with water features.
+**Status:** Complete (2026-04-02)
+**Features delivered:** F-001 (partial), F-003 (later disabled)
+**Deliverables:**
 
-| Inspector phase | What it adds | Unblocks |
-|--|--|--|
-| **Phase A** — Workspace & file ops | Boot without OBJ, Open / Save / Save-As / Close, drag-and-drop, recent files, unsaved-changes prompt | All authoring work — should land early |
-| **Phase B** — Vertex editing depth | Multi-select, undo / redo, mirror, snap, numeric input, weld | Authoring any non-trivial mesh |
-| **Phase C** — Materials & palette | 32-colour swatch, face pick, eyedropper | Re-colouring without dropping to a text editor |
-| **Phase D** — Topology | Add / delete verts and faces, flip winding, extrude | Building meshes from scratch in the inspector |
-| **Phase E** — Primitives | Cube / cylinder / cone / sphere / plane | **Slice C base / radar / builder mesh authoring** |
-| **Phase F.1** — Sidecar foundation | Load + save `*.meta.json`, schema validation, read-only viewer overlay, forward / scale / pivot mini-fields | Per-mesh entity profiles in general — **prerequisite for `EntityProfileRegistry` on the game side** |
-| **Phase F.2** — Identity + hull + shields | Class dropdown, hull form, shields form (with 3D viz) | **Migration of existing `Config::FIGHTER_HP` etc. into sidecars** — pairs with Slice B |
-| **Phase F.3** — Weapons + hardpoints | Named weapon stat blocks, hardpoint placement, fire-arc visualiser | **Slice B new weapon authoring** (Shield Laser, Shield/Infectious Missiles) without recompiling |
-| **Phase F.4** — AI profile | Profile picker, range fields with wire circles, infection block | **Slice B infection** (per-entity `canBeInfected` etc.), **Slice C** (per-base AI) |
-| **Phase F.5** — FX | Smoke threshold (slider), engine emitters, glow colour, death explosion scale | **Slice A** reads the smoke-threshold field even before this tool exists (edit JSON by hand); rest pairs with Slice C |
-| **Phase F.6** — Resources | Yield on death, base capacity, production array | **Slice C only** |
-| **Phase G** — Workflow polish | View modes, ortho views, normals overlay, asset browser, live file watch, in-game hotswap, diff vs HEAD | Quality-of-life — schedule by demand |
+- [x] 1025² heightmap, river carving, lake flooding, debug HUD (`68e0d12`)
 
-**Decision recorded:** sidecar by default, registry override later. One `*.meta.json` per OBJ, one-to-one. A registry file (single JSON pointing at multiple meshes with per-faction stat overrides) gets added only when we need to reuse one mesh across factions — not before.
+**Acceptance:** A 1025² terrain generates with lakes and rivers.
 
 ---
 
-## How the tracks interleave
+## Phase 2 — Flight, camera and rebuild
 
-Recommended sequencing — what to ship in what order:
+**Goal:** A playable Newtonian hovercraft over a seamless world, with the camera system.
+**Status:** Complete (2026-05-03)
+**Features delivered:** F-001, F-006, F-007, F-008, F-009 (ThreatLock stubbed)
+**Deliverables:**
 
-1. **Slice A** — smoke + retreat. Pure code, no deps. Lands first.
-2. **Inspector Phase A** — file ops, boot-without-OBJ. Unblocks asset authoring for everything after.
-3. **Inspector Phase F.1** — sidecar foundation, read-only viewer. Lets us start writing `*.meta.json` files by hand.
-4. **Inspector Phase F.2** + game-side **`EntityProfileRegistry`** — one-time migration of hull / shield Config constants into per-mesh sidecars. Needed for Slice B.
-5. **Inspector Phase F.3** + **Slice B** — new weapon authoring lands alongside the infection / 4-weapon cycle code.
-6. **Inspector Phases F.4 + F.5** — AI profile + FX tools, while Slice B settles.
-7. **Inspector Phase E** + **F.6** — primitives + resources, for Slice C asset authoring.
-8. **Slice C** — Base Mode, the biggest slice. Depends on every prior tooling step.
-9. **Engine Phases 3.5 / 5 / 6** — run in spare cycles, not on the critical path for any slice.
+- [x] Player entity and flight physics (`d0dc353`, 2026-04-03)
+- [x] Rebuild: single Newtonian flight model, one craft, FlightMode/CraftType removed (`b3f1e6d`)
+- [x] Regenerating thrust charge replaces fuel (`be7724e`)
+- [x] Terrain rebuild: tileable Perlin fBM, ridged mountains, toroidal wrap (`26495c8`)
+- [x] Five-view camera, per-view zoom, wireframe flight HUD (`6dcf35f`)
+- [x] Ground shadow, 2000-slot particle pool, engine exhaust (`9660252`)
 
-Phases B, C, D, G of the inspector roadmap land whenever they're useful — they're not gated by any specific game slice.
+**Acceptance:** The hovercraft flies with tilt-and-burn physics at 120 Hz over terrain that wraps with no visible edge, and all five camera keys switch views.
 
 ---
 
-## Related documents
+## Phase 3 — Combat foundation
 
-- [README.md](README.md) — user-facing description, build/run, controls, current Status table.
-- [CLAUDE.md](CLAUDE.md) — full project context for AI assistants (architecture decisions, coding standards, key constants).
-- [project-status/game_modes_and_features.md](project-status/game_modes_and_features.md) — full design doc for the Features track.
-- [project-status/archive/project-roadmap.md](project-status/archive/project-roadmap.md) — earlier Phase-2-era roadmap (flight modes, craft profiles). Most of it has shipped.
-- [project-status/archive/VIRUS_REMAKE_ARCHITECTURE.md](project-status/archive/VIRUS_REMAKE_ARCHITECTURE.md) — original architectural rationale.
-- [project-status/archive/README.md](project-status/archive/README.md) — full index of all archived design docs (rebuild specs, prior CLAUDE.md variants).
-- [terra_siege_inspect_roadmap.md](terra_siege_inspect_roadmap.md) — Tooling track in detail.
+**Goal:** A complete combat loop: enemy roster, weapon roster, waves, friendlies and economy.
+**Status:** Complete (2026-06-01)
+**Features delivered:** F-011, F-012, F-013, F-016, F-018, F-019, F-031, F-032
+**Deliverables:**
+
+- [x] 5a/5b — Entity pools, TTK-derived HP, Fighter AI, Cannon, menus, settings (`c041c64`, 2026-05-06)
+- [x] 5c — Wave manager, radar tier 1 (`5763f75`, 2026-05-06)
+- [x] 5d.1 — Drone swarm, Fighter EVADE engine damage (`717a615`, 2026-05-07)
+- [x] 5d.2 — Seeder, Ground Turret, F7 skip-wave (`2bd918c`, 2026-05-07)
+- [x] 5d.3 — Bomber (`55e44d2`, 2026-05-07)
+- [x] 5d.4 — Carrier boss with 4-sector shields (`18c32da`, 2026-05-14)
+- [x] 5e.1 — Plasma, homing Missile, EMP (`aafa9b1`, 2026-05-31)
+- [x] 5e.2 — Beam, Cluster, Depth Charge, Auto Turret, Shield Booster (`1d97de2`, 2026-05-31)
+- [x] 5g — Collector, Repair Station, Radar Booster; Bomber STRAFE_FRIENDLY (`f22f08e`, 2026-05-31)
+- [x] 5f — Pre-flight loadout screen (`932eb19`, 2026-06-01)
+- [x] 5h — Base entity, collector economy loop, ground tank, base auto-turret, friendly-fire filter (`092cb14`, `667e52b`, 2026-06-01)
+
+**Acceptance:** A wave round can be played start to finish against every enemy type with the full weapon roster, and losing all friendlies ends the game.
+
+---
+
+## Phase 3.5 — Atmospheric terrain
+
+**Goal:** Populate the world with visual-only terrain decorations.
+**Status:** Complete (2026-06-08)
+**Features delivered:** F-002
+**Deliverables:**
+
+- [x] Noise-mask forests, biome-weighted rocks, antennas, crash sites (`bdc63e5`)
+- [x] Wrap-aware decoration rendering (`7e846c3`, 2026-10-15)
+
+**Acceptance:** Forests appear on grassland across the whole world, deterministically per seed, and stay visible across the world wrap.
+
+---
+
+## Phase 4 — Shields and HUD
+
+**Goal:** Directional shields and a complete tactical HUD.
+**Status:** In progress
+**Features delivered:** F-014, F-028, F-029; F-009 (ThreatLock outstanding)
+**Deliverables:**
+
+- [x] Player directional shields, shield pie HUD (`fec0f04`, 2026-05-15)
+- [x] Radar tier 2/3: jamming, missile warnings, ghost blips, velocity arrows (`6d3a339`, 2026-06-01)
+- [x] Shield impact-cap visuals (`784f027`, 2026-06-05)
+- [x] Old-style pulse radar (`50506fc`, 2026-10-15)
+- [ ] ThreatLock camera target lookup ([BUG-004](BUGS.md#bug-004-threatlock-camera-view-is-a-stub))
+- [ ] Radar range semantics settled ([BUG-001](BUGS.md#bug-001-radar-shows-every-entity-on-the-map-regardless-of-range), [BUG-002](BUGS.md#bug-002-one-radar-booster-anywhere-boosts-radar-range-globally))
+
+**Acceptance:** All five camera views behave as specified, and the radar's range limits what the player can detect.
+
+---
+
+## Phase 5 — Polish
+
+**Goal:** Audio, atmosphere and post-processing.
+**Status:** In progress
+**Features delivered:** F-030 (in progress), F-004, F-005, F-043
+**Deliverables:**
+
+- [x] Procedural SFX with positional playback (`cdaa52c`, 2026-06-07)
+- [ ] Engine thrust loop ([IMP-007](IMPROVEMENTS.md#imp-007-engine-thrust-loop-sfx))
+- [ ] Day/night cycle (F-004)
+- [ ] Weather: wind drift, storm fog (F-005)
+- [ ] Post-FX: vignette, mild bloom (F-043)
+
+**Acceptance:** Every gameplay event has audio feedback, and the sky, lighting and weather vary without breaking the flat-shaded aesthetic.
+
+---
+
+## Phase 6 — Extras
+
+**Goal:** Open-ended additions, scheduled by demand.
+**Status:** Not started
+**Features delivered:** F-044, F-045, F-046
+**Deliverables:**
+
+- [ ] Leaderboard persistence (F-044)
+- [ ] Cockpit camera (F-045)
+- [ ] Replay recording (F-046)
+
+**Acceptance:** Per feature; no phase-level gate.
+
+---
+
+# Feature track
+
+## Slice A — Visual and AI polish
+
+**Goal:** Damaged enemies read as damaged and behave like it.
+**Status:** Complete (2026-06-03)
+**Features delivered:** F-017
+**Deliverables:**
+
+- [x] Damage smoke below 50% hull; retreat AI below 40% for Fighter/Bomber/Seeder (`c99848f`)
+
+**Acceptance:** Damaged enemies trail smoke and retreat; the Carrier smokes but fights to the death.
+
+---
+
+## Slice B — Infection and new weapons
+
+**Goal:** Infection mechanic and the shield-stripping weapon set.
+**Status:** Complete (2026-06-04)
+**Features delivered:** F-010 (energy pool), F-011 (Shield and Infectious missiles), F-015
+**Deliverables:**
+
+- [x] B.1 — Shared primary-weapon energy pool (`d0ed9f2`)
+- [x] B.2 — Shield Laser primary (`4f06aee`; later replaced by the laser pair, `d0cc533`)
+- [x] B.3 — Shield Missile (`3c69e83`)
+- [x] B.4 — Infection state machine for Fighter/Bomber (`44b5d99`)
+- [x] B.5 — Infectious Missile and infected-ship behaviour (`0b7d64c`)
+
+**Acceptance:** A shield-stripped Fighter or Bomber hit by an Infectious Missile fights for the player.
+
+---
+
+## Weapons redesign — Typed laser pair
+
+**Goal:** Make tactical weapon switching the core combat decision.
+**Status:** Complete (2026-06-22)
+**Features delivered:** F-010, F-029
+**Deliverables:**
+
+- [x] Hull/Shield/Neutral damage types; red/blue laser pair; charged shot; two-step spread (`d0cc533`)
+- [ ] Follow-up polish ([IMP-006](IMPROVEMENTS.md#imp-006-laser-pair-polish-dedicated-sfx-and-crosshair-colour), [IMP-005](IMPROVEMENTS.md#imp-005-consolidate-weapon-stats-into-a-weaponspec-table))
+
+**Acceptance:** Wrong-type hits do 25% damage, and favoured-type DPS matches the 100 DPS TTK reference.
+
+---
+
+## Slice C — Base Defence mode
+
+**Goal:** Asymmetric defender vs invader mode per [project-status/base_mode_v2.md](project-status/base_mode_v2.md).
+**Status:** In progress
+**Features delivered:** F-020, F-021, F-022, F-023, F-024, F-025, F-026, F-027
+**Deliverables:**
+
+- [x] C.1 — Game mode picker and Base Defence shell (`9380ffb`, 2026-06-11)
+- [ ] C.2 — Friendly base and radar station entities (F-021); placement only so far
+- [x] C.3 — Lander entity, first cut: grounded, spawns drones (`49f005f`, 2026-06-11)
+- [ ] C.3 follow-ups — fighter, collector and builder production; wreckage node; hardpoints; descent
+- [ ] C.4 — Radar network (F-023)
+- [ ] C.5 — Help calls (F-024)
+- [ ] C.6 — Infection v2 (F-025)
+- [x] C.7 — Win/loss detection and session-result screen (`cd1bcfe`, 2026-06-11)
+- [ ] C.8 — Difficulty presets and base/Lander balancing (F-027, [BUG-014](BUGS.md#bug-014-lander-damage-budget-is-smaller-than-the-carriers-despite-design-intent))
+
+**Acceptance:** Base mode can be won by clearing all Landers and retaking infected bases, and lost by losing every friendly base or the player. Radar coverage tracks the surviving network.
+
+**Open design questions** (resolved when the relevant sub-slice lands):
+
+- On a toroidal world with two front lines, is the player an operator of an autonomous faction, or a combatant in their own right?
+- Should infected ships be recruitable at friendly bases, or stay disposable?
+
+---
+
+# Tooling track (`terra-siege-inspect`)
+
+## Inspector foundation
+
+**Goal:** Separate inspector binary with a pluggable tool registry.
+**Status:** Complete (2026-06-03)
+**Features delivered:** F-033 (shared mesh lib)
+**Deliverables:**
+
+- [x] OBJ pipeline, 32-colour palette, doctest harness (`47f8d74`, 2026-06-01); all entities migrated (`e133893`, 2026-06-02)
+- [x] `terra-siege-inspect` binary, `Tool` interface, VertexTool, round-trip save (`0522dd7`, 2026-06-02)
+- [x] Blender-style orbit camera (`b53da80`, 2026-06-03)
+
+**Acceptance:** The inspector opens any entity OBJ, drags vertices, and saves without disturbing non-vertex lines.
+
+---
+
+## Inspector Phase A — Workspace and file ops
+
+**Status:** Complete (2026-06-04, `9ac375e`)
+**Features delivered:** F-035
+**Acceptance:** Boots without an OBJ; open, save, save-as, close, drag-and-drop, recent files, unsaved-changes prompt.
+
+## Inspector Phase B — Vertex editing depth
+
+**Status:** In progress (first cut 2026-06-07, `92d0bbb`)
+**Features delivered:** F-036
+**Deliverables:**
+
+- [x] Multi-select, box select, undo/redo, snap, numeric input
+- [ ] Mirror, weld, split ([IMP-009](IMPROVEMENTS.md#imp-009-inspector-phase-b-mirror-weld-split))
+
+**Acceptance:** Non-trivial meshes can be authored without leaving the inspector.
+
+## Inspector Phase C — Materials and palette
+
+**Status:** Complete (2026-06-11, `e157e0d`)
+**Features delivered:** F-037
+**Acceptance:** Faces can be recoloured from the 32-colour swatch, with an eyedropper, and saved.
+
+## Inspector Phase D — Topology
+
+**Status:** Complete (2026-06-11, `48ed9f8`)
+**Features delivered:** F-038
+**Acceptance:** Vertices and faces can be added and deleted, and winding flipped, with a full-mesh save.
+
+## Inspector Phase E — Primitives
+
+**Status:** Complete (2026-06-07, `771b6c1`)
+**Features delivered:** F-039
+**Acceptance:** Cube, plane, cylinder, cone and icosphere insert, with undo shared across tools.
+
+## Inspector Phase F.1–F.5 — Sidecar profile tools
+
+**Status:** Complete (2026-06-07)
+**Features delivered:** F-034, F-040
+**Deliverables:**
+
+- [x] F.1 — Sidecar foundation, menu bar, Controls overlay (`a5660d7`, 2026-06-06)
+- [x] F.2 — Identity/Hull/Shields tools and game-side `EntityProfileRegistry` (`c746a0a`, 2026-06-06)
+- [x] F.3 — Weapons and Hardpoints tools; all spawns read sidecars (`814fa1e`, 2026-06-06)
+- [x] F.4 / F.5 — AI and FX tools (`9f7e5c8`, 2026-06-07)
+
+**Acceptance:** Every entity's gameplay profile can be edited in the inspector and takes effect on the next in-game spawn.
+
+## Inspector Phase F.6 — Resources
+
+**Status:** Not started
+**Features delivered:** F-041
+**Acceptance:** Yield on death, base capacity and production arrays can be edited per entity. Needed only for Slice C.
+
+## Inspector Phase G — Workflow polish
+
+**Status:** Not started
+**Features delivered:** F-042
+**Acceptance:** Scheduled by demand; no phase-level gate.

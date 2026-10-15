@@ -54,3 +54,6 @@ notes
 # The .rfx parameter files (assets/sfx/rfx/) ARE committed — they're
 # hand-authored source-of-truth; gen_sfx.sh bakes them to WAVs.
 tools/
+# raylib F12 / Ctrl+F12 captures land in the working directory
+/screenshot*.png
+/screenrec*.gif

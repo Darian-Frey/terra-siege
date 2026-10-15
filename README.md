@@ -1,105 +1,24 @@
+> **Status:** Active
+> **Provenance:** Shane Hartley (author); Claude Code (AI development partner)
+> **Last reviewed:** 2026-10-15
+> **Why this status:** Slice C (Base Defence mode) in progress. Next milestone is C.2, the friendly base and radar station entities (see [ROADMAP.md](ROADMAP.md)).
+
 # terra-siege
 
-A modern reimagining of **Virus** (Argonaut Software / Firebird, 1988) built in C++17 with [raylib](https://www.raylib.com/).
+terra-siege is a modern C++17 / raylib reimagining of **Virus** (Argonaut Software / Firebird, 1988), the game that put a real-time filled-polygon landscape on home computers. You defend a planet against alien invaders from the cockpit of a hovercraft, flying with the original's Newtonian "tilt and burn" physics over a seamless, wrap-around world of flat-shaded hills, lakes and forests. The low-poly look is preserved deliberately, and the original is extended with directional shields, a typed red/blue laser pair, homing missiles, ship infection, an old-style pulse radar, and an asymmetric Base Defence mode against grounded alien Landers. It ships with `terra-siege-inspect`, a purpose-built editor for the game's OBJ meshes and their JSON gameplay profiles.
 
-Defend your planet against waves of alien attackers from the cockpit of a hovercraft. The planet is yours to protect — its cities, radar stations, and launch pads depend on you.
+![Dogfight over the forest: cluster missiles trailing smoke, a kill fireball, and the lake beyond](docs/screenshots/combat.png)
 
----
+| | |
+| --- | --- |
+| ![Forested coastline with homing missiles inbound; the pulse radar ring is mid-sweep, bottom right](docs/screenshots/coastline-radar.png) | ![Lake, beaches and snow-capped mountains on the wrap-around world, with friendly units and a missile arc](docs/screenshots/lake-vista.png) |
+| Forest coastline with the pulse radar mid-sweep | Lakes, beaches and snow-capped ridges |
 
-## Status
-
-> **Active development — Phase 3 in progress (5d.3 enemy roster)**
-
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 1 | CMake scaffold, raylib, core loop, terrain, free-roam camera | ✅ Complete |
-| 1.5 | 1025² heightmap, Perlin fBM + ridged mountains, rivers, lakes | ✅ Complete |
-| 2 | Newtonian flight model, five-view camera, ground shadow, exhaust | ✅ Complete |
-| 3 | Combat foundation, wave manager, radar tier 1, settings menu | 🔧 In progress |
-| 3.5 | Terrain objects — bases, towers, radar dishes, trees | ⏳ Planned |
-| 4 | Directional shields, HUD, radar tier 2/3, weapon display | ⏳ Planned |
-| 5 | Polish — audio, day/night, weather, post-FX | ⏳ Planned |
-| 6 | Extended features — leaderboard, cockpit cam, replay | ⏳ Planned |
-
-### Phase 3 progress
-
-| Step | Description | Status |
-|------|-------------|--------|
-| 3a | Entity pools, Fighter AI, Cannon, projectile collision | ✅ |
-| 3b | Settings menu (start/pause), god mode, invert axes, lost-power death | ✅ |
-| 3c | Radar tier 1, wave manager, drop-shadow HUD font | ✅ |
-| 5d.1 | Drone (boids swarm) + Fighter EVADE engine damage | ✅ |
-| 5d.2 | Seeder (drone-dispenser) + Ground Turret + F7 skip-wave | ✅ |
-| 5d.3 | Bomber (heavy, slow, punishing fire) | ✅ |
-| 5d.4 | Carrier (4-sector shield, drone-spawning boss) | ⏳ Next |
-| 5e   | Full weapon roster (Plasma, Beam, Missiles, Auto Turret, EMP) | ⏳ |
-| 5f   | Round-start missile selection UI | ⏳ |
-| 5g   | Friendly units + Bomber STRAFE_FRIENDLY state | ⏳ |
-
----
-
-## Features (current)
-
-### World
-
-- **Tileable Perlin fBM terrain** — gradient noise with 7 octaves, domain warp, and shape exponent for proper continent/ocean balance
-- **Ridged mountains** — Musgrave-style ridged-multifractal masked to high-elevation regions
-- **Rivers** — downhill flow simulation carving channels from mountain sources to the ocean
-- **Lakes** — flood-fill inland water bodies at natural terrain depressions
-- **Flat-shaded rendering** — per-face colour and directional lighting for a clean low-poly aesthetic faithful to the original
-- **Height colour bands** — snow, high rock, rock, grassland, sand, shallow water, ocean, river, lake all distinctly coloured
-
-### Flight
-
-- **Newtonian flight model** — Virus/Zarch-style "tilt and burn" along the local up axis with constant world gravity
-- **Thrust charge** — drains while burning, recharges while coasting; flight ceiling cuts thrust above 250m AGL
-- **Five-view camera** — Chase / Velocity / Tactical (overhead) / ThreatLock / Classic (fixed world-offset, 1988-style); per-view FOV and lerp speeds
-- **Wireframe HUD overlay** — toggleable artificial-horizon style instrument layer
-- **Ground shadow + drop-shadow HUD font** — DejaVu Sans Mono Bold loaded from system fonts with 1px black drop-shadow for legibility against any terrain colour
-- **Particle system** — pre-allocated 2000-slot pool, gravity + bounce flags, used for engine exhaust, hit bursts, kill explosions, damage smoke trails
-
-### Combat (Phase 3 in progress)
-
-- **Cannon** — 100 DPS hitscan-feel projectile (8 damage / 0.08s fire rate), 200m range
-- **Enemy roster:**
-  - **Drone** — kamikaze swarm with boids flocking (separation/alignment/cohesion + pursuit), 1-shot kill, contact damage
-  - **Fighter** — PURSUE/ATTACK/EVADE state machine, shielded, return-fire 25 DPS, engine-damage limp at <25% hull (smoke trail + reduced thrust/turn/top-speed)
-  - **Bomber** — heavy bruiser, slow turn, punishing 31 DPS in chunky 25-damage shots, same engine-damage behaviour
-  - **Seeder** — slow drone-dispenser, drifts in orbit and drops a fresh drone every 4s; fragile force-multiplier
-  - **Ground Turret** — stationary terrain-anchored, rotating barrel tracks player, 18 DPS in a 6° fire cone
-- **Wave manager** — staggered spawn cadence, 5s intermissions, ground-anchored placement for turrets, escalating wave table that introduces each type in isolation before mixing
-- **Radar tier 1** — 120px ego-centric disc bottom-right, IFF blip colours, proximity pulse blink, altitude strip, ghost-blip pool reserved for tier 3, camera-aware sizing
-- **Damage feedback** — 0.12s white flash per hit, hit-burst sparks (terrain + enemy contacts), kill-explosion fireballs, lost-power death (no more frozen scene — wreck falls and explodes on impact)
-- **Settings menu** — start + pause overlays, invert pitch/yaw, god mode (infinite thrust + invincible + infinite weapons), wireframe HUD toggle; persisted to `$HOME/.config/terra-siege/settings.cfg`
-
----
-
-## Planned Features
-
-- Carrier (4-sector shield boss, drone-spawning)
-- Friendly units — Collector, Repair Station, Radar Booster (lose them all = game over)
-- Directional shield system (front / rear / left / right quadrants)
-- Full weapon slot loadout — Plasma, Beam Laser, Missiles (proportional navigation homing), Cluster, Depth Charge, Auto Turret, Shield Booster, EMP
-- Round-start missile selection UI
-- Procedural terrain objects — military bases, launch pads, radar dishes, radio towers, trees
-- Radar tier 2 (missile warning ring, jamming, ghost blips) and tier 3 (full target vector arrows)
-- Day/night cycle and weather effects
-- Positional audio, leaderboard, replay system, cockpit camera mode
-
----
-
-## Building
-
-### Requirements
-
-- CMake 3.16+
-- GCC or Clang with C++17 support
-- Git (raylib fetched automatically via CMake FetchContent)
-- Linux: `libgl1-mesa-dev libx11-dev libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev`
-
-### Linux
+## Quick Start
 
 ```bash
+sudo apt install build-essential cmake git \
+  libgl1-mesa-dev libx11-dev libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev
 git clone https://github.com/Darian-Frey/terra-siege.git
 cd terra-siege
 cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -107,170 +26,88 @@ cmake --build build -j$(nproc)
 ./build/terra-siege
 ```
 
-A single build produces two executables:
+Add `-DDEV_MODE=ON` (Debug build recommended) for developer hotkeys and debug overlays. Run the tests with `cd build && ctest --output-on-failure`.
 
-| Binary | Purpose |
-|--------|---------|
-| `build/terra-siege` | The game |
-| `build/terra-siege-inspect` | Mesh inspector — see [Tooling](#tooling) |
+### Controls
 
-Both link against a shared `terra_siege_mesh` static library, so the OBJ loader and palette code are compiled once.
+| Input | Action |
+| --- | --- |
+| Mouse, or arrow keys / A / D | Pitch and yaw |
+| W (hold) | Thrust along the craft's up axis |
+| LMB (hold) / Space | Fire the primary weapon |
+| Shift + LMB (hold, release) | Charge and fire a heavy laser shot |
+| Q / E | Select red (hull-damage) / blue (shield-damage) laser |
+| Tab | Cycle primary: Laser pair → Plasma → Beam |
+| RMB / Z | Fire / cycle secondary: Missile, Cluster, Depth Charge, Shield Missile, Infectious Missile |
+| F / X | Fire / cycle special: EMP, Shield Booster |
+| T | Toggle the auto turret |
+| 1–5 | Camera: Chase, Velocity, Tactical, ThreatLock, Classic |
+| Esc / P | Pause and settings |
 
-### Developer / Cheat Mode
+DEV_MODE hotkeys (F1–F7, debug stepper) are listed in [CLAUDE.md](CLAUDE.md#build--test-commands).
 
-```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Debug -DDEV_MODE=ON
-cmake --build build -j$(nproc)
-./build/terra-siege
-```
+## Build requirements
 
-Dev mode enables the debug info overlay, and will enable free-camera toggle, god mode, and the entity inspector as those features are implemented.
+- CMake 3.16+ and GCC or Clang with C++17 support
+- Git and network access on first configure. raylib 5.0, doctest 2.4.11 and picojson 1.3.0 are fetched through CMake FetchContent
+- Linux (developed on Linux Mint): `libgl1-mesa-dev libx11-dev libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev`
+- Windows is planned, not yet supported
 
-### Windows (coming later)
+One build produces two executables, `build/terra-siege` (the game) and `build/terra-siege-inspect` (the mesh and profile editor), plus the doctest binaries. There is no separate BUILD.md; this section and CLAUDE.md cover the build ([D-002](DECISIONS.md#d-002-exempt-buildmd-and-specmd-keep-design-references-in-project-status)).
 
-The codebase is cross-platform. MinGW-w64 or MSVC builds planned once Linux development reaches Phase 4.
-
----
-
-## Controls (current)
-
-### Gameplay
-
-| Key | Action |
-|-----|--------|
-| Mouse | Pitch / yaw / roll the ship (Newtonian — "tilt and burn") |
-| W (hold) | Thrust along the ship's local up axis |
-| Mouse 1 | Fire cannon |
-| 1 / 2 / 3 / 4 / 5 | Switch camera view (Chase / Velocity / Tactical / ThreatLock / Classic) |
-| Escape / P | Pause (opens settings menu) |
-
-### Dev mode (`-DDEV_MODE=ON`)
-
-| Key | Action |
-|-----|--------|
-| F1 | Toggle camera mode (Follow / FreeRoam) |
-| F2 | Cycle flight-assist level (0–3) |
-| F3 | Toggle god mode (infinite thrust + invincible + infinite weapons) |
-| F4 | Toggle flight recorder |
-| F5 | Reroll terrain seed |
-| F6 | Dump heightmap to `tests/logs/heightmap-<unixtime>.{png,txt}` |
-| F7 | Skip wave (silently kill all enemies + flush pending spawns) |
-| `[` / `]` / `\` | Step in / out / reset (debug stepper) |
-
----
-
-## Tooling
-
-### Mesh Inspector — `terra-siege-inspect`
-
-Entity meshes live in `assets/meshes/*.obj` and are loaded at startup via the shared `terra_siege_mesh` library. The inspector is a separate executable for tweaking those meshes without leaving the build environment — useful when geometry needs a small nudge that's quicker to do in 3D than via Blender re-export.
-
-Build is the same `cmake --build` invocation as the game; both binaries land in `build/`. Run it against any OBJ:
+### Mesh inspector
 
 ```bash
-./build/terra-siege-inspect assets/meshes/hovercraft.obj
+./build/terra-siege-inspect                              # empty workspace; O or drag-and-drop to open
+./build/terra-siege-inspect assets/meshes/fighter.obj    # open a mesh and its fighter.meta.json
 ```
 
-It opens its own window with an orbit camera, the loaded mesh, and clickable vertex spheres. Edits save back to the source OBJ; only vertex (`v`) lines are rewritten — comments, materials, faces, normals, and vertex order are preserved verbatim, so files stay Blender-round-trip safe.
+Tab cycles the tools: vertex, primitives, materials, topology, and the sidecar profile tools (identity, hull, shields, weapons, hardpoints, AI, FX). **Help → Controls** in the menu bar lists every shortcut. The camera orbits Blender-style (RMB orbit, Shift+RMB pan, wheel zoom, F to frame).
 
-#### Controls
-
-| Key / Mouse | Action |
-|-----|--------|
-| LMB on a vertex sphere | Select + start drag |
-| LMB drag | Translate vertex along the camera-aligned plane through its start position |
-| Hold X / Y / Z while dragging | Lock the drag to a world axis |
-| RMB drag | Orbit camera around the model |
-| Shift + RMB drag | Pan the orbit target |
-| Mouse wheel | Zoom in / out |
-| F | Frame view (reset camera to default orbit) |
-| TAB | Cycle inspector tools |
-| S | Save edits back to the OBJ |
-| R | Reload from disk (discards unsaved edits) |
-| Q | Quit |
-
-The camera only moves while RMB is held — Blender-style. Stray mouse motion never disturbs the view.
-
-#### Tool registry
-
-The inspector runs one "tool" at a time; **TAB** cycles. Each tool implements the small `Tool` interface in `src/inspector/Tool.hpp` (`handleInput` / `render3D` / `renderHud` / `save` / `isDirty`) and is registered in `Inspector::Inspector()`. The Inspector owns the mesh, camera, GPU model, and global hotkeys; tools own their own selection state and dirty flags.
-
-| Tool | Purpose |
-|-----|--------|
-| `vertex` | Click + drag vertices (free-plane or X/Y/Z axis-locked); save writes only vertex (`v`) lines |
-
-Adding a new tool is a localised change — a new `src/inspector/<Name>Tool.hpp/cpp` implementing `Tool`, a `m_tools.push_back(std::make_unique<NameTool>())` in `Inspector::Inspector()`, and the two paths appended to the `terra-siege-inspect` CMake source list. Planned next:
-
-- `forward` — assign / preview the forward-facing axis per mesh
-- `hardpoints` — place weapon mount points (cannon emitters, missile rails)
-
----
-
-## Project Structure
+## Project structure
 
 ```text
 terra-siege/
-├── CMakeLists.txt                    # Game + inspector + tests + shared mesh static lib
+├── CMakeLists.txt        # game + inspector + tests + shared terra_siege_mesh lib
 ├── assets/
-│   ├── meshes/                       # Entity meshes (*.obj), 32-colour palette via material names
-│   └── shaders/                      # GLSL shaders (terrain, shield, exhaust — stubs)
-├── tests/                            # doctest-based tests for the mesh subsystem
-└── src/
-    ├── main.cpp                      # Game entry point
-    ├── core/
-    │   ├── Clock.hpp                 # Fixed-timestep accumulator (120 Hz)
-    │   ├── Config.hpp                # All tuning constants — single source of truth
-    │   ├── GameState.hpp/cpp         # Top-level state machine + menu overlays
-    │   ├── Particles.hpp/cpp         # 2000-slot pool, gravity + bounce flags
-    │   └── Settings.hpp/cpp          # Persistent settings (~/.config/terra-siege)
-    ├── world/
-    │   ├── Heightmap.hpp/cpp         # Perlin fBM + ridged mountains + rivers + lakes
-    │   ├── TerrainChunk.hpp/cpp      # Flat-shaded mesh builder
-    │   └── Planet.hpp/cpp            # Chunk orchestration, heightAt() query
-    ├── entity/
-    │   ├── Entity.hpp                # Type-tagged struct (single pool layout)
-    │   ├── Player.hpp/cpp            # Hovercraft mesh, Newtonian physics, input
-    │   └── EntityManager.hpp/cpp     # Flat enemy + projectile pools, AI dispatch
-    ├── mesh/                         # Shared (game + inspector + tests) — terra_siege_mesh lib
-    │   ├── ObjLoader.hpp/cpp         # Text-format OBJ load + round-trip-safe save
-    │   ├── MeshRegistry.hpp/cpp      # Startup-loaded raylib Models keyed by EntityType
-    │   └── Palette.hpp               # 32-colour palette + material-name lookup
-    ├── inspector/                    # terra-siege-inspect binary
-    │   ├── main.cpp                  # CLI parsing + window setup
-    │   ├── Inspector.hpp/cpp         # Mesh/camera/model owner + global hotkeys + tool registry
-    │   ├── Tool.hpp                  # Pluggable tool interface (TAB cycles)
-    │   └── VertexTool.hpp/cpp        # Vertex pick + drag + axis lock (first tool)
-    ├── hud/
-    │   └── Radar.hpp/cpp             # Tier 1 ego-centric disc + altitude strip
-    ├── wave/
-    │   ├── WaveDef.hpp               # Declarative wave loadout
-    │   └── WaveManager.hpp/cpp       # Wave state machine + spawn placement
-    ├── weapon/                       # Plasma, Beam, Missiles, Auto Turret (Phase 3+, stubs)
-    ├── shield/                       # Directional shield system (Phase 4+, stubs)
-    ├── ai/                           # Bomber STRAFE_FRIENDLY, Carrier (5d.4+, stubs)
-    └── audio/                        # Positional audio manager (Phase 5+, stubs)
+│   ├── meshes/           # entity *.obj (32-colour palette) + *.meta.json gameplay profiles
+│   ├── fonts/  sounds/   # runtime assets
+│   └── shaders/          # GLSL stubs, not yet wired in
+├── src/
+│   ├── main.cpp          # window + 120 Hz fixed-timestep loop
+│   ├── core/             # GameState (app state, cameras, HUD), Config.hpp, particles, settings
+│   ├── world/            # Perlin heightmap, toroidal Planet, terrain chunks, decorations
+│   ├── entity/           # Player, EntityManager (pools, AI, projectiles, damage)
+│   ├── hud/              # pulse radar
+│   ├── shield/           # shield impact-cap rendering
+│   ├── audio/            # procedural positional SFX
+│   ├── wave/             # wave manager (Wave mode)
+│   ├── mesh/             # shared lib: OBJ loader/saver, palette, mesh + profile registries
+│   └── inspector/        # terra-siege-inspect: tool registry and 12 tools
+├── tests/                # doctest: OBJ load, OBJ save, sidecar profiles
+├── docs/screenshots/     # README images (captured with raylib's F12)
+└── project-status/       # design references (Base mode v2, inspector roadmap, asset spec)
+    └── archive/          # superseded design docs
 ```
 
----
+[ARCHITECTURE.md](ARCHITECTURE.md) has the module map and data flow.
 
-## Architecture Notes
+## Documentation
 
-- **Fixed timestep** — physics runs at 120 Hz decoupled from render rate; smooth motion on any display
-- **No heap allocation in hot path** — entity, particle, and projectile pools pre-allocated at startup
-- **Data-oriented entity update** — flat arrays per entity type, not pointer-chasing polymorphism
-- **OBJ mesh pipeline** — entity meshes live in `assets/meshes/*.obj` and are loaded at startup into a `MeshRegistry` keyed by `EntityType`. A 32-colour palette is baked via material names (`c00`..`c31`) so files stay text-editable in Blender and round-trip cleanly through the [in-engine inspector](#tooling). Terrain remains procedurally generated.
-- **Platform-agnostic** — `std::filesystem::path` throughout, no platform `#ifdef` in game logic
+- [Features](FEATURES.md): capabilities and acceptance criteria
+- [Roadmap](ROADMAP.md): phased plan, current focus
+- [Architecture](ARCHITECTURE.md): structure, modules, invariants
+- [Decisions](DECISIONS.md): design decisions with rationale
+- [Attack Vectors](ATTACK_VECTORS.md): project-specific failure modes
+- [Bugs](BUGS.md) and [Improvements](IMPROVEMENTS.md): known defects and refactor candidates
+- [Changelog](CHANGELOG.md): version history
+- [CLAUDE.md](CLAUDE.md): handoff for AI-assisted sessions, including build and test commands
+- Design references in [project-status/](project-status/): [base_mode_v2.md](project-status/base_mode_v2.md), [terra_siege_inspect_roadmap.md](project-status/terra_siege_inspect_roadmap.md), [3d_assets.md](project-status/3d_assets.md), [game_modes_and_features.md](project-status/game_modes_and_features.md)
 
----
+### Inspiration
 
-## Inspiration
+[Virus](https://en.wikipedia.org/wiki/Virus_(video_game)) was developed by Jez San at Argonaut Software and published by Firebird in 1988. The techniques Argonaut pioneered in it led directly to the Super FX chip and Star Fox on the SNES. terra-siege is an independent fan reimagining, not affiliated with Argonaut Software or any rights holder.
 
-[Virus](https://en.wikipedia.org/wiki/Virus_(video_game)) was developed by Jez San at Argonaut Software and published by Firebird in 1988. It was one of the first games to render a real-time filled 3D polygon landscape on home computers. The techniques Argonaut pioneered in Virus directly led to the Super FX chip and Star Fox on the SNES.
+## License
 
-terra-siege is an independent fan reimagining — not affiliated with Argonaut Software or any rights holders.
-
----
-
-## Licence
-
-MIT — see `LICENSE` for details.
+MIT — see [LICENSE](LICENSE).

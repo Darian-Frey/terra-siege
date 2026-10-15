@@ -1,8 +1,8 @@
 # Base Mode (v2) — Design
 
-**Status:** Active design as of 2026-06-02. Supersedes Part 2 of [game_modes_and_features.md](project-status/game_modes_and_features.md) (the original 20v20 design). That doc stands as historical reference; carryover sections (resources, weapons, helicopter mode, smoke trail, etc.) still apply unchanged.
+**Status:** Active design as of 2026-06-02. Supersedes Part 2 of [game_modes_and_features.md](game_modes_and_features.md) (the original 20v20 design). That doc stands as historical reference; carryover sections (resources, weapons, helicopter mode, smoke trail, etc.) still apply unchanged.
 
-**Track:** Slice C in [ROADMAP.md](ROADMAP.md). Implementation begins after Slices A and B are stable.
+**Track:** Slice C in [ROADMAP.md](../ROADMAP.md). Implementation begins after Slices A and B are stable.
 
 ---
 
@@ -246,7 +246,7 @@ These don't block writing the slicing plan — flag with `// TUNE` or `// DESIGN
 
 ## Carryover from v1 (unchanged)
 
-These v1 sections still apply verbatim — see [game_modes_and_features.md](project-status/game_modes_and_features.md) for spec:
+These v1 sections still apply verbatim — see [game_modes_and_features.md](game_modes_and_features.md) for spec:
 
 - §4 Resource System (Metal + Bio, node types, wreckage decay) — unchanged
 - §5 Infection — ship-side rules unchanged (permanent flip, reboot period, infected ship behaviour). Base-side rules updated per this doc
@@ -259,6 +259,6 @@ These v1 sections still apply verbatim — see [game_modes_and_features.md](proj
 
 ## Related
 
-- [ROADMAP.md](ROADMAP.md) — three-track plan and Slice C placement
-- [game_modes_and_features.md](project-status/game_modes_and_features.md) — original v1 design, kept as historical reference
+- [ROADMAP.md](../ROADMAP.md) — three-track plan and Slice C placement
+- [game_modes_and_features.md](game_modes_and_features.md) — original v1 design, kept as historical reference
 - [terra_siege_inspect_roadmap.md](terra_siege_inspect_roadmap.md) — inspector roadmap; Phase E (primitives) + F.6 (resources tool) needed for authoring lander / radar / builder meshes during Slice C

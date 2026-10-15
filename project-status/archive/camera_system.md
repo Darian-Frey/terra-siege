@@ -1,7 +1,7 @@
 # terra-siege — Camera System Design
 
 > **⚠ Archived 2026-06-03 — SHIPPED.** Historical reference — five-view camera spec (Chase / Velocity / Tactical / ThreatLock / Classic on keys 1–5). Original path: `terra_rebuild/camera_system.md`.
-> See [`/CLAUDE.md` Camera System](../../CLAUDE.md#camera-system--five-views) for the current summary. Critical invariants (Tactical's `camera.up = {0,0,1}`, terrain clamping) are preserved there.
+> See [D-015 Five camera views](../../DECISIONS.md#d-015-five-camera-views-with-tactical-using-a-z-up-camera) for the current summary. Critical invariants (Tactical's `camera.up = {0,0,1}`, terrain clamping) are preserved there.
 
 ## Overview
 

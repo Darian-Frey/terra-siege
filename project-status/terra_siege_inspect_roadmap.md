@@ -289,4 +289,4 @@ Most features above slot into one of these places:
 
 After Phase A, **Phase F.1** (sidecar foundation — read-only viewer overlay of the JSON, plus the `forward` / `scale` / `pivot` mini-fields) is the next highest-leverage step. It unblocks the game-side `EntityProfileRegistry` migration that Slice B depends on. Phase E (primitives) and F.6 (resources) land closer to Slice C, when base / radar / builder meshes need authoring.
 
-See [ROADMAP.md](ROADMAP.md) for how this tooling timeline interleaves with the engine and feature tracks.
+See [ROADMAP.md](../ROADMAP.md) for how this tooling timeline interleaves with the engine and feature tracks.

@@ -2,7 +2,7 @@
 
 Documents that have been superseded, shipped, or otherwise rolled into the current active set. Kept for reference — they capture the *why* behind decisions and the design history that led to what's in the code now.
 
-The active docs live at the project root ([`CLAUDE.md`](../../CLAUDE.md), [`ROADMAP.md`](../../ROADMAP.md), [`base_mode_v2.md`](../../base_mode_v2.md), [`terra_siege_inspect_roadmap.md`](../../terra_siege_inspect_roadmap.md)) plus the still-active [`game_modes_and_features.md`](../game_modes_and_features.md) one level up (parts §§4-9 still apply; Part 2 was superseded by `base_mode_v2.md`).
+The active standard docs live at the project root ([`README.md`](../../README.md), [`CLAUDE.md`](../../CLAUDE.md), [`FEATURES.md`](../../FEATURES.md), [`ROADMAP.md`](../../ROADMAP.md), [`DECISIONS.md`](../../DECISIONS.md)). Active design references live one level up in `project-status/`: [`base_mode_v2.md`](../base_mode_v2.md), [`terra_siege_inspect_roadmap.md`](../terra_siege_inspect_roadmap.md), [`3d_assets.md`](../3d_assets.md), and [`game_modes_and_features.md`](../game_modes_and_features.md) (parts §§4-9 still apply; Part 2 was superseded by `base_mode_v2.md`).
 
 ---
 
@@ -17,7 +17,7 @@ The active docs live at the project root ([`CLAUDE.md`](../../CLAUDE.md), [`ROAD
 | [`REBUILD_ROADMAP.md`](REBUILD_ROADMAP.md) | `terra_rebuild/REBUILD_ROADMAP.md` | May rebuild | 4/5 shipped | Execution plan for the rebuild spec set. Terrain rebuild not yet shipped |
 | [`readme_rebuild.md`](readme_rebuild.md) | `terra_rebuild/readme_rebuild.md` | May rebuild | Superseded | Original index of the rebuild spec set; this README replaces it |
 | [`flight_mode_rebuild.md`](flight_mode_rebuild.md) | `terra_rebuild/flight_mode_rebuild.md` | May rebuild | **SHIPPED** | Single Newtonian flight model. Replaced dual `ARCADE_*`/`CLASSIC_*` with `NEWTON_*` |
-| [`terrain_rebuild.md`](terrain_rebuild.md) | `terra_rebuild/terrain_rebuild.md` | May rebuild | **NOT SHIPPED** | Sine-wave Fourier synthesis with toroidal wrap. Current code is still Diamond-Square. Revisit when there's appetite |
+| [`terrain_rebuild.md`](terrain_rebuild.md) | `terra_rebuild/terrain_rebuild.md` | May rebuild | **OBSOLETE** | Sine-wave Fourier synthesis with toroidal wrap. Shipped 2026-05-03 (`50fa26e`), replaced the same day by tileable Perlin fBM (`26495c8`). Do not implement — see [D-006](../../DECISIONS.md#d-006-tileable-perlin-gradient-fbm-terrain) |
 | [`camera_system.md`](camera_system.md) | `terra_rebuild/camera_system.md` | May rebuild | **SHIPPED** | Five-view camera (Chase/Velocity/Tactical/ThreatLock/Classic on 1–5). Tactical's `camera.up = {0,0,1}` invariant preserved in CLAUDE.md |
 | [`combat_tuning.md`](combat_tuning.md) | `terra_rebuild/combat_tuning.md` | May rebuild | **SHIPPED** | TTK-derived HP framework, full weapon roster, missile system. Authoritative reference for combat numbers; TTK-not-HP rule preserved |
 | [`radar_system.md`](radar_system.md) | `terra_rebuild/radar_system.md` | May rebuild | **SHIPPED** | Three-tier radar. Ghost-blip pool (32 pre-allocated slots) preserved |
@@ -30,7 +30,7 @@ The active docs live at the project root ([`CLAUDE.md`](../../CLAUDE.md), [`ROAD
 - **"How does combat tuning work?"** → [`combat_tuning.md`](combat_tuning.md)
 - **"What was the flight rebuild's rationale?"** → [`flight_mode_rebuild.md`](flight_mode_rebuild.md)
 - **"How does the radar work?"** → [`radar_system.md`](radar_system.md)
-- **"What about sine-wave terrain?"** → [`terrain_rebuild.md`](terrain_rebuild.md) (pending — still Diamond-Square in code)
+- **"What about sine-wave terrain?"** → [`terrain_rebuild.md`](terrain_rebuild.md) (obsolete — superseded by tileable Perlin fBM, see D-006)
 - **"What were the camera design decisions?"** → [`camera_system.md`](camera_system.md)
 - **"What was the rebuild sequence?"** → [`REBUILD_ROADMAP.md`](REBUILD_ROADMAP.md)
 

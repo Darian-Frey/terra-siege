@@ -1,7 +1,7 @@
 # terra-siege — Combat Tuning Document
 
 > **⚠ Archived 2026-06-03 — SHIPPED.** Historical reference — TTK-derived HP framework, weapon specs, missile system, enemy shield params. Original path: `terra_rebuild/combat_tuning.md`.
-> See [`/CLAUDE.md` Enemy Roster](../../CLAUDE.md#enemy-roster-ttk-derived-hp) for the current summary. The TTK-derivation rule (change TTK targets, not HP) is preserved as a coding standard. Beam Laser's `timeSinceHit=0` mechanic for suppressing Carrier shield regen is preserved as a critical trap.
+> See [D-014 TTK-derived enemy HP](../../DECISIONS.md#d-014-ttk-derived-enemy-hp) for the current summary. The TTK-derivation rule (change TTK targets, not HP) is preserved as a coding standard. Beam Laser's `timeSinceHit=0` mechanic for suppressing Carrier shield regen is preserved as a critical trap.
 
 ## Purpose
 

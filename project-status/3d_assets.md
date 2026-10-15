@@ -1,9 +1,9 @@
 # 3D Asset Pipeline (terra-siege)
 
 > **Status:** Active
-> **Provenance:** Claude (initial draft, awaiting hub-and-spoke synthesis review)
-> **Last reviewed:** 2026-05-20
-> **Why this status:** Pipeline spec for terra-siege mesh authoring and in-engine inspection. No code yet written against this spec; D-IDs herein are provisional and should be renumbered on integration with terra-siege's main `DECISIONS.md`.
+> **Provenance:** Claude (initial draft 2026-05-20); implemented 2026-06-01 onwards
+> **Last reviewed:** 2026-10-15
+> **Why this status:** Reference spec for the OBJ pipeline, which shipped (`47f8d74`, `e133893`). Where the code departs from it, DECISIONS.md is authoritative: the palette is 32 colours, not 16 ([D-010](../DECISIONS.md#d-010-32-colour-palette-via-obj-material-names)); the inspector is a separate binary ([D-016](../DECISIONS.md#d-016-inspector-as-a-separate-binary-with-a-tool-registry)); and it edits materials, topology and primitives too ([D-017](../DECISIONS.md#d-017-inspector-scope-widened-to-materials-topology-and-primitives)). raygui is not used. The provisional D-A IDs in §13 were renumbered into DECISIONS.md on 2026-10-15.
 
 ---
 
@@ -348,6 +348,8 @@ None of these are in scope for the current phase.
 ---
 
 ## 13. Decisions log (provisional D-IDs; renumber on integration)
+
+> **Renumbered 2026-10-15.** D-A01, D-A02, D-A08 → [D-009](../DECISIONS.md#d-009-obj-text-format-as-the-single-mesh-source-of-truth); D-A03, D-A04 → [D-010](../DECISIONS.md#d-010-32-colour-palette-via-obj-material-names); D-A05 → [D-016](../DECISIONS.md#d-016-inspector-as-a-separate-binary-with-a-tool-registry) (reversed); D-A06 → [D-017](../DECISIONS.md#d-017-inspector-scope-widened-to-materials-topology-and-primitives) (reversed); D-A07 → [D-024](../DECISIONS.md#d-024-animation-deferred-to-iqm-obj-stays-static). The table below is the original draft, kept for history.
 
 | ID     | Decision                                          | Rationale                                                            |
 |--------|---------------------------------------------------|----------------------------------------------------------------------|
