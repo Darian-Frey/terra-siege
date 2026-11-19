@@ -14,8 +14,8 @@ def _alt(a, b):
 # ---------------------------------------------------------------- Base tower
 def base():
     """Control tower, foot at z = 0, drawn at BASE_TOWER_SCALE (2x). The
-    turret cap (z 4.6-5.4) and its barrel (out to r = 2.0) are procedural,
-    so nothing may rise above the 4.6 pedestal top."""
+    turret (base_turret, z 4.6-5.4, barrels out to r = 2.15) sits on the
+    pedestal and rotates, so nothing may rise above the 4.6 pedestal top."""
     s = Ship("base")
     s.block((-1.25, 1.25, -1.25, 1.25, 0.0), (-1.2, 1.2, -1.2, 1.2, 0.4), 30)
     s.block((-1.0, 1.0, -1.0, 1.0, 0.4), (-0.85, 0.85, -0.85, 0.85, 3.0),
@@ -27,7 +27,7 @@ def base():
     # control cab
     s.stack([(2.9, 0.95, 0.95), (3.2, 1.5, 1.5), (3.95, 1.5, 1.5), (4.25, 1.3, 1.3)],
             [15, 10, 15], n=8, rot=math.pi / 8, top=30)
-    # turret pedestal under the procedural cap
+    # turret pedestal under base_turret
     s.stack([(4.25, 0.75, 0.75), (4.6, 0.7, 0.7)], [8], n=8, rot=math.pi / 8, top=0)
     # roof corner lamps
     for sx in (1, -1):
@@ -36,6 +36,29 @@ def base():
             s.block((x - 0.12, x + 0.12, y - 0.12, y + 0.12, 4.25),
                     (x - 0.1, x + 0.1, y - 0.1, y + 0.1, 4.45), 2)
     return s, 7.0
+
+
+# ---------------------------------------------------------------- Base turret
+def base_turret():
+    """Rotating gun turret on top of the control tower, drawn at
+    BASE_TOWER_SCALE. Origin on the barrel axis (the muzzle height,
+    BASE_TURRET_BARREL_HEIGHT); the collar sits on the tower pedestal at
+    z = -0.4. Twin barrels point +y (forward, the aim direction)."""
+    s = Ship("base_turret")
+    s.stack([(-0.4, 0.72, 0.72), (-0.27, 0.7, 0.7)], [0], n=8, rot=math.pi / 8)
+    s.stack([(-0.27, 0.68, 0.68), (0.22, 0.66, 0.66), (0.4, 0.46, 0.46)],
+            [_alt(27, 9), _alt(9, 27)], n=8, rot=math.pi / 8, top=8)
+    # gun mantlet and twin barrels with yellow muzzles
+    s.block((-0.32, 0.32, 0.45, 0.78, -0.2), (-0.3, 0.3, 0.45, 0.75, 0.24),
+            {"top": 8, "bottom": 30, "front": 30, "back": 30, "left": 30, "right": 30})
+    for sx in (1, -1):
+        s.strut((sx * 0.13, 0.75, 0.0), (sx * 0.13, 1.95, 0.0), 0.07, 15)
+        s.block((sx * 0.13 - 0.1, sx * 0.13 + 0.1, 1.95, 2.15, -0.1),
+                (sx * 0.13 - 0.1, sx * 0.13 + 0.1, 1.95, 2.15, 0.1), 17)
+    # sensor pod with a lens, on the right of the roof
+    s.block((0.3, 0.58, -0.3, 0.1, 0.32), (0.3, 0.56, -0.3, 0.08, 0.55),
+            {"top": 30, "bottom": 30, "front": 10, "back": 30, "left": 30, "right": 30})
+    return s, 5.0
 
 
 # ---------------------------------------------------------------- Collector
@@ -126,7 +149,7 @@ def lander():
     return s, 20.0
 
 
-SHIPS = {"base": base, "collector": collector,
+SHIPS = {"base": base, "base_turret": base_turret, "collector": collector,
          "radar_booster": radar_booster, "lander": lander}
 
 HEADERS = {
@@ -134,11 +157,18 @@ HEADERS = {
 Control tower: plinth, tapered shaft with yellow service stripes, octagonal
 glazed control cab, roof lamps and a turret pedestal. {verts} verts, {tris} tris.
 Foot at y = 0; drawn at BASE_TOWER_SCALE at the platform's NE corner.
-The platform, ramps, corner lights and the turret cap/barrel/tip are
-procedural — see EntityManager::renderEnemy (Base); nothing here rises
-above y = 4.6 so the rotating barrel stays clear. Local frame: +Z forward.
+The platform, ramps and corner lights are procedural and the turret is
+base_turret.obj — see EntityManager::renderEnemy (Base); nothing here
+rises above y = 4.6 so the rotating barrels stay clear. Local frame: +Z forward.
 c30 plinth/roof, c08 shaft/pedestal, c17 stripes, c15 cab, c10 glazing,
 c02 lamps, c00 pedestal top.""",
+"base_turret": """terra-siege base turret — rotating gun on the control tower.
+Octagonal rust-red housing on a dark collar, a gun mantlet, twin barrels
+with yellow muzzles and a sensor pod. {verts} verts, {tris} tris.
+Origin on the barrel axis; drawn at the tower's x/z, BASE_TURRET_BARREL_HEIGHT
+above the platform, BASE_TOWER_SCALE, yawed to the turret aim.
+Local frame: +Z = aim. c27/c09 housing, c08 roof/mantlet top, c00 collar,
+c30 mantlet/pod, c15 barrels, c17 muzzles, c10 lens.""",
 "collector": """terra-siege collector — friendly ground vehicle.
 Hull with a yellow front scoop, two track units, headlights and a rear
 hopper. {verts} verts, {tris} tris. The cab stays procedural (its colour

@@ -68,6 +68,12 @@ public:
   void drawMissile(Vector3 position, Vector3 dir, float scale,
                    Color tint) const;
 
+  // Base gun turret (base_turret.obj), drawn on top of the control tower
+  // and yawed to the turret's aim. Origin is on the barrel axis.
+  bool hasBaseTurret() const { return m_turretLoaded; }
+  void drawBaseTurret(Vector3 position, float yawRad, float scale,
+                      Color tint) const;
+
 private:
   // Filename for each entity type, looked up under meshesDir/. Empty
   // string = type has no mesh yet (use procedural fallback).
@@ -84,6 +90,8 @@ private:
   bool m_playerLoaded = false;
   Model m_missileModel{};
   bool m_missileLoaded = false;
+  Model m_turretModel{};
+  bool m_turretLoaded = false;
 };
 
 } // namespace Mesh

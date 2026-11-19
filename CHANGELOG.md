@@ -30,6 +30,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Project documentation to the development documentation standard: README status header, FEATURES, DECISIONS, ARCHITECTURE, ATTACK_VECTORS, BUGS, IMPROVEMENTS, CHANGELOG, MIT LICENSE ([D-001](DECISIONS.md#d-001-adopt-the-development-documentation-standard))
 
 ### Changed
+- The base gun turret is now a model (`base_turret.obj`): an octagonal housing with twin barrels, yellow muzzles and a sensor pod, yawed to its aim. Its shots now leave the barrel ends (`BASE_TURRET_MUZZLE_REACH`) instead of starting inside the turret
 - The 200-triangle mesh cap in `3d_assets.md` is now a soft "keep it low-poly" guideline
 - New player ship model (`hovercraft.obj`) replaces the diamond hull. It is a swept arrowhead with a red leading-edge lip, a faceted canopy, a red dorsal fin, twin nose cannons, orange engine plates and wingtip nav lights (red to port, green to starboard). 56 vertices and 65 triangles. Same footprint, so the sidecar is unchanged
 - New enemy models, each keeping its palette colours, footprint and sidecar:

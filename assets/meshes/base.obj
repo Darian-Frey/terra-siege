@@ -2,9 +2,9 @@
 # Control tower: plinth, tapered shaft with yellow service stripes, octagonal
 # glazed control cab, roof lamps and a turret pedestal. 112 verts, 172 tris.
 # Foot at y = 0; drawn at BASE_TOWER_SCALE at the platform's NE corner.
-# The platform, ramps, corner lights and the turret cap/barrel/tip are
-# procedural — see EntityManager::renderEnemy (Base); nothing here rises
-# above y = 4.6 so the rotating barrel stays clear. Local frame: +Z forward.
+# The platform, ramps and corner lights are procedural and the turret is
+# base_turret.obj — see EntityManager::renderEnemy (Base); nothing here
+# rises above y = 4.6 so the rotating barrels stay clear. Local frame: +Z forward.
 # c30 plinth/roof, c08 shaft/pedestal, c17 stripes, c15 cab, c10 glazing,
 # c02 lamps, c00 pedestal top.
 #

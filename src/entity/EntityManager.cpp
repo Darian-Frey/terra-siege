@@ -2339,16 +2339,19 @@ void EntityManager::updateBase(Entity &e, float dt, Player &player) {
     Vector3 fwd = {sinf(e.yaw), 0.0f, cosf(e.yaw)};
     float dot = Vector3DotProduct(fwd, toTargetN);
     if (dot > (1.0f - Config::BASE_TURRET_FIRE_CONE)) {
-      // Muzzle sits on top of the control tower. Spawn shot slightly
-      // ahead of the muzzle along the firing direction.
-      Vector3 muzzle = {e.pos.x + Config::BASE_EAST_SIGN * Config::BASE_TOWER_OFFSET,
+      // Shots leave the ends of the twin barrels (base_turret.obj),
+      // which point along the turret yaw from the barrel axis on top of
+      // the control tower, and are aimed from there at the target.
+      Vector3 muzzle = {e.pos.x + Config::BASE_EAST_SIGN * Config::BASE_TOWER_OFFSET +
+                            sinf(e.yaw) * Config::BASE_TURRET_MUZZLE_REACH,
                         e.pos.y + Config::BASE_TURRET_BARREL_HEIGHT,
-                        e.pos.z + Config::BASE_TOWER_OFFSET};
+                        e.pos.z + Config::BASE_TOWER_OFFSET +
+                            cosf(e.yaw) * Config::BASE_TURRET_MUZZLE_REACH};
       Vector3 dir3 = Vector3Subtract(targetPos, muzzle);
       float d3 = Vector3Length(dir3);
       if (d3 > 0.001f) {
         dir3 = Vector3Scale(dir3, 1.0f / d3);
-        Vector3 spawn = Vector3Add(muzzle, Vector3Scale(dir3, 1.5f));
+        Vector3 spawn = muzzle;
         Vector3 vel = Vector3Scale(dir3, Config::CANNON_SPEED);
         // Player-owned so the projectile→entity collision path picks
         // up enemies (and the friendly-fire filter below skips
@@ -3841,20 +3844,25 @@ void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
       DrawCubeV({tower.x, tower.y + 2.0f * k, tower.z}, {2.0f * k, 4.0f * k, 2.0f * k}, towerCol);
       DrawCubeV({tower.x, tower.y + 4.3f * k, tower.z}, {2.6f * k, 0.6f * k, 2.6f * k}, towerTop);
     }
-    // Turret cap + barrel + tip — always procedural, rotates with
-    // e.yaw independently of the static structure.
-    Color capCol = {180, 110, 90, 255};
-    Color barrelCol = {220, 220, 220, 255};
-    if (e.damageFlashTimer > 0.0f) capCol = barrelCol = {255, 255, 255, 255};
+    // Gun turret on the tower, rotating with e.yaw independently of the
+    // static structure. base_turret.obj's origin is on the barrel axis;
+    // the boxes are the fallback when it's missing.
     const float ts = Config::BASE_TOWER_SCALE;
     Vector3 capPos = {tower.x, top + Config::BASE_TURRET_BARREL_HEIGHT, tower.z};
-    DrawCubeV(capPos, {1.4f * ts, 0.8f * ts, 1.4f * ts}, capCol);
-    float dx = sinf(e.yaw), dz = cosf(e.yaw);
-    Vector3 barrel = {capPos.x + dx * 1.1f * ts, capPos.y,
-                      capPos.z + dz * 1.1f * ts};
-    DrawCubeV(barrel, {0.5f * ts, 0.4f * ts, 0.5f * ts}, barrelCol);
-    Vector3 tip = {capPos.x + dx * 1.8f * ts, capPos.y, capPos.z + dz * 1.8f * ts};
-    DrawCubeV(tip, {0.4f * ts, 0.35f * ts, 0.4f * ts}, {255, 220, 100, 255});
+    if (registry && registry->hasBaseTurret()) {
+      registry->drawBaseTurret(capPos, e.yaw, ts, WHITE);
+    } else {
+      Color capCol = {180, 110, 90, 255};
+      Color barrelCol = {220, 220, 220, 255};
+      if (e.damageFlashTimer > 0.0f) capCol = barrelCol = {255, 255, 255, 255};
+      DrawCubeV(capPos, {1.4f * ts, 0.8f * ts, 1.4f * ts}, capCol);
+      float dx = sinf(e.yaw), dz = cosf(e.yaw);
+      Vector3 barrel = {capPos.x + dx * 1.1f * ts, capPos.y,
+                        capPos.z + dz * 1.1f * ts};
+      DrawCubeV(barrel, {0.5f * ts, 0.4f * ts, 0.5f * ts}, barrelCol);
+      Vector3 tip = {capPos.x + dx * 1.8f * ts, capPos.y, capPos.z + dz * 1.8f * ts};
+      DrawCubeV(tip, {0.4f * ts, 0.35f * ts, 0.4f * ts}, {255, 220, 100, 255});
+    }
 
     // Hull bar above the tower so killing the base is visible.
     if (e.hullMax > 0.0f) {

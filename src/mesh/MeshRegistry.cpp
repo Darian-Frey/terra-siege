@@ -70,6 +70,15 @@ void MeshRegistry::loadAll(const std::filesystem::path &meshesDir) {
   // the EntityType-indexed entity pool.
   m_playerLoaded = loadInto("hovercraft.obj", m_playerModel);
   m_missileLoaded = loadInto("missile.obj", m_missileModel);
+  m_turretLoaded = loadInto("base_turret.obj", m_turretModel);
+}
+
+void MeshRegistry::drawBaseTurret(Vector3 position, float yawRad, float scale,
+                                  Color tint) const {
+  if (!m_turretLoaded) return;
+  float yawDeg = yawRad * (180.0f / 3.14159265f);
+  DrawModelEx(m_turretModel, position, {0.0f, 1.0f, 0.0f}, yawDeg,
+              {scale, scale, scale}, tint);
 }
 
 void MeshRegistry::drawMissile(Vector3 position, Vector3 dir, float scale,
@@ -109,6 +118,10 @@ void MeshRegistry::unloadAll() {
   if (m_missileLoaded) {
     UnloadModel(m_missileModel);
     m_missileLoaded = false;
+  }
+  if (m_turretLoaded) {
+    UnloadModel(m_turretModel);
+    m_turretLoaded = false;
   }
 }
 

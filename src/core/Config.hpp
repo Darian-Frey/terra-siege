@@ -708,7 +708,8 @@ constexpr float BASE_TURRET_FIRE_CONE = 0.12f;    // ~14° fire cone
 // Control tower + turret scale on the platform (1 = the original 4.6 m
 // tower). The turret muzzle sits just above the scaled tower top.
 constexpr float BASE_TOWER_SCALE = 2.0f;          // TUNE
-constexpr float BASE_TURRET_BARREL_HEIGHT = 5.0f * BASE_TOWER_SCALE; // muzzle Y above the platform top
+constexpr float BASE_TURRET_BARREL_HEIGHT = 5.0f * BASE_TOWER_SCALE; // barrel axis Y above the platform top
+constexpr float BASE_TURRET_MUZZLE_REACH = 2.15f * BASE_TOWER_SCALE; // barrel ends ahead of the turret axis (base_turret.obj)
 
 // Slice C C.2 — Base Defence mode friendly-base behaviour. Bases are
 // passive infrastructure: when hit they launch a few allied Fighter
