@@ -15,6 +15,7 @@ const char *MeshRegistry::filenameFor(EntityType type) {
   case EntityType::Fighter:      return "fighter.obj";
   case EntityType::Bomber:       return "bomber.obj";
   case EntityType::Carrier:      return "carrier.obj";
+  case EntityType::Lander:       return "lander.obj";
   case EntityType::GroundTurret: return "tank.obj";
   case EntityType::Collector:    return "collector.obj";
   case EntityType::RepairStation:return "repair_station.obj";

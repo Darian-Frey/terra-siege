@@ -3426,7 +3426,8 @@ void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
   case EntityType::Lander: {
     // Industrial chunky silhouette per base_mode_v2.md ("Bulky
     // industrial — Carrier-scale silhouette, more square than the
-    // curved Carrier"). All cubes, deliberately squared-off.
+    // curved Carrier"). Drawn from lander.obj; the cubes below are the
+    // fallback when the OBJ is missing.
     if (registry && registry->has(EntityType::Lander)) {
       registry->draw(EntityType::Lander, e.pos, e.yaw, 1.0f, WHITE);
     } else {

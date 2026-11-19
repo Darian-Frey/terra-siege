@@ -10,6 +10,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 ## [Unreleased]
 
 ### Added
+- `scripts/meshgen/`: Python definitions for the player, enemy and structure meshes, run headless in Blender to regenerate `assets/meshes/*.obj` (with optional preview renders)
 - Relay towers that land in a lake or the sea now stand on a concrete plinth raised 1.5 m above the water
 - Guided-missile model (`missile.obj`): grey rear body with a black band, white nose section, black seeker, four swept fins. Used for the homing Missile, the Cluster carrier (orange), cluster submunitions (orange, smaller), the Shield Missile (blue) and the Infectious Missile (green), oriented along their flight path
 - Slice C C.4 (F-023), the radar network:
@@ -27,6 +28,16 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Project documentation to the development documentation standard: README status header, FEATURES, DECISIONS, ARCHITECTURE, ATTACK_VECTORS, BUGS, IMPROVEMENTS, CHANGELOG, MIT LICENSE ([D-001](DECISIONS.md#d-001-adopt-the-development-documentation-standard))
 
 ### Changed
+- New player ship model (`hovercraft.obj`) replaces the diamond hull. It is a swept arrowhead with a red leading-edge lip, a faceted canopy, a red dorsal fin, twin nose cannons, orange engine plates and wingtip nav lights (red to port, green to starboard). 56 vertices and 65 triangles. Same footprint, so the sidecar is unchanged
+- New enemy models, each keeping its palette colours, footprint and sidecar:
+  - Fighter: a lofted fuselage with swept wings that angle down, canted twin tail fins, a yellow cabin and an orange exhaust
+  - Drone: a spiked hexagonal core with a red forward stinger and a white top pip
+  - Bomber: a thick fuselage, straight wings, underwing pods with exhausts, twin tail fins and a dark bomb bay
+  - Seeder: an octagonal saucer with a lavender rim band, a glowing underside hatch, three dispenser tubes and side vanes
+  - Carrier: a lofted hull with a pale prow, side hangar sponsons, a bridge tower with an antenna, and twin rear engines
+  - Tank: a sloped hull on two track units, an octagonal turret, and a barrel with a muzzle brake
+- Lander now has a model (`lander.obj`, mapped in `MeshRegistry`) instead of five cubes: an octagonal hull with four drone-bay doors, landing legs, deck warning lights, a production silo with a glowing green hatch, exhaust stacks and a command bridge. The cubes remain as the fallback
+- New models for the base control tower (plinth, striped shaft, glazed octagonal cab, roof lamps, turret pedestal), the Collector (front scoop, track units, headlights, rear hopper) and the Radar Booster (octagonal foundation, tapered mast, equipment cabinets). The turret, cab and dish are still drawn in code
 - Base Defence mode is lost when every base falls, not every friendly unit
 - `base.obj` now holds only the control tower, centred on its own origin. The raised platform, ramps and corner lights are drawn procedurally
 - Friendly-structure checks consolidated into `isFriendlyStructure()` (Entity.hpp)
