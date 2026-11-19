@@ -129,8 +129,7 @@ def collector_cab_loaded():
 # ---------------------------------------------------------------- Radar Booster
 def radar_booster():
     """Booster mast, foot at z = 0, drawn with yaw 0. The spinning dish
-    (z 3.35-3.85, swept out to r ~ 1.9) is procedural, so the mast stays
-    below 3.3."""
+    (radar_booster_dish) sits on the bearing top at z = 3.3."""
     s = Ship("radar_booster")
     s.stack([(-0.2, 1.5, 1.5), (0.3, 1.5, 1.5), (0.5, 1.2, 1.2)], [30, 30],
             n=8, rot=math.pi / 8, top=30)
@@ -145,6 +144,34 @@ def radar_booster():
     # cable run up the mast
     s.strut((0.0, 0.62, 0.5), (0.0, 0.42, 2.9), 0.06, 0)
     return s, 6.0
+
+
+def radar_booster_dish():
+    """The booster's spinning radar dish. Origin on the mast axis at the
+    bearing top (z = 3.3 on radar_booster); the game spins it with the
+    entity's yaw. Turntable, post, a two-sided faceted bowl facing +y and
+    three struts holding a yellow feed horn at the focus."""
+    s = Ship("radar_booster_dish")
+    s.stack([(0.0, 0.45, 0.45), (0.15, 0.4, 0.4)], [8], n=8, rot=math.pi / 8, top=30)
+    s.block((-0.12, 0.12, -0.12, 0.12, 0.15), (-0.1, 0.1, -0.1, 0.1, 0.6), 30)
+    cz, n = 0.65, 8
+    def ring(r, y):
+        return [s.vert(r * math.cos(2 * math.pi * k / n), y, cz + r * math.sin(2 * math.pi * k / n))
+                for k in range(n)]
+    back, front = (0, -3, cz), (0, 3, cz)
+    for side, ref, cols in ((0, back, _alt(15, 23)), (1, front, _alt(8, 30))):
+        rim, mid = ring(0.85, 0.55), ring(0.5, 0.33)
+        apex = s.vert(0, 0.22, cz)
+        for k in range(n):
+            j = (k + 1) % n
+            s.face([rim[k], rim[j], mid[j], mid[k]], cols(k), ref)
+            s.face([mid[k], mid[j], apex], cols(k + 1), ref)
+    focus = (0, 1.2, cz)
+    for k in range(3):
+        a = 2 * math.pi * k / 3 + math.pi / 2
+        s.strut((0.8 * math.cos(a), 0.53, cz + 0.8 * math.sin(a)), focus, 0.03, 8)
+    s.block((-0.12, 0.12, 1.15, 1.4, cz - 0.12), (-0.1, 0.1, 1.15, 1.4, cz + 0.12), 17)
+    return s, 3.0
 
 
 # ---------------------------------------------------------------- Lander
@@ -190,7 +217,7 @@ SHIPS = {"base": base, "base_turret": base_turret,
          "base_turret_guns": base_turret_guns, "collector": collector,
          "collector_cab_empty": collector_cab_empty,
          "collector_cab_loaded": collector_cab_loaded,
-         "radar_booster": radar_booster, "lander": lander}
+         "radar_booster": radar_booster, "radar_booster_dish": radar_booster_dish, "lander": lander}
 
 HEADERS = {
 "base": """terra-siege base — Collector delivery destination + defensive turret.
@@ -236,9 +263,15 @@ Local frame: +Z forward. c29 body, c10 windscreen, c28 floor, c11 light bar.""",
 "radar_booster": """terra-siege radar booster — extends radar range while alive.
 Octagonal foundation, tapered six-sided mast, bearing housing, two
 equipment cabinets and a cable run. {verts} verts, {tris} tris.
-The rotating dish and tip pip stay procedural (animated yaw) at y ~ 3.6;
-the mast tops out at 3.3. Local frame: +Z forward, foot at y = 0.
+The spinning dish is radar_booster_dish, on the bearing top at y = 3.3.
+Local frame: +Z forward, foot at y = 0.
 c30 foundation, c21/c22/c23 mast, c08 bearing, c17 cabinet panels, c00 cable.""",
+"radar_booster_dish": """terra-siege radar booster dish — spins on top of the booster mast.
+Turntable, post, a two-sided eight-facet bowl facing +Z, and three struts
+holding a yellow feed horn at the focus. {verts} verts, {tris} tris.
+Origin on the mast axis at the bearing top; drawn at RADAR_BOOSTER_DISH_HEIGHT
+above the booster's foot, yawed with the entity's spin.
+c15/c23 bowl face, c08/c30 bowl back and struts, c30 post, c17 feed horn.""",
 "lander": """terra-siege lander — grounded enemy base (Slice C C.3).
 Octagonal hull with four drone-bay doors, four landing legs, deck
 warning lights, a production silo with a glowing hatch, two exhaust

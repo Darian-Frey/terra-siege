@@ -77,6 +77,11 @@ public:
   void drawBaseTurretGuns(Vector3 pivotPos, float yawRad, float pitchRad,
                           float scale) const;
 
+  // Radar Booster dish (radar_booster_dish.obj), spun about the mast
+  // axis; origin at the bearing top.
+  bool hasBoosterDish() const { return m_dishLoaded; }
+  void drawBoosterDish(Vector3 position, float yawRad, Color tint) const;
+
   // Collector cab, one model per cargo state (collector_cab_empty /
   // _loaded) since the colour shows the cargo. Same frame and origin as
   // collector.obj, so it's drawn at the Collector's own transform.
@@ -104,6 +109,8 @@ private:
   bool m_turretLoaded = false;
   Model m_gunsModel{};
   bool m_gunsLoaded = false;
+  Model m_dishModel{};
+  bool m_dishLoaded = false;
   Model m_cabModel[2]{}; // [0] empty, [1] loaded
   bool m_cabLoaded[2] = {false, false};
 };

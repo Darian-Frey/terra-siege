@@ -791,6 +791,7 @@ constexpr float REPAIR_STATION_HIT_RADIUS = 3.0f;
 
 constexpr float RADAR_BOOSTER_HULL = 80.0f;
 constexpr float RADAR_BOOSTER_HIT_RADIUS = 2.8f;
+constexpr float RADAR_BOOSTER_DISH_HEIGHT = 3.3f; // dish pivot above the foot (radar_booster.obj bearing top)
 
 // World spawn — total friendlies placed at round start. The home Base
 // and its collectors sit beside the player; everything else is

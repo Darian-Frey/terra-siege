@@ -3745,8 +3745,7 @@ void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
     // animated in updateRadarBooster — gives the booster a clear
     // "alive" indicator at distance.
     if (registry && registry->has(EntityType::RadarBooster)) {
-      // Tower + foundation come from the OBJ; the dish rotates
-      // independently with e.yaw and stays procedural.
+      // Tower + foundation; the dish is drawn separately below.
       registry->draw(EntityType::RadarBooster, e.pos, 0.0f, 1.0f, WHITE);
     } else {
       Color tower = {90, 100, 130, 255};
@@ -3756,19 +3755,26 @@ void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
       DrawCubeV({e.pos.x, e.pos.y + 0.1f, e.pos.z}, {2.6f, 0.6f, 2.6f},
                 tower);
     }
-    // Rotating dish + tip pip — always procedural.
-    Color dish = {200, 220, 255, 255};
-    if (e.damageFlashTimer > 0.0f) dish = {255, 255, 255, 255};
-    float dx = sinf(e.yaw), dz = cosf(e.yaw);
-    Vector3 dishPos = {e.pos.x + dx * 0.6f, e.pos.y + 3.6f,
-                       e.pos.z + dz * 0.6f};
-    DrawCubeV(dishPos, {1.8f, 0.5f, 1.8f}, dish);
-    Vector3 tip = {e.pos.x + dx * 1.6f, e.pos.y + 3.6f,
-                   e.pos.z + dz * 1.6f};
-    DrawCubeV(tip, {0.5f, 0.4f, 0.5f}, {255, 220, 100, 255});
+    // Dish spinning with e.yaw on the mast top; boxes as the fallback.
+    if (registry && registry->hasBoosterDish()) {
+      registry->drawBoosterDish(
+          {e.pos.x, e.pos.y + Config::RADAR_BOOSTER_DISH_HEIGHT, e.pos.z}, e.yaw,
+          WHITE);
+    } else {
+      Color dish = {200, 220, 255, 255};
+      if (e.damageFlashTimer > 0.0f) dish = {255, 255, 255, 255};
+      float dx = sinf(e.yaw), dz = cosf(e.yaw);
+      Vector3 dishPos = {e.pos.x + dx * 0.6f, e.pos.y + 3.6f,
+                         e.pos.z + dz * 0.6f};
+      DrawCubeV(dishPos, {1.8f, 0.5f, 1.8f}, dish);
+      Vector3 tip = {e.pos.x + dx * 1.6f, e.pos.y + 3.6f,
+                     e.pos.z + dz * 1.6f};
+      DrawCubeV(tip, {0.5f, 0.4f, 0.5f}, {255, 220, 100, 255});
+    }
 
     if (e.hullMax > 0.0f) {
-      drawHpBar(e.pos, 4.4f, 4.0f, e.hullHP / e.hullMax,
+      drawHpBar(e.pos, 5.4f, 4.0f, // clears the dish rim (~4.8)
+                e.hullHP / e.hullMax,
                 {80, 220, 100, 220}, camPos);
     }
     break;

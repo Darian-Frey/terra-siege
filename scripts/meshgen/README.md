@@ -7,7 +7,7 @@ Python definitions for the ship, structure and scenery meshes in `assets/meshes/
 | `shiplib.py` | `Ship` builder and part helpers (`loft`, `block`, `stack`, `strut`, `spike`), the OBJ writer and the preview renderer |
 | `player.py` | `hovercraft` |
 | `enemies.py` | `fighter`, `drone`, `bomber`, `seeder`, `carrier`, `tank` |
-| `structures.py` | `base` (control tower), `base_turret` (housing) and `base_turret_guns` (elevating guns), `collector` with `collector_cab_empty` / `collector_cab_loaded`, `radar_booster`, `lander`. The radar booster leaves room for its dish, which the game draws in code |
+| `structures.py` | `base` (control tower), `base_turret` (housing) and `base_turret_guns` (elevating guns), `collector` with `collector_cab_empty` / `collector_cab_loaded`, `radar_booster` with its spinning `radar_booster_dish`, `lander` |
 | `scenery.py` | `tree_conifer`, `tree_broadleaf`, `rock_a`, `rock_b`, `rock_c`, `antenna`, `crash_site`, `crash_debris`. Drawn instanced by `Decorations`, so keep them small |
 | `build.py` | Entry point |
 

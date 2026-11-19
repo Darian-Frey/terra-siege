@@ -73,8 +73,17 @@ void MeshRegistry::loadAll(const std::filesystem::path &meshesDir) {
   m_missileLoaded = loadInto("missile.obj", m_missileModel);
   m_turretLoaded = loadInto("base_turret.obj", m_turretModel);
   m_gunsLoaded = loadInto("base_turret_guns.obj", m_gunsModel);
+  m_dishLoaded = loadInto("radar_booster_dish.obj", m_dishModel);
   m_cabLoaded[0] = loadInto("collector_cab_empty.obj", m_cabModel[0]);
   m_cabLoaded[1] = loadInto("collector_cab_loaded.obj", m_cabModel[1]);
+}
+
+void MeshRegistry::drawBoosterDish(Vector3 position, float yawRad,
+                                   Color tint) const {
+  if (!m_dishLoaded) return;
+  float yawDeg = yawRad * (180.0f / 3.14159265f);
+  DrawModelEx(m_dishModel, position, {0.0f, 1.0f, 0.0f}, yawDeg,
+              {1.0f, 1.0f, 1.0f}, tint);
 }
 
 void MeshRegistry::drawCollectorCab(Vector3 position, float yawRad,
@@ -153,6 +162,10 @@ void MeshRegistry::unloadAll() {
   if (m_gunsLoaded) {
     UnloadModel(m_gunsModel);
     m_gunsLoaded = false;
+  }
+  if (m_dishLoaded) {
+    UnloadModel(m_dishModel);
+    m_dishLoaded = false;
   }
   for (int i = 0; i < 2; ++i) {
     if (m_cabLoaded[i]) {

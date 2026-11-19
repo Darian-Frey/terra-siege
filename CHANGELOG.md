@@ -30,6 +30,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Project documentation to the development documentation standard: README status header, FEATURES, DECISIONS, ARCHITECTURE, ATTACK_VECTORS, BUGS, IMPROVEMENTS, CHANGELOG, MIT LICENSE ([D-001](DECISIONS.md#d-001-adopt-the-development-documentation-standard))
 
 ### Changed
+- The Radar Booster dish is now a model (`radar_booster_dish.obj`): a turntable, a two-sided faceted bowl and a yellow feed horn on struts, spinning on the mast top (`RADAR_BOOSTER_DISH_HEIGHT`). The booster's health bar sits higher to clear it
 - Base turret guns now elevate: the turret is a housing (`base_turret.obj`) that yaws and a gun assembly (`base_turret_guns.obj`) that also pitches (`BASE_TURRET_PITCH_*`) to follow targets above and below it. It fires only when the barrels point at the target in 3D, shots leave the muzzles at any elevation, and aim is measured from the turret on the tower rather than the pad centre
 - The Collector cab is now a model: a cabin with a sloped windscreen and a roof light bar, in yellow when empty (`collector_cab_empty.obj`) and green when carrying cargo (`collector_cab_loaded.obj`). It now turns with the vehicle
 - The base gun turret is now a model (`base_turret.obj`): an octagonal housing with twin barrels, yellow muzzles and a sensor pod, yawed to its aim. Its shots now leave the barrel ends (`BASE_TURRET_MUZZLE_REACH`) instead of starting inside the turret
