@@ -73,6 +73,14 @@ constexpr float ASSIST_LEVEL_COEFFS[4] = {0.0f, 0.18f, 0.42f, 0.75f};
 // Shared
 constexpr float CAM_FOV = 75.0f; // degrees
 constexpr float CAM_LERP = 8.0f; // follow position lerp per second
+// Projection clip planes, applied with rlFrustum in GameState::render().
+// The far plane overrides raylib's 1000 so the whole world is visible
+// (AV-013). Depth precision scales with the near plane: at 0.05 m,
+// surfaces a few cm apart (deck markings, ramp feet) z-fought from
+// ~100 m. Every camera keeps at least 2 m from the ship and 3.5 m above
+// the terrain, so 0.5 m clips nothing in play.
+constexpr double CAM_NEAR_PLANE = 0.5;
+constexpr double CAM_FAR_PLANE = 3000.0;
 
 // Chase (View 1) and Velocity (View 2)
 constexpr float CAM_HEIGHT = 8.0f;           // units above player
@@ -725,7 +733,9 @@ static_assert(BASE_DEFENDER_LIFT_COUNT >= BASE_DEFENDER_MAX,
               "every live defender needs its own deck lift");
 constexpr float BASE_DEFENDER_HATCH_W = 4.5f;     // hatch marking, across the fighter (X)
 constexpr float BASE_DEFENDER_HATCH_L = 6.5f;     // hatch marking, nose to tail (Z)
-constexpr float BASE_DEFENDER_REST_HEIGHT = 0.6f; // origin above the deck when sat on it (fighter.obj bottom ≈ −0.55)
+constexpr float BASE_DEFENDER_HATCH_THICK = 0.12f;      // plate height above the deck (z-fighting margin)
+constexpr float BASE_DEFENDER_HATCH_DRAW_DIST = 800.0f; // hatches not drawn beyond this (a few pixels; would z-fight)
+constexpr float BASE_DEFENDER_REST_HEIGHT = 0.7f; // origin above the deck when sat on it (fighter.obj bottom ≈ −0.55, clears the hatch plate)
 constexpr float BASE_DEFENDER_STOW_DEPTH = 1.8f;  // below rest height = fully inside the deck (fighter.obj top ≈ 1.05)
 constexpr float BASE_DEFENDER_LIFT_SPEED = 1.5f;  // TUNE — m/s on the lift, below the deck
 constexpr float BASE_DEFENDER_CLIMB_SPEED = 12.0f;  // TUNE — vertical climb-out m/s
@@ -755,6 +765,7 @@ constexpr float BASE_TOWER_OFFSET = 14.0f;        // control tower at compass NE
 constexpr float BASE_RAMP_LENGTH = 8.0f;          // TUNE — horizontal run
 constexpr float BASE_RAMP_WIDTH = 8.0f;           // TUNE
 constexpr float BASE_RAMP_MIN_RISE = 0.3f;
+constexpr float BASE_RAMP_DRAW_SINK = 0.3f;       // drawn ramp continues this far below the ground (no flush z-fight)
 constexpr float COLLECTOR_ROUTE_RADIUS = 2.5f;    // arrival radius for ramp route waypoints
 constexpr float BASE_PAD_HOVER_AGL = 8.0f;        // low hover counts as docked below this height…
 constexpr float BASE_PAD_HOVER_SPEED = 5.0f;      // …when also slower than this (m/s)
@@ -901,6 +912,18 @@ constexpr float BIOME_SAND_MAX = 0.08f;
 constexpr float BIOME_GRASS_MAX = 0.40f;
 constexpr float BIOME_ROCK_MAX = 0.65f;
 constexpr float BIOME_HIGH_MAX = 0.82f;
+
+// Scenery decorations (trees, rocks). Trees and boulders are OBJ models
+// drawn instanced, bucketed into a grid of DECOR_CELL_SIZE cells so the
+// renderer only walks cells near the camera.
+constexpr float DECOR_RENDER_RADIUS = 800.0f;  // fog hides anything further
+constexpr float DECOR_CELL_SIZE = 256.0f;      // instancing grid cell, world units
+static_assert(static_cast<int>(WORLD_SIZE) % static_cast<int>(DECOR_CELL_SIZE) == 0,
+              "decoration grid must tile the world exactly");
+// Share of conifers among trees, rising from the bottom to the top of
+// the grass band so higher forests read as pine.
+constexpr float DECOR_CONIFER_FRAC_LOW = 0.2f;   // TUNE
+constexpr float DECOR_CONIFER_FRAC_HIGH = 0.8f;  // TUNE
 
 constexpr int FBM_OCTAVES = 7; // octaves accumulated for each cell
 constexpr int FBM_LARGEST_CELL =

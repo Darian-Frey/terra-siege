@@ -1,6 +1,6 @@
 # meshgen
 
-Python definitions for the ship and structure meshes in `assets/meshes/`. Blender runs them headless and writes OBJ files in the game's format: palette materials `c00`–`c31`, faces wound outward, frame +X right, +Y up, +Z nose. See `project-status/3d_assets.md` for the format.
+Python definitions for the ship, structure and scenery meshes in `assets/meshes/`. Blender runs them headless and writes OBJ files in the game's format: palette materials `c00`–`c31`, faces wound outward, frame +X right, +Y up, +Z nose. See `project-status/3d_assets.md` for the format.
 
 | File | Contents |
 | --- | --- |
@@ -8,6 +8,7 @@ Python definitions for the ship and structure meshes in `assets/meshes/`. Blende
 | `player.py` | `hovercraft` |
 | `enemies.py` | `fighter`, `drone`, `bomber`, `seeder`, `carrier`, `tank` |
 | `structures.py` | `base` (control tower), `collector`, `radar_booster`, `lander`. These leave room for the parts the game draws in code: the base turret, Collector cab and booster dish |
+| `scenery.py` | `tree_conifer`, `tree_broadleaf`, `rock_a`, `rock_b`, `rock_c`. Drawn instanced by `Decorations`, so keep them small |
 | `build.py` | Entry point |
 
 ## Usage

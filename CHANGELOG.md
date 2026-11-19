@@ -10,6 +10,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 ## [Unreleased]
 
 ### Added
+- Trees and rock formations are now OBJ models (`scripts/meshgen/scenery.py`): conifer and broadleaf trees, with conifers commoner higher up the grassland, and three boulder variants mixed in each rock cluster. They are drawn with GPU instancing from a prebuilt grid of transforms, one draw call per model ([D-034](DECISIONS.md#d-034-trees-and-rocks-are-obj-models-drawn-with-gpu-instancing))
 - `scripts/meshgen/`: Python definitions for the player, enemy and structure meshes, run headless in Blender to regenerate `assets/meshes/*.obj` (with optional preview renders)
 - Relay towers that land in a lake or the sea now stand on a concrete plinth raised 1.5 m above the water
 - Guided-missile model (`missile.obj`): grey rear body with a black band, white nose section, black seeker, four swept fins. Used for the homing Missile, the Cluster carrier (orange), cluster submunitions (orange, smaller), the Shield Missile (blue) and the Infectious Missile (green), oriented along their flight path
@@ -28,6 +29,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Project documentation to the development documentation standard: README status header, FEATURES, DECISIONS, ARCHITECTURE, ATTACK_VECTORS, BUGS, IMPROVEMENTS, CHANGELOG, MIT LICENSE ([D-001](DECISIONS.md#d-001-adopt-the-development-documentation-standard))
 
 ### Changed
+- The 200-triangle mesh cap in `3d_assets.md` is now a soft "keep it low-poly" guideline
 - New player ship model (`hovercraft.obj`) replaces the diamond hull. It is a swept arrowhead with a red leading-edge lip, a faceted canopy, a red dorsal fin, twin nose cannons, orange engine plates and wingtip nav lights (red to port, green to starboard). 56 vertices and 65 triangles. Same footprint, so the sidecar is unchanged
 - New enemy models, each keeping its palette colours, footprint and sidecar:
   - Fighter: a lofted fuselage with swept wings that angle down, canted twin tail fins, a yellow cabin and an orange exhaust
@@ -49,6 +51,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Stale duplicate of `game_modes_and_features.md` at the repo root
 
 ### Fixed
+- Base deck hatches and the feet of base ramps z-fought (flickered) from a distance. The camera near plane moves from 0.05 m to `CAM_NEAR_PLANE`, the hatches are thicker plates, and the drawn ramps run on into the ground instead of meeting it flush ([AV-013](ATTACK_VECTORS.md#av-013-raylib-name-and-default-collisions))
 - Base defenders appeared in mid-air above the pad and vanished in the sky when idle. They now rise out of a deck-lift hatch on the platform and climb out vertically. When done, they slow over their hatch, descend, touch down and sink back into the deck ([BUG-029](BUGS.md#bug-029-base-defenders-pop-in-above-the-pad-and-vanish-instead-of-taking-off-and-landing))
 - The compass read mirrored against the view: the heading tape and debug heading now increase when turning right, and E is on the right when facing north ([BUG-028](BUGS.md#bug-028-3d-view-is-mirrored-eastwest-relative-to-the-compass-and-heading), [D-033](DECISIONS.md#d-033-world-x-points-west-compass-heading-is-yaw))
 - The radar showed every entity on the map and one booster anywhere boosted range globally; both now follow network coverage ([BUG-001](BUGS.md#bug-001-radar-shows-every-entity-on-the-map-regardless-of-range), [BUG-002](BUGS.md#bug-002-one-radar-booster-anywhere-boosts-radar-range-globally))

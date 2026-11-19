@@ -57,3 +57,6 @@ tools/
 # raylib F12 / Ctrl+F12 captures land in the working directory
 /screenshot*.png
 /screenrec*.gif
+
+# Python
+__pycache__/

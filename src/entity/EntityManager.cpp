@@ -3766,14 +3766,22 @@ void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
       }
       // Defender lift hatches (BUG-029): a yellow-rimmed dark panel the
       // fighters rise out of and sink back into. The rim is four strips
-      // around the panel, not a slab under it: stacked top faces a few
-      // cm apart z-fight at distance with the 3000 m far plane.
+      // around the panel, not a slab under it, and the panel is a plate
+      // BASE_DEFENDER_HATCH_THICK proud of the deck: with the 0.05 m near
+      // plane, surfaces a few cm apart z-fight from a couple of hundred
+      // metres. Beyond BASE_DEFENDER_HATCH_DRAW_DIST the hatches are a
+      // few pixels and would fight anyway, so they aren't drawn.
+      const float hcx = e.pos.x - camPos.x, hcz = e.pos.z - camPos.z;
+      const bool drawHatches =
+          hcx * hcx + hcz * hcz < Config::BASE_DEFENDER_HATCH_DRAW_DIST *
+                                      Config::BASE_DEFENDER_HATCH_DRAW_DIST;
       Color hatchRim = {200, 170, 60, 255};
       Color hatch = {38, 42, 48, 255};
       const float hw = Config::BASE_DEFENDER_HATCH_W * 0.5f;
       const float hl = Config::BASE_DEFENDER_HATCH_L * 0.5f;
-      const float rim = 0.3f, th = 0.08f, y = top + th * 0.5f;
-      for (int s = 0; s < Config::BASE_DEFENDER_LIFT_COUNT; ++s) {
+      const float rim = 0.3f, th = Config::BASE_DEFENDER_HATCH_THICK;
+      const float y = top + th * 0.5f;
+      for (int s = 0; drawHatches && s < Config::BASE_DEFENDER_LIFT_COUNT; ++s) {
         Vector3 p = defenderLiftSpot(e, s);
         DrawCubeV({p.x, y, p.z}, {2.0f * hw, th, 2.0f * hl}, hatch);
         DrawCubeV({p.x, y, p.z + hl + rim * 0.5f}, {2.0f * (hw + rim), th, rim}, hatchRim);
@@ -3802,9 +3810,15 @@ void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
           return Vector3{e.pos.x + out.x * along + side.x * across, y,
                          e.pos.z + out.z * along + side.z * across};
         };
+        // The drawn slope carries on past the foot into the ground, so it
+        // crosses the terrain at an angle instead of meeting it flush
+        // (a flush foot z-fights). Collision uses the true ramp
+        // (surfaceHeightAt), which ends at the foot.
+        const float sink = Config::BASE_RAMP_DRAW_SINK;
+        const float Ld = L * (Config::BASE_PAD_HEIGHT + sink) / Config::BASE_PAD_HEIGHT;
         Vector3 tA = pt(h, -w, top), tB = pt(h, w, top);
-        Vector3 fA = pt(h + L, -w, ground), fB = pt(h + L, w, ground);
-        Vector3 bA = pt(h, -w, ground), bB = pt(h, w, ground);
+        Vector3 fA = pt(h + Ld, -w, ground - sink), fB = pt(h + Ld, w, ground - sink);
+        Vector3 bA = pt(h, -w, ground - sink), bB = pt(h, w, ground - sink);
         tri2(tA, fA, fB, slab);
         tri2(tA, fB, tB, slab);
         tri2(tA, bA, fA, slabSide);

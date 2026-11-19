@@ -150,7 +150,8 @@ Allocation causes frame-time spikes. When a pool is full, the oldest slot is rec
 **Description.** raylib carries traps:
 
 - **`CameraMode` typedef.** Never name a type `CameraMode`. `CameraView` (player views) and `CamMode` (DEV Follow/FreeRoam) are separate enums.
-- **Default 1000-unit far plane.** `GameState::render()` overrides it with `rlFrustum` to 3000 (three call sites). Removing it clips the roughly 8 km world.
+- **Default 1000-unit far plane.** `GameState::render()` overrides it with `rlFrustum` to `CAM_FAR_PLANE` (three call sites). Removing it clips the roughly 8 km world.
+- **Near plane and depth precision.** Depth precision scales with `CAM_NEAR_PLANE`. At 0.05 m, deck markings and ramp feet a few cm off a surface z-fought from about 100 m. Don't shrink it back. Give overlays real separation (`BASE_DEFENDER_HATCH_THICK`), and don't let surfaces meet flush: carry them through at an angle, as the ramp feet do (`BASE_RAMP_DRAW_SINK`).
 - **Tactical view up vector.** The view needs `camera.up = {0, 0, 1}`. With `{0, 1, 0}` the look-at is degenerate and the camera spins.
 - **`RAYMATH_IMPLEMENTATION`.** It must be defined only on the executables, never on `terra_siege_mesh`, to avoid duplicate symbols.
 - **`MatrixMultiply(A, B)` order.** It computes `B·A`. Together with the render/physics pitch sign (`MatrixRotateX(-m_pitch)`), this has inverted the ship visual against its thrust vector "3+ times".

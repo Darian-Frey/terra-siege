@@ -41,13 +41,14 @@ Players who want a modern take on the 1988 Argonaut game *Virus*: flat-shaded lo
 ### F-002 Atmospheric terrain decorations
 
 **Priority:** Should
-**Status:** Complete (2026-06-08, `bdc63e5`; wrap-aware rendering 2026-10-15, `7e846c3`)
+**Status:** Complete (2026-06-08, `bdc63e5`; wrap-aware rendering 2026-10-15, `7e846c3`; instanced OBJ trees and rocks 2026-11-19)
 **Acceptance:**
 
 - Noise-mask forests on grassland only, plus biome-weighted rocks, antennas and crash sites
 - Placement is deterministic for a given terrain seed
 - Visual only: no collision, AI or entity-pool slots
-- Distance-culled at 800 m and drawn at the toroidal copy nearest the camera
+- Distance-culled at `DECOR_RENDER_RADIUS` and drawn at the toroidal copy nearest the camera
+- Trees (conifer and broadleaf, with more conifers higher up the grass band) and rock boulders are OBJ models drawn with GPU instancing ([D-034](DECISIONS.md#d-034-trees-and-rocks-are-obj-models-drawn-with-gpu-instancing)); antennas and crash sites are procedural
 
 ### F-003 Rivers
 
@@ -267,7 +268,7 @@ Players who want a modern take on the 1988 Argonaut game *Virus*: flat-shaded lo
 - Enemy fire can damage friendly structures and allied ships ([BUG-026](BUGS.md#bug-026-enemy-fire-never-damages-friendly-structures-or-allied-ships))
 - Fighters, Drones and Tanks attack a nearby friendly instead of the player when it is closer (`ENEMY_FRIENDLY_PRIORITY`). A fixed share of them (`ENEMY_RAIDER_PERCENT`, "raiders") always prefer friendlies in range. Landers deploy drones when any friendly is in range
 
-**Notes:** [D-030](DECISIONS.md#d-030-base-defenders-reuse-the-allied-fighter-path-pads-replace-repair-stations-in-base-mode). Radar stations use `radar_station.obj`: a red/white lattice tower with a white radome, about 21 m tall, 476 tris (above the 200-tri guideline for the lattice silhouette; only a handful exist at once). Wave mode also places `WAVE_MODE_EXTRA_BASE_COUNT` extra bases and `WAVE_MODE_RADAR_STATION_COUNT` radar towers across the map. Losing all bases (not every friendly) ends a Base-mode round.
+**Notes:** [D-030](DECISIONS.md#d-030-base-defenders-reuse-the-allied-fighter-path-pads-replace-repair-stations-in-base-mode). Radar stations use `radar_station.obj`: a red/white lattice tower with a white radome, about 21 m tall, 476 tris. Wave mode also places `WAVE_MODE_EXTRA_BASE_COUNT` extra bases and `WAVE_MODE_RADAR_STATION_COUNT` radar towers across the map. Losing all bases (not every friendly) ends a Base-mode round.
 
 ### F-022 Lander entity (C.3)
 

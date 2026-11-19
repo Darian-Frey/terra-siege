@@ -105,7 +105,7 @@ Meshes live directly under `assets/meshes/` with no subdirectory hierarchy until
 
 ### 5.2 Authoring rules
 
-1. **Low-poly only.** Reference: hovercraft ≈ 30 tris, buildings ≈ 10–20 tris, enemies ≈ 15–40 tris. If a mesh exceeds 200 triangles, stop and reconsider.
+1. **Keep it low-poly.** There is no hard triangle cap: use the fewest triangles that give a clear, readable silhouette at game distance, in keeping with the flat-shaded 1992 look ([D-013](../DECISIONS.md#d-013-flat-shaded-low-poly-aesthetic-no-textures)). For scale, the meshgen models range from about 65 tris (hovercraft) to about 350 (Lander), and the lattice radar station is about 476. Bigger, rarer objects can afford more detail than small, numerous ones.
 2. **Triangulate before export** (Mesh → Triangulate, or use the OBJ exporter's option). The loader supports quads as a fallback but triangles are canonical.
 3. **No UVs, no textures, no rigs, no modifiers.** Apply any modifiers before export. Strip unused data.
 4. **One object per file.** Multiple `o` blocks per file are not forbidden but complicate the inspector; prefer one mesh per OBJ.
@@ -343,7 +343,7 @@ None of these are in scope for the current phase.
 - **Animation:** switch to **IQM** (raylib supports it natively; Blender exports via the `iqm-blender-addon`). Keep OBJ for static meshes; introduce IQM only when an animated mesh is actually needed. Do not retrofit existing OBJ assets.
 - **More than 16 palette colours:** extend `kPalette[]`; the parser already supports two-digit indices.
 - **Per-vertex colours** (Gouraud aesthetic): add a Blender vertex-colour layer convention and extend the loader. Currently anti-goal because it breaks the faceted aesthetic.
-- **LOD:** out of scope until meshes routinely exceed 200 tris, which they shouldn't.
+- **LOD:** out of scope while meshes stay low-poly. Revisit only if triangle counts start to cost frame rate.
 
 ---
 

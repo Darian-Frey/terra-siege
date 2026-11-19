@@ -182,6 +182,8 @@ void GameState::init() {
   std::filesystem::path meshesDir =
       std::filesystem::path(TERRA_SIEGE_PROJECT_ROOT) / "assets" / "meshes";
   m_meshRegistry.loadAll(meshesDir);
+  // Trees and boulders, drawn instanced by Decorations.
+  m_decorations.loadModels(meshesDir);
   // F.2 — sidecar profiles are loaded in lockstep. EntityManager
   // pulls hull/shield numbers from here when a sidecar exists,
   // falling back to Config::* defaults when one is absent.
@@ -1627,9 +1629,10 @@ void GameState::render(float alpha) {
       rlLoadIdentity();
       double aspect = static_cast<double>(GetScreenWidth()) /
                       static_cast<double>(GetScreenHeight());
-      double top = 0.05 * tan(m_camera.fovy * 0.5 * DEG2RAD);
+      double top = Config::CAM_NEAR_PLANE * tan(m_camera.fovy * 0.5 * DEG2RAD);
       double right = top * aspect;
-      rlFrustum(-right, right, -top, top, 0.05, 3000.0);
+      rlFrustum(-right, right, -top, top, Config::CAM_NEAR_PLANE,
+                Config::CAM_FAR_PLANE);
       rlMatrixMode(RL_MODELVIEW);
     }
     m_planet.draw(m_camera.position);
@@ -1674,9 +1677,10 @@ void GameState::render(float alpha) {
       rlLoadIdentity();
       double aspect = static_cast<double>(GetScreenWidth()) /
                       static_cast<double>(GetScreenHeight());
-      double top = 0.05 * tan(m_camera.fovy * 0.5 * DEG2RAD);
+      double top = Config::CAM_NEAR_PLANE * tan(m_camera.fovy * 0.5 * DEG2RAD);
       double right = top * aspect;
-      rlFrustum(-right, right, -top, top, 0.05, 3000.0);
+      rlFrustum(-right, right, -top, top, Config::CAM_NEAR_PLANE,
+                Config::CAM_FAR_PLANE);
       rlMatrixMode(RL_MODELVIEW);
     }
     m_planet.draw(m_camera.position);
@@ -1726,9 +1730,10 @@ void GameState::drawSessionResult() {
     rlLoadIdentity();
     double aspect = static_cast<double>(GetScreenWidth()) /
                     static_cast<double>(GetScreenHeight());
-    double top = 0.05 * tan(m_camera.fovy * 0.5 * DEG2RAD);
+    double top = Config::CAM_NEAR_PLANE * tan(m_camera.fovy * 0.5 * DEG2RAD);
     double right = top * aspect;
-    rlFrustum(-right, right, -top, top, 0.05, 3000.0);
+    rlFrustum(-right, right, -top, top, Config::CAM_NEAR_PLANE,
+              Config::CAM_FAR_PLANE);
     rlMatrixMode(RL_MODELVIEW);
   }
   m_planet.draw(m_camera.position);
@@ -3302,6 +3307,7 @@ void GameState::shutdown() {
   m_player.unload();
   m_planet.unload();
   m_meshRegistry.unloadAll();
+  m_decorations.unloadModels();
   m_audio.unload();
   if (m_hudFontLoaded) {
     UnloadFont(m_hudFont);

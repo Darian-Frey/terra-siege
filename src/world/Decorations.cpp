@@ -2,10 +2,12 @@
 
 #include "Planet.hpp"
 #include "core/Config.hpp"
+#include "mesh/ObjLoader.hpp"
 #include "raymath.h"
 #include "rlgl.h"
 
 #include <cmath>
+#include <cstdio>
 
 namespace {
 
@@ -235,6 +237,44 @@ bool sampleAndPush(std::vector<Decoration> &out,
   return false;
 }
 
+// Unlit instancing shader: the per-instance model matrix comes in as a
+// vertex attribute; colour is the baked palette vertex colour, exactly
+// what raylib's default shader gives the other OBJ models.
+const char *kInstVs = R"(#version 330
+in vec3 vertexPosition;
+in vec4 vertexColor;
+in mat4 instanceTransform;
+uniform mat4 mvp;
+uniform vec4 colDiffuse;
+out vec4 fragColor;
+void main() {
+  fragColor = vertexColor * colDiffuse;
+  gl_Position = mvp * instanceTransform * vec4(vertexPosition, 1.0);
+}
+)";
+const char *kInstFs = R"(#version 330
+in vec4 fragColor;
+out vec4 finalColor;
+void main() { finalColor = fragColor; }
+)";
+
+const char *const kModelFiles[] = {"tree_conifer.obj", "tree_broadleaf.obj",
+                                   "rock_a.obj", "rock_b.obj", "rock_c.obj"};
+
+// Scale, then yaw, then translate — the same order as DrawModelEx.
+Matrix placeMatrix(Vector3 pos, Vector3 scale, float yaw) {
+  return MatrixMultiply(MatrixMultiply(MatrixScale(scale.x, scale.y, scale.z),
+                                       MatrixRotateY(yaw)),
+                        MatrixTranslate(pos.x, pos.y, pos.z));
+}
+
+float wrapCoord(float v, float worldSize) {
+  v = fmodf(v, worldSize);
+  return v < 0.0f ? v + worldSize : v;
+}
+
+int wrapIndex(int i, int n) { return ((i % n) + n) % n; }
+
 } // anonymous namespace
 
 // ====================================================================
@@ -274,6 +314,7 @@ void Decorations::clearSquare(const Planet &planet, float x, float z,
     m_items[w++] = d;
   }
   m_items.resize(w);
+  buildInstances(planet);
 }
 
 void Decorations::generate(const Planet &planet, uint32_t seed) {
@@ -407,6 +448,128 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
                   },
                   40);
   }
+  buildInstances(planet);
+}
+
+// ====================================================================
+// Instanced trees and rocks
+// ====================================================================
+void Decorations::loadModels(const std::filesystem::path &meshesDir) {
+  for (int m = 0; m < kModelCount; ++m) {
+    std::filesystem::path p = meshesDir / kModelFiles[m];
+    m_modelLoaded[m] = false;
+    if (!std::filesystem::exists(p)) {
+      std::fprintf(stderr, "[Decorations] %s not found, using boxes\n",
+                   p.string().c_str());
+      continue;
+    }
+    m_models[m] = tsmesh::loadModel(p);
+    m_modelLoaded[m] = m_models[m].meshCount > 0;
+  }
+  m_instShader = LoadShaderFromMemory(kInstVs, kInstFs);
+  m_instReady = m_instShader.id != 0 && m_instShader.id != rlGetShaderIdDefault();
+  if (!m_instReady) {
+    std::fprintf(stderr, "[Decorations] instancing shader failed, using boxes\n");
+    return;
+  }
+  m_instShader.locs[SHADER_LOC_MATRIX_MODEL] =
+      GetShaderLocationAttrib(m_instShader, "instanceTransform");
+  m_instMaterial = LoadMaterialDefault();
+  m_instMaterial.shader = m_instShader;
+}
+
+void Decorations::unloadModels() {
+  for (int m = 0; m < kModelCount; ++m) {
+    if (m_modelLoaded[m]) UnloadModel(m_models[m]);
+    m_modelLoaded[m] = false;
+  }
+  if (m_instReady) {
+    UnloadShader(m_instShader);
+    MemFree(m_instMaterial.maps); // LoadMaterialDefault's map array
+    m_instReady = false;
+  }
+}
+
+bool Decorations::treesInstanced() const {
+  return m_instReady && m_modelLoaded[kConifer] && m_modelLoaded[kBroadleaf];
+}
+
+bool Decorations::rocksInstanced() const {
+  if (!m_instReady) return false;
+  for (int m = kFirstRock; m < kModelCount; ++m)
+    if (!m_modelLoaded[m]) return false;
+  return true;
+}
+
+void Decorations::buildInstances(const Planet &planet) {
+  const float ws = planet.worldSize();
+  const float cell = Config::DECOR_CELL_SIZE;
+  m_gridN = static_cast<int>(ws / cell);
+  const int cells = m_gridN * m_gridN;
+
+  struct Placed {
+    uint32_t cell;
+    Matrix m;
+  };
+  std::array<std::vector<Placed>, kModelCount> placed;
+  auto add = [&](int model, Vector3 pos, Vector3 scale, float yaw) {
+    pos.x = wrapCoord(pos.x, ws);
+    pos.z = wrapCoord(pos.z, ws);
+    int cx = static_cast<int>(pos.x / cell), cz = static_cast<int>(pos.z / cell);
+    if (cx >= m_gridN) cx = m_gridN - 1;
+    if (cz >= m_gridN) cz = m_gridN - 1;
+    placed[model].push_back({static_cast<uint32_t>(cz * m_gridN + cx),
+                             placeMatrix(pos, scale, yaw)});
+  };
+
+  for (const Decoration &d : m_items) {
+    if (d.kind == Decoration::Kind::Tree) {
+      // Conifers get commoner towards the top of the grass band. The
+      // biome comes from the stored height, so no terrain query.
+      float h = d.pos.y / Config::TERRAIN_HEIGHT_MAX;
+      float b = (h - Config::SEA_LEVEL) / (1.0f - Config::SEA_LEVEL);
+      float t = (b - kSandMax) / (kGrassMax - kSandMax);
+      t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+      float conifer = Config::DECOR_CONIFER_FRAC_LOW +
+                      (Config::DECOR_CONIFER_FRAC_HIGH -
+                       Config::DECOR_CONIFER_FRAC_LOW) * t;
+      float roll = (d.seed & 0xffffu) / 65536.0f;
+      add(roll < conifer ? kConifer : kBroadleaf, d.pos,
+          {d.scale, d.scale, d.scale}, d.yaw);
+    } else if (d.kind == Decoration::Kind::Rock) {
+      // Same cluster recipe (and RNG sequence) as drawRock(), with each
+      // box replaced by a boulder of the same size, plus a random yaw.
+      uint32_t rng = d.seed;
+      int n = 4 + static_cast<int>(xorshift32(rng) % 29);
+      float scatter = 1.2f * d.scale;
+      for (int i = 0; i < n; ++i) {
+        float w = d.scale * frand(rng, 0.9f, 2.4f);
+        float h = d.scale * frand(rng, 0.7f, 2.0f);
+        float l = d.scale * frand(rng, 0.9f, 2.4f);
+        float ox = frand(rng, -scatter, scatter);
+        float oz = frand(rng, -scatter, scatter);
+        float yaw = frand(rng) * 6.2832f;
+        Vector3 p{d.pos.x + ox, 0.0f, d.pos.z + oz};
+        p.y = planet.heightAt(p.x, p.z);
+        add(kFirstRock + i % kRockVariants, p, {w, h, l}, yaw);
+      }
+    }
+  }
+
+  size_t largest = 0;
+  for (int m = 0; m < kModelCount; ++m) {
+    // Counting sort by cell.
+    std::vector<uint32_t> &start = m_cellStart[m];
+    start.assign(cells + 1, 0);
+    for (const Placed &p : placed[m]) ++start[p.cell + 1];
+    for (int c = 0; c < cells; ++c) start[c + 1] += start[c];
+    std::vector<uint32_t> fill(start.begin(), start.end() - 1);
+    m_xf[m].resize(placed[m].size());
+    for (const Placed &p : placed[m]) m_xf[m][fill[p.cell]++] = p.m;
+    if (m_xf[m].size() > largest) largest = m_xf[m].size();
+  }
+  m_visible.clear();
+  m_visible.reserve(largest);
 }
 
 // ====================================================================
@@ -414,13 +577,54 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
 // so we do a cheap radial check before each call.
 // ====================================================================
 void Decorations::render(const Planet &planet, Vector3 cameraPos) const {
-  constexpr float kRenderRadius = 800.0f;
+  constexpr float kRenderRadius = Config::DECOR_RENDER_RADIUS;
   constexpr float kRenderRadius2 = kRenderRadius * kRenderRadius;
+  const bool trees = treesInstanced();
+  const bool rocks = rocksInstanced();
+
+  // Instanced trees and rocks. Walk the grid cells under the render
+  // circle in unwrapped cell coordinates; a cell's wrapped index picks
+  // its instances and the difference is the toroidal offset that moves
+  // them next to the (unwrapped) camera.
+  if ((trees || rocks) && m_gridN > 0) {
+    const float cell = Config::DECOR_CELL_SIZE;
+    const int x0 = static_cast<int>(floorf((cameraPos.x - kRenderRadius) / cell));
+    const int x1 = static_cast<int>(floorf((cameraPos.x + kRenderRadius) / cell));
+    const int z0 = static_cast<int>(floorf((cameraPos.z - kRenderRadius) / cell));
+    const int z1 = static_cast<int>(floorf((cameraPos.z + kRenderRadius) / cell));
+    for (int m = 0; m < kModelCount; ++m) {
+      if (m < kFirstRock ? !trees : !rocks) continue;
+      if (m_xf[m].empty()) continue;
+      m_visible.clear();
+      for (int uz = z0; uz <= z1; ++uz) {
+        const int wz = wrapIndex(uz, m_gridN);
+        const float offZ = static_cast<float>(uz - wz) * cell;
+        for (int ux = x0; ux <= x1; ++ux) {
+          const int wx = wrapIndex(ux, m_gridN);
+          const float offX = static_cast<float>(ux - wx) * cell;
+          const uint32_t c = static_cast<uint32_t>(wz * m_gridN + wx);
+          for (uint32_t i = m_cellStart[m][c]; i < m_cellStart[m][c + 1]; ++i) {
+            Matrix t = m_xf[m][i];
+            t.m12 += offX;
+            t.m14 += offZ;
+            float dx = t.m12 - cameraPos.x, dz = t.m14 - cameraPos.z;
+            if (dx * dx + dz * dz > kRenderRadius2) continue;
+            m_visible.push_back(t);
+          }
+        }
+      }
+      if (!m_visible.empty())
+        DrawMeshInstanced(m_models[m].meshes[0], m_instMaterial,
+                          m_visible.data(), static_cast<int>(m_visible.size()));
+    }
+  }
 
   // Decorations are placed once in [0, worldSize); draw each at the
   // toroidal copy nearest the camera so they tile with the terrain
   // after the (unwrapped) player crosses a world edge.
   for (const Decoration &item : m_items) {
+    if (trees && item.kind == Decoration::Kind::Tree) continue;
+    if (rocks && item.kind == Decoration::Kind::Rock) continue;
     Vector3 p = planet.nearestCopy(item.pos, cameraPos);
     float dx = p.x - cameraPos.x;
     float dz = p.z - cameraPos.z;
