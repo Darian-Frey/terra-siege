@@ -1,5 +1,6 @@
 #include "MeshRegistry.hpp"
 #include "ObjLoader.hpp"
+#include "raymath.h" // static inline here: no RAYMATH_IMPLEMENTATION in the mesh lib (AV-013)
 
 #include <cmath>
 #include <cstdio>
@@ -71,14 +72,40 @@ void MeshRegistry::loadAll(const std::filesystem::path &meshesDir) {
   m_playerLoaded = loadInto("hovercraft.obj", m_playerModel);
   m_missileLoaded = loadInto("missile.obj", m_missileModel);
   m_turretLoaded = loadInto("base_turret.obj", m_turretModel);
+  m_gunsLoaded = loadInto("base_turret_guns.obj", m_gunsModel);
+  m_cabLoaded[0] = loadInto("collector_cab_empty.obj", m_cabModel[0]);
+  m_cabLoaded[1] = loadInto("collector_cab_loaded.obj", m_cabModel[1]);
 }
 
-void MeshRegistry::drawBaseTurret(Vector3 position, float yawRad, float scale,
+void MeshRegistry::drawCollectorCab(Vector3 position, float yawRad,
+                                    bool loaded, Color tint) const {
+  const int i = loaded ? 1 : 0;
+  if (!m_cabLoaded[i]) return;
+  float yawDeg = yawRad * (180.0f / 3.14159265f);
+  DrawModelEx(m_cabModel[i], position, {0.0f, 1.0f, 0.0f}, yawDeg,
+              {1.0f, 1.0f, 1.0f}, tint);
+}
+
+void MeshRegistry::drawBaseTurret(Vector3 axisPos, float yawRad, float scale,
                                   Color tint) const {
   if (!m_turretLoaded) return;
   float yawDeg = yawRad * (180.0f / 3.14159265f);
-  DrawModelEx(m_turretModel, position, {0.0f, 1.0f, 0.0f}, yawDeg,
+  DrawModelEx(m_turretModel, axisPos, {0.0f, 1.0f, 0.0f}, yawDeg,
               {scale, scale, scale}, tint);
+}
+
+void MeshRegistry::drawBaseTurretGuns(Vector3 pivotPos, float yawRad,
+                                      float pitchRad, float scale) const {
+  if (!m_gunsLoaded) return;
+  // Scale, pitch (rotating +Z up needs a negative X rotation), yaw, then
+  // move to the hinge — applied in that order (see AV-013 on
+  // MatrixMultiply).
+  Matrix m = MatrixMultiply(
+      MatrixMultiply(MatrixMultiply(MatrixScale(scale, scale, scale),
+                                    MatrixRotateX(-pitchRad)),
+                     MatrixRotateY(yawRad)),
+      MatrixTranslate(pivotPos.x, pivotPos.y, pivotPos.z));
+  DrawMesh(m_gunsModel.meshes[0], m_gunsModel.materials[0], m);
 }
 
 void MeshRegistry::drawMissile(Vector3 position, Vector3 dir, float scale,
@@ -122,6 +149,16 @@ void MeshRegistry::unloadAll() {
   if (m_turretLoaded) {
     UnloadModel(m_turretModel);
     m_turretLoaded = false;
+  }
+  if (m_gunsLoaded) {
+    UnloadModel(m_gunsModel);
+    m_gunsLoaded = false;
+  }
+  for (int i = 0; i < 2; ++i) {
+    if (m_cabLoaded[i]) {
+      UnloadModel(m_cabModel[i]);
+      m_cabLoaded[i] = false;
+    }
   }
 }
 

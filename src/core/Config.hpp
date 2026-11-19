@@ -709,7 +709,13 @@ constexpr float BASE_TURRET_FIRE_CONE = 0.12f;    // ~14° fire cone
 // tower). The turret muzzle sits just above the scaled tower top.
 constexpr float BASE_TOWER_SCALE = 2.0f;          // TUNE
 constexpr float BASE_TURRET_BARREL_HEIGHT = 5.0f * BASE_TOWER_SCALE; // barrel axis Y above the platform top
-constexpr float BASE_TURRET_MUZZLE_REACH = 2.15f * BASE_TOWER_SCALE; // barrel ends ahead of the turret axis (base_turret.obj)
+// Elevating guns (base_turret_guns.obj): hinged PIVOT_FWD ahead of the
+// turret axis, muzzles MUZZLE_REACH out from the hinge along the barrels.
+constexpr float BASE_TURRET_PIVOT_FWD = 0.5f * BASE_TOWER_SCALE;
+constexpr float BASE_TURRET_MUZZLE_REACH = 1.65f * BASE_TOWER_SCALE;
+constexpr float BASE_TURRET_PITCH_RATE = 1.2f;   // TUNE — rad/s elevation
+constexpr float BASE_TURRET_PITCH_MIN = -0.52f;  // TUNE — ~30° down, reaches tanks near the base
+constexpr float BASE_TURRET_PITCH_MAX = 1.31f;   // TUNE — ~75° up
 
 // Slice C C.2 — Base Defence mode friendly-base behaviour. Bases are
 // passive infrastructure: when hit they launch a few allied Fighter

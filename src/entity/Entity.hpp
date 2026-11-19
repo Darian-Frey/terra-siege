@@ -293,6 +293,8 @@ struct Entity {
 
   // Base platforms (C.2): bit 0 = south ramp, bit 1 = east ramp.
   uint8_t rampMask = 0;
+  // Base gun elevation in radians (+ = up); yaw holds the turret bearing.
+  float turretPitch = 0.0f;
   // Collector ramp routing: current route step, chosen ramp (0 south,
   // 1 east), and a detour corner when the direct line would cross the
   // platform.

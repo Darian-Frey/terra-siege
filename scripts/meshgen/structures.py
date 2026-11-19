@@ -39,33 +39,51 @@ def base():
 
 
 # ---------------------------------------------------------------- Base turret
+# Hinge of the guns, ahead of the yaw axis (model units, before
+# BASE_TOWER_SCALE). Mirrored by Config::BASE_TURRET_PIVOT_FWD.
+GUN_PIVOT_Y = 0.5
+
+
 def base_turret():
-    """Rotating gun turret on top of the control tower, drawn at
-    BASE_TOWER_SCALE. Origin on the barrel axis (the muzzle height,
-    BASE_TURRET_BARREL_HEIGHT); the collar sits on the tower pedestal at
-    z = -0.4. Twin barrels point +y (forward, the aim direction)."""
+    """Rotating gun turret housing on top of the control tower, drawn at
+    BASE_TOWER_SCALE and yawed to the aim. Origin on the turret's yaw axis
+    at the barrel height (BASE_TURRET_BARREL_HEIGHT); the collar sits on
+    the tower pedestal at z = -0.4. The guns are base_turret_guns, which
+    also pitch, hinged at (0, GUN_PIVOT_Y, 0) at the front of the housing."""
     s = Ship("base_turret")
     s.stack([(-0.4, 0.72, 0.72), (-0.27, 0.7, 0.7)], [0], n=8, rot=math.pi / 8)
     s.stack([(-0.27, 0.68, 0.68), (0.22, 0.66, 0.66), (0.4, 0.46, 0.46)],
             [_alt(27, 9), _alt(9, 27)], n=8, rot=math.pi / 8, top=8)
-    # gun mantlet and twin barrels with yellow muzzles
-    s.block((-0.32, 0.32, 0.45, 0.78, -0.2), (-0.3, 0.3, 0.45, 0.75, 0.24),
-            {"top": 8, "bottom": 30, "front": 30, "back": 30, "left": 30, "right": 30})
+    # trunnion brackets either side of the gun slot
     for sx in (1, -1):
-        s.strut((sx * 0.13, 0.75, 0.0), (sx * 0.13, 1.95, 0.0), 0.07, 15)
-        s.block((sx * 0.13 - 0.1, sx * 0.13 + 0.1, 1.95, 2.15, -0.1),
-                (sx * 0.13 - 0.1, sx * 0.13 + 0.1, 1.95, 2.15, 0.1), 17)
+        x0, x1 = sorted((sx * 0.34, sx * 0.44))
+        s.block((x0, x1, GUN_PIVOT_Y - 0.14, GUN_PIVOT_Y + 0.12, -0.14),
+                (x0, x1, GUN_PIVOT_Y - 0.14, GUN_PIVOT_Y + 0.12, 0.14), 0)
     # sensor pod with a lens, on the right of the roof
     s.block((0.3, 0.58, -0.3, 0.1, 0.32), (0.3, 0.56, -0.3, 0.08, 0.55),
             {"top": 30, "bottom": 30, "front": 10, "back": 30, "left": 30, "right": 30})
     return s, 5.0
 
 
+def base_turret_guns():
+    """The turret's elevating guns: a mantlet and twin barrels with yellow
+    muzzles. Origin on the elevation hinge; the game places it at
+    GUN_PIVOT_Y ahead of the turret axis, yawed and pitched to the aim.
+    Muzzle ends at y = 1.65 (Config::BASE_TURRET_MUZZLE_REACH)."""
+    s = Ship("base_turret_guns")
+    s.block((-0.32, 0.32, -0.05, 0.28, -0.2), (-0.3, 0.3, -0.05, 0.25, 0.24),
+            {"top": 8, "bottom": 30, "front": 30, "back": 30, "left": 30, "right": 30})
+    for sx in (1, -1):
+        s.strut((sx * 0.13, 0.25, 0.0), (sx * 0.13, 1.45, 0.0), 0.07, 15)
+        s.block((sx * 0.13 - 0.1, sx * 0.13 + 0.1, 1.45, 1.65, -0.1),
+                (sx * 0.13 - 0.1, sx * 0.13 + 0.1, 1.45, 1.65, 0.1), 17)
+    return s, 4.0
+
+
 # ---------------------------------------------------------------- Collector
 def collector():
-    """Friendly harvester. The cargo-coloured cab is procedural: a
-    1.4 x 0.6 x 1.4 box centred at z = 0.9, so the hull top stays at
-    0.55 across x, y in [-0.7, 0.7]."""
+    """Friendly harvester. The cab is a separate model (collector_cab_*)
+    sitting on the hull top at z = 0.55 across x, y in [-0.7, 0.7]."""
     s = Ship("collector")
     s.loft([
         (2.25, [(0, -0.1), (1.3, -0.1), (1.3, -0.55), (0, -0.55)]),
@@ -87,6 +105,25 @@ def collector():
     s.block((-1.0, 1.0, -2.0, -0.85, 0.5), (-1.25, 1.25, -2.2, -0.75, 1.3),
             {"top": 14, "bottom": 28, "front": 28, "back": 28, "left": 28, "right": 28})
     return s, 6.5
+
+
+def _collector_cab(name, body):
+    """Collector cab in its cargo colour: a sloped-windscreen cabin on the
+    hull top (z = 0.55) with a roof light bar. Same frame and origin as
+    collector, so the game draws both at the same transform."""
+    s = Ship(name)
+    s.block((-0.7, 0.7, -0.6, 0.7, 0.55), (-0.62, 0.62, -0.55, 0.4, 1.2),
+            {"top": body, "bottom": 28, "front": 10, "back": body, "left": body, "right": body})
+    s.block((-0.3, 0.3, -0.1, 0.08, 1.2), (-0.28, 0.28, -0.08, 0.06, 1.32), 11)
+    return s, 2.5
+
+
+def collector_cab_empty():
+    return _collector_cab("collector_cab_empty", 17)
+
+
+def collector_cab_loaded():
+    return _collector_cab("collector_cab_loaded", 29)
 
 
 # ---------------------------------------------------------------- Radar Booster
@@ -149,7 +186,10 @@ def lander():
     return s, 20.0
 
 
-SHIPS = {"base": base, "base_turret": base_turret, "collector": collector,
+SHIPS = {"base": base, "base_turret": base_turret,
+         "base_turret_guns": base_turret_guns, "collector": collector,
+         "collector_cab_empty": collector_cab_empty,
+         "collector_cab_loaded": collector_cab_loaded,
          "radar_booster": radar_booster, "lander": lander}
 
 HEADERS = {
@@ -162,19 +202,37 @@ base_turret.obj — see EntityManager::renderEnemy (Base); nothing here
 rises above y = 4.6 so the rotating barrels stay clear. Local frame: +Z forward.
 c30 plinth/roof, c08 shaft/pedestal, c17 stripes, c15 cab, c10 glazing,
 c02 lamps, c00 pedestal top.""",
-"base_turret": """terra-siege base turret — rotating gun on the control tower.
-Octagonal rust-red housing on a dark collar, a gun mantlet, twin barrels
-with yellow muzzles and a sensor pod. {verts} verts, {tris} tris.
-Origin on the barrel axis; drawn at the tower's x/z, BASE_TURRET_BARREL_HEIGHT
-above the platform, BASE_TOWER_SCALE, yawed to the turret aim.
-Local frame: +Z = aim. c27/c09 housing, c08 roof/mantlet top, c00 collar,
-c30 mantlet/pod, c15 barrels, c17 muzzles, c10 lens.""",
+"base_turret": """terra-siege base turret housing — rotating mount on the control tower.
+Octagonal rust-red housing on a dark collar, trunnion brackets and a
+sensor pod. {verts} verts, {tris} tris. The guns are base_turret_guns.
+Origin on the yaw axis at the barrel height; drawn at the tower's x/z,
+BASE_TURRET_BARREL_HEIGHT above the platform, BASE_TOWER_SCALE, yawed to
+the aim. Local frame: +Z = aim. c27/c09 housing, c08 roof, c00 collar and
+brackets, c30 pod, c10 lens.""",
+"base_turret_guns": """terra-siege base turret guns — the elevating part of the turret.
+Mantlet and twin barrels with yellow muzzles. {verts} verts, {tris} tris.
+Origin on the elevation hinge, placed 0.5 ahead of the turret axis
+(BASE_TURRET_PIVOT_FWD) and drawn yawed and pitched to the aim at
+BASE_TOWER_SCALE. Muzzles end 1.65 ahead of the hinge.
+Local frame: +Z = barrels. c08 mantlet top, c30 mantlet, c15 barrels,
+c17 muzzles.""",
 "collector": """terra-siege collector — friendly ground vehicle.
 Hull with a yellow front scoop, two track units, headlights and a rear
-hopper. {verts} verts, {tris} tris. The cab stays procedural (its colour
-changes with cargo) and sits on the hull top at y = 0.55.
+hopper. {verts} verts, {tris} tris. The cab is collector_cab_empty /
+collector_cab_loaded (its colour shows cargo), drawn at the same transform
+on the hull top at y = 0.55.
 Local frame: +Z forward. c28 hull, c14 tracks/hopper load, c17 scoop,
 c01 headlights, c00 track ends.""",
+"collector_cab_empty": """terra-siege collector cab, empty (hazard yellow).
+Cabin with a sloped blue windscreen and an orange roof light bar.
+{verts} verts, {tris} tris. Drawn at the collector's transform when it
+carries no cargo; collector_cab_loaded is the same in green.
+Local frame: +Z forward. c17 body, c10 windscreen, c28 floor, c11 light bar.""",
+"collector_cab_loaded": """terra-siege collector cab, loaded (green).
+Cabin with a sloped blue windscreen and an orange roof light bar.
+{verts} verts, {tris} tris. Drawn at the collector's transform while it
+carries cargo; collector_cab_empty is the same in yellow.
+Local frame: +Z forward. c29 body, c10 windscreen, c28 floor, c11 light bar.""",
 "radar_booster": """terra-siege radar booster — extends radar range while alive.
 Octagonal foundation, tapered six-sided mast, bearing housing, two
 equipment cabinets and a cable run. {verts} verts, {tris} tris.

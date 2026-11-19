@@ -68,11 +68,21 @@ public:
   void drawMissile(Vector3 position, Vector3 dir, float scale,
                    Color tint) const;
 
-  // Base gun turret (base_turret.obj), drawn on top of the control tower
-  // and yawed to the turret's aim. Origin is on the barrel axis.
-  bool hasBaseTurret() const { return m_turretLoaded; }
-  void drawBaseTurret(Vector3 position, float yawRad, float scale,
+  // Base gun turret: the housing (base_turret.obj) yaws about its axis
+  // on the control tower; the guns (base_turret_guns.obj) are drawn at
+  // their hinge, yawed and pitched (+ = up) to the aim.
+  bool hasBaseTurret() const { return m_turretLoaded && m_gunsLoaded; }
+  void drawBaseTurret(Vector3 axisPos, float yawRad, float scale,
                       Color tint) const;
+  void drawBaseTurretGuns(Vector3 pivotPos, float yawRad, float pitchRad,
+                          float scale) const;
+
+  // Collector cab, one model per cargo state (collector_cab_empty /
+  // _loaded) since the colour shows the cargo. Same frame and origin as
+  // collector.obj, so it's drawn at the Collector's own transform.
+  bool hasCollectorCab() const { return m_cabLoaded[0] && m_cabLoaded[1]; }
+  void drawCollectorCab(Vector3 position, float yawRad, bool loaded,
+                        Color tint) const;
 
 private:
   // Filename for each entity type, looked up under meshesDir/. Empty
@@ -92,6 +102,10 @@ private:
   bool m_missileLoaded = false;
   Model m_turretModel{};
   bool m_turretLoaded = false;
+  Model m_gunsModel{};
+  bool m_gunsLoaded = false;
+  Model m_cabModel[2]{}; // [0] empty, [1] loaded
+  bool m_cabLoaded[2] = {false, false};
 };
 
 } // namespace Mesh

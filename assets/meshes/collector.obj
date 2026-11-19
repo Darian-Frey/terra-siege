@@ -1,7 +1,8 @@
 # terra-siege collector — friendly ground vehicle.
 # Hull with a yellow front scoop, two track units, headlights and a rear
-# hopper. 72 verts, 115 tris. The cab stays procedural (its colour
-# changes with cargo) and sits on the hull top at y = 0.55.
+# hopper. 72 verts, 115 tris. The cab is collector_cab_empty /
+# collector_cab_loaded (its colour shows cargo), drawn at the same transform
+# on the hull top at y = 0.55.
 # Local frame: +Z forward. c28 hull, c14 tracks/hopper load, c17 scoop,
 # c01 headlights, c00 track ends.
 #
