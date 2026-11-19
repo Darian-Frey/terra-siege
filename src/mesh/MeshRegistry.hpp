@@ -77,6 +77,16 @@ public:
   void drawBaseTurretGuns(Vector3 pivotPos, float yawRad, float pitchRad,
                           float scale) const;
 
+  // Projectile models. Bolt and Orb are white/light grey, tinted per
+  // shot (and drawn again larger with a translucent tint as the glow);
+  // the depth charge carries its own colours.
+  enum class Prop : uint8_t { Bolt, Orb, DepthCharge, Count };
+  bool hasProp(Prop p) const { return m_propLoaded[static_cast<int>(p)]; }
+  // Scaled per local axis, then +Z turned onto dir (zero dir = upright,
+  // unrotated).
+  void drawProp(Prop p, Vector3 position, Vector3 dir, Vector3 scale,
+                Color tint) const;
+
   // Radar Booster dish (radar_booster_dish.obj), spun about the mast
   // axis; origin at the bearing top.
   bool hasBoosterDish() const { return m_dishLoaded; }
@@ -109,6 +119,9 @@ private:
   bool m_turretLoaded = false;
   Model m_gunsModel{};
   bool m_gunsLoaded = false;
+  static constexpr int kPropCount = static_cast<int>(Prop::Count);
+  Model m_propModel[kPropCount]{};
+  bool m_propLoaded[kPropCount] = {};
   Model m_dishModel{};
   bool m_dishLoaded = false;
   Model m_cabModel[2]{}; // [0] empty, [1] loaded

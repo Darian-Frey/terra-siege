@@ -7,6 +7,26 @@
 
 namespace tsmesh {
 
+namespace {
+// Axis and angle (degrees) that turn a model's +Z onto dir: axis = Z × dir.
+void rotationOntoDir(Vector3 dir, Vector3 &axis, float &angleDeg) {
+  axis = {0.0f, 1.0f, 0.0f};
+  angleDeg = 0.0f;
+  float len = sqrtf(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
+  if (len <= 1e-4f) return;
+  Vector3 d = {dir.x / len, dir.y / len, dir.z / len};
+  Vector3 a = {-d.y, d.x, 0.0f};
+  float al = sqrtf(a.x * a.x + a.y * a.y);
+  float c = fminf(fmaxf(d.z, -1.0f), 1.0f);
+  if (al > 1e-5f) {
+    axis = {a.x / al, a.y / al, 0.0f};
+    angleDeg = acosf(c) * (180.0f / 3.14159265f);
+  } else if (c < 0.0f) {
+    angleDeg = 180.0f; // pointing straight back along −Z
+  }
+}
+} // namespace
+
 const char *MeshRegistry::filenameFor(EntityType type) {
   // Empty string = no mesh yet, fall through to the procedural
   // render path. Names match the OBJ files in assets/meshes/.
@@ -74,8 +94,22 @@ void MeshRegistry::loadAll(const std::filesystem::path &meshesDir) {
   m_turretLoaded = loadInto("base_turret.obj", m_turretModel);
   m_gunsLoaded = loadInto("base_turret_guns.obj", m_gunsModel);
   m_dishLoaded = loadInto("radar_booster_dish.obj", m_dishModel);
+  static const char *const kPropFiles[kPropCount] = {"bolt.obj", "orb.obj",
+                                                     "depth_charge.obj"};
+  for (int i = 0; i < kPropCount; ++i)
+    m_propLoaded[i] = loadInto(kPropFiles[i], m_propModel[i]);
   m_cabLoaded[0] = loadInto("collector_cab_empty.obj", m_cabModel[0]);
   m_cabLoaded[1] = loadInto("collector_cab_loaded.obj", m_cabModel[1]);
+}
+
+void MeshRegistry::drawProp(Prop p, Vector3 position, Vector3 dir,
+                            Vector3 scale, Color tint) const {
+  const int i = static_cast<int>(p);
+  if (!m_propLoaded[i]) return;
+  Vector3 axis;
+  float angleDeg;
+  rotationOntoDir(dir, axis, angleDeg);
+  DrawModelEx(m_propModel[i], position, axis, angleDeg, scale, tint);
 }
 
 void MeshRegistry::drawBoosterDish(Vector3 position, float yawRad,
@@ -120,22 +154,9 @@ void MeshRegistry::drawBaseTurretGuns(Vector3 pivotPos, float yawRad,
 void MeshRegistry::drawMissile(Vector3 position, Vector3 dir, float scale,
                                Color tint) const {
   if (!m_missileLoaded) return;
-  // Rotate the model's +Z (nose) onto dir: axis = Z × dir, angle = acos(dir.z).
-  float len = sqrtf(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
-  Vector3 axis = {0.0f, 1.0f, 0.0f};
-  float angleDeg = 0.0f;
-  if (len > 1e-4f) {
-    Vector3 d = {dir.x / len, dir.y / len, dir.z / len};
-    Vector3 a = {-d.y, d.x, 0.0f};
-    float al = sqrtf(a.x * a.x + a.y * a.y);
-    float c = fminf(fmaxf(d.z, -1.0f), 1.0f);
-    if (al > 1e-5f) {
-      axis = {a.x / al, a.y / al, 0.0f};
-      angleDeg = acosf(c) * (180.0f / 3.14159265f);
-    } else if (c < 0.0f) {
-      angleDeg = 180.0f; // pointing straight back along −Z
-    }
-  }
+  Vector3 axis;
+  float angleDeg;
+  rotationOntoDir(dir, axis, angleDeg);
   DrawModelEx(m_missileModel, position, axis, angleDeg, {scale, scale, scale},
               tint);
 }
@@ -162,6 +183,12 @@ void MeshRegistry::unloadAll() {
   if (m_gunsLoaded) {
     UnloadModel(m_gunsModel);
     m_gunsLoaded = false;
+  }
+  for (int i = 0; i < kPropCount; ++i) {
+    if (m_propLoaded[i]) {
+      UnloadModel(m_propModel[i]);
+      m_propLoaded[i] = false;
+    }
   }
   if (m_dishLoaded) {
     UnloadModel(m_dishModel);

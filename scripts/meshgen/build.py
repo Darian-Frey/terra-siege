@@ -1,4 +1,4 @@
-"""Regenerate ship, structure and scenery meshes for assets/meshes/ from their Python definitions.
+"""Regenerate ship, structure, scenery and projectile meshes for assets/meshes/ from their Python definitions.
 
 Run through Blender (4.x) from the repo root:
 
@@ -18,12 +18,14 @@ sys.path.insert(0, HERE)
 import enemies
 import structures
 import player
+import projectiles
 import scenery
 from shiplib import render, setup_scene, write_obj
 
-SHIPS = {**player.SHIPS, **enemies.SHIPS, **structures.SHIPS, **scenery.SHIPS}
+SHIPS = {**player.SHIPS, **enemies.SHIPS, **structures.SHIPS, **scenery.SHIPS,
+         **projectiles.SHIPS}
 HEADERS = {**player.HEADERS, **enemies.HEADERS, **structures.HEADERS,
-           **scenery.HEADERS}
+           **scenery.HEADERS, **projectiles.HEADERS}
 
 
 def main(argv):

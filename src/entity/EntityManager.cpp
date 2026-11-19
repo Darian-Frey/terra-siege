@@ -3949,10 +3949,24 @@ void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
 
 void EntityManager::renderProjectile(const Entity &p,
                                      const tsmesh::MeshRegistry *registry) const {
+  using Prop = tsmesh::MeshRegistry::Prop;
+  // Tinted model (bolt / orb) with a larger translucent copy as its glow,
+  // pointed along the flight path; the boxes below are the fallbacks.
+  auto glowing = [&](Prop prop, Vector3 core, Vector3 glow, Color body,
+                     Color halo) {
+    registry->drawProp(prop, p.pos, p.vel, core, body);
+    registry->drawProp(prop, p.pos, p.vel, glow, halo);
+  };
+  const bool bolt = registry && registry->hasProp(Prop::Bolt);
   switch (p.kind) {
   case ProjectileKind::Plasma: {
     // Glowing magenta orb — bigger than a cannon tracer and visibly
     // distinct so the player can see which weapon is firing.
+    if (registry && registry->hasProp(Prop::Orb)) {
+      glowing(Prop::Orb, {0.9f, 0.9f, 0.9f}, {1.4f, 1.4f, 1.4f},
+              {220, 80, 240, 255}, {220, 80, 240, 80});
+      break;
+    }
     DrawCubeV(p.pos, {0.9f, 0.9f, 0.9f}, {220, 80, 240, 255});
     DrawCubeV(p.pos, {1.4f, 1.4f, 1.4f}, {220, 80, 240, 80}); // soft halo
     break;
@@ -3960,6 +3974,10 @@ void EntityManager::renderProjectile(const Entity &p,
   case ProjectileKind::DepthCharge: {
     // Big dark drum + bright fin on top so it reads as "heavy
     // gravity bomb" against the sky as it falls.
+    if (registry && registry->hasProp(Prop::DepthCharge)) {
+      registry->drawProp(Prop::DepthCharge, p.pos, {0, 0, 0}, {1, 1, 1}, WHITE);
+      break;
+    }
     DrawCubeV(p.pos, {1.4f, 1.0f, 1.4f}, {60, 70, 90, 255});
     DrawCubeV({p.pos.x, p.pos.y + 0.6f, p.pos.z}, {0.5f, 0.4f, 0.5f},
               {220, 200, 80, 255});
@@ -4052,6 +4070,10 @@ void EntityManager::renderProjectile(const Entity &p,
     Color glow = (p.damageType == DamageType::Shield)
                      ? Color{120, 200, 255, 110}
                      : Color{255, 110, 90, 110};
+    if (bolt) {
+      glowing(Prop::Bolt, {0.4f, 0.4f, 1.2f}, {0.8f, 0.8f, 1.4f}, body, glow);
+      break;
+    }
     DrawCubeV(p.pos, {0.4f, 0.4f, 1.2f}, body);
     DrawCubeV(p.pos, {0.8f, 0.8f, 1.4f}, glow);
     break;
@@ -4064,6 +4086,10 @@ void EntityManager::renderProjectile(const Entity &p,
     Color glow = (p.damageType == DamageType::Shield)
                      ? Color{160, 220, 255, 130}
                      : Color{255, 160, 120, 130};
+    if (bolt) {
+      glowing(Prop::Bolt, {1.0f, 1.0f, 2.2f}, {1.6f, 1.6f, 2.6f}, body, glow);
+      break;
+    }
     DrawCubeV(p.pos, {1.0f, 1.0f, 2.2f}, body);
     DrawCubeV(p.pos, {1.6f, 1.6f, 2.6f}, glow);
     break;
@@ -4073,6 +4099,10 @@ void EntityManager::renderProjectile(const Entity &p,
     Color c = (p.owner == ProjectileOwner::Player)
                   ? Color{255, 230, 80, 255}
                   : Color{255, 80, 80, 255};
+    if (bolt) {
+      registry->drawProp(Prop::Bolt, p.pos, p.vel, {0.6f, 0.6f, 0.9f}, c);
+      break;
+    }
     DrawCubeV(p.pos, {0.6f, 0.6f, 0.6f}, c);
     break;
   }

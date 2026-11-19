@@ -9,6 +9,7 @@ Python definitions for the ship, structure and scenery meshes in `assets/meshes/
 | `enemies.py` | `fighter`, `drone`, `bomber`, `seeder`, `carrier`, `tank` |
 | `structures.py` | `base` (control tower), `base_turret` (housing) and `base_turret_guns` (elevating guns), `collector` with `collector_cab_empty` / `collector_cab_loaded`, `radar_booster` with its spinning `radar_booster_dish`, `lander` |
 | `scenery.py` | `tree_conifer`, `tree_broadleaf`, `rock_a`, `rock_b`, `rock_c`, `antenna`, `crash_site`, `crash_debris`. Drawn instanced by `Decorations`, so keep them small |
+| `projectiles.py` | `bolt` (lasers, cannon tracers), `orb` (plasma), `depth_charge`. Bolt and orb are white/light grey because the game tints them per shot |
 | `build.py` | Entry point |
 
 ## Usage
