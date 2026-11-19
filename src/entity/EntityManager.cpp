@@ -1141,23 +1141,21 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
   if (isInfected) {
     const Entity *prey = nearestEnemyTo(e.pos, e.id, false);
     // Base defenders (C.2) only engage enemies near their home base;
-    // spawnPos is the launch point above the pad.
+    // spawnPos is their deck-lift spot.
     if (prey && e.homeBaseId != 0 &&
         Vector3Distance(prey->pos, e.spawnPos) > Config::BASE_DEFENDER_LEASH)
       prey = nullptr;
+    if (e.homeBaseId != 0 &&
+        tickDefenderFlight(e, dt, prey != nullptr,
+                           prey ? prey->pos : Vector3{0, 0, 0}))
+      return; // launching / landing (or removed)
     if (prey) {
       targetPos = prey->pos;
       hasTarget = true;
     } else if (e.homeBaseId != 0) {
-      // Nothing to defend against — fly home and land (despawn).
+      // Nothing to defend against — head home; tickDefenderFlight takes
+      // over for the landing once inside BASE_DEFENDER_APPROACH_DIST.
       targetPos = e.spawnPos;
-      float hx = e.spawnPos.x - e.pos.x, hz = e.spawnPos.z - e.pos.z;
-      if (hx * hx + hz * hz <
-          Config::BASE_DEFENDER_LAND_DIST * Config::BASE_DEFENDER_LAND_DIST) {
-        e.alive = false;
-        --m_liveEnemies;
-        return;
-      }
     }
   }
 
@@ -2368,16 +2366,169 @@ void EntityManager::updateBase(Entity &e, float dt, Player &player) {
 // the Infected (allied) AI path: targets the nearest hostile, fires
 // player-owned shots, skipped by auto-aim. homeBaseId marks it as a
 // defender (no bleed, leashed to its launch point, lands when idle).
+// It starts stowed inside the deck under a free lift hatch and rises
+// out (BUG-029); spawnPos is that lift's resting point.
 void EntityManager::launchBaseDefender(const Entity &base) {
-  Vector3 pos = {base.pos.x, base.pos.y + Config::BASE_DEFENDER_LAUNCH_HEIGHT,
-                 base.pos.z};
+  Vector3 rest{};
+  bool found = false;
+  for (int s = 0; s < Config::BASE_DEFENDER_LIFT_COUNT && !found; ++s) {
+    Vector3 spot = defenderLiftSpot(base, s);
+    bool taken = false;
+    for (const Entity &o : m_entities) {
+      if (!o.alive || o.homeBaseId != base.id) continue;
+      float dx = o.spawnPos.x - spot.x, dz = o.spawnPos.z - spot.z;
+      if (dx * dx + dz * dz < 1.0f) {
+        taken = true;
+        break;
+      }
+    }
+    if (!taken) {
+      rest = spot;
+      found = true;
+    }
+  }
+  if (!found) return;
+  Vector3 pos = {rest.x, rest.y - Config::BASE_DEFENDER_STOW_DEPTH, rest.z};
   Entity *d = spawnEnemy(EntityType::Fighter, pos);
   if (!d) return;
+  d->spawnPos = rest;
   d->aiState = AIState::Infected;
   d->canBeInfected = false;
   d->homeBaseId = base.id;
-  d->yaw = base.yaw;
-  if (m_audio) m_audio->play3D(SfxId::UIBlip, pos, 0.6f);
+  d->defenderPhase = DefenderPhase::Launching;
+  d->yaw = 0.0f; // aligned with the hatch, nose north
+  if (m_audio) m_audio->play3D(SfxId::UIBlip, rest, 0.6f);
+}
+
+// Resting point of a fighter on deck lift `slot` of `base`, in the same
+// (player-centred) frame as base.pos.
+Vector3 EntityManager::defenderLiftSpot(const Entity &base, int slot) const {
+  const float *s = Config::BASE_DEFENDER_LIFT_SPOTS[slot];
+  return {base.pos.x + Config::BASE_EAST_SIGN * s[0],
+          base.pos.y + Config::BASE_DEFENDER_REST_HEIGHT, base.pos.z + s[1]};
+}
+
+// Launch and landing flight for base defenders (BUG-029). Returns true
+// when it has moved the ship this tick (Launching / Landing), false when
+// the normal allied fighter AI should run. hasPrey = a hostile is inside
+// the defender's leash. May despawn the ship (sets alive = false).
+bool EntityManager::tickDefenderFlight(Entity &e, float dt, bool hasPrey,
+                                       Vector3 preyPos) {
+  bool homeAlive = false;
+  for (const Entity &o : m_entities)
+    if (o.alive && o.id == e.homeBaseId) {
+      homeAlive = true;
+      break;
+    }
+
+  const Vector3 rest = e.spawnPos;
+  float hx = rest.x - e.pos.x, hz = rest.z - e.pos.z;
+  float hDist2 = hx * hx + hz * hz;
+
+  if (!homeAlive) {
+    // The base (and its deck) is gone, so there is nowhere to land: the
+    // ship fights on, and when idle flies home and is removed.
+    e.defenderPhase = DefenderPhase::Active;
+    if (!hasPrey && hDist2 < Config::BASE_DEFENDER_ORPHAN_DESPAWN_DIST *
+                                 Config::BASE_DEFENDER_ORPHAN_DESPAWN_DIST) {
+      e.alive = false;
+      --m_liveEnemies;
+      return true;
+    }
+    return false;
+  }
+
+  if (e.defenderPhase == DefenderPhase::Active) {
+    if (hasPrey || hDist2 > Config::BASE_DEFENDER_APPROACH_DIST *
+                                Config::BASE_DEFENDER_APPROACH_DIST)
+      return false;
+    e.defenderPhase = DefenderPhase::Landing;
+  } else if (e.defenderPhase == DefenderPhase::Landing && hasPrey) {
+    // Scramble again from wherever the approach got to.
+    e.defenderPhase = DefenderPhase::Launching;
+  }
+
+  auto approach = [](float &v, float target, float maxStep) {
+    float d = target - v;
+    if (d > maxStep) d = maxStep;
+    else if (d < -maxStep) d = -maxStep;
+    v += d;
+  };
+  auto turnTo = [&](float desiredYaw) {
+    float err = desiredYaw - e.yaw;
+    while (err > 3.14159f) err -= 6.28318f;
+    while (err < -3.14159f) err += 6.28318f;
+    float maxStep = Config::FIGHTER_TURN_RATE * dt;
+    if (err > maxStep) err = maxStep;
+    else if (err < -maxStep) err = -maxStep;
+    e.yaw += err;
+  };
+  const float vAccel = Config::BASE_DEFENDER_CLIMB_ACCEL * dt;
+  const float hAccel = Config::FIGHTER_THRUST * dt;
+
+  if (e.defenderPhase == DefenderPhase::Launching) {
+    // Bleed off any horizontal speed (a re-scramble mid-approach) and
+    // go straight up: slowly on the lift, then a full climb.
+    approach(e.vel.x, 0.0f, hAccel);
+    approach(e.vel.z, 0.0f, hAccel);
+    float target = e.pos.y < rest.y ? Config::BASE_DEFENDER_LIFT_SPEED
+                                    : Config::BASE_DEFENDER_CLIMB_SPEED;
+    if (e.pos.y < rest.y)
+      e.vel.y = target; // the lift moves at a fixed rate
+    else
+      approach(e.vel.y, target, vAccel);
+    if (hasPrey && e.pos.y > rest.y + 2.0f)
+      turnTo(atan2f(preyPos.x - e.pos.x, preyPos.z - e.pos.z));
+    e.pos = Vector3Add(e.pos, Vector3Scale(e.vel, dt));
+    if (e.pos.y >= rest.y + Config::BASE_DEFENDER_CLIMB_HEIGHT)
+      e.defenderPhase = DefenderPhase::Active;
+    return true;
+  }
+
+  // Landing: close on the lift horizontally while holding altitude,
+  // then descend once over it, then ride the lift down into the deck.
+  float hDist = sqrtf(hDist2);
+  float want = fminf(Config::BASE_DEFENDER_APPROACH_SPEED,
+                     hDist * Config::BASE_DEFENDER_APPROACH_GAIN);
+  float wx = hDist > 1e-3f ? hx / hDist * want : 0.0f;
+  float wz = hDist > 1e-3f ? hz / hDist * want : 0.0f;
+  approach(e.vel.x, wx, hAccel);
+  approach(e.vel.z, wz, hAccel);
+
+  bool aligned = hDist < Config::BASE_DEFENDER_LAND_ALIGN;
+  // Within a hand's width of the resting height counts as touched down;
+  // without the margin the clamp below shrinks the step towards zero.
+  const float above = e.pos.y - rest.y;
+  if (above <= 0.02f) {
+    e.vel.y = -Config::BASE_DEFENDER_LIFT_SPEED;
+  } else if (aligned) {
+    float descent = fmaxf(Config::BASE_DEFENDER_TOUCHDOWN_SPEED,
+                          fminf(Config::BASE_DEFENDER_DESCENT_SPEED, above * 0.5f));
+    approach(e.vel.y, -descent, vAccel);
+    // Touch down on the deck rather than punching through it at speed.
+    if (e.vel.y * dt < -above) e.vel.y = -above / dt;
+  } else {
+    approach(e.vel.y, 0.0f, vAccel);
+  }
+
+  // Face the direction of travel on approach; square up with the hatch
+  // (nose north or south) once over it.
+  float hSpeed = sqrtf(e.vel.x * e.vel.x + e.vel.z * e.vel.z);
+  if (hDist < 4.0f * Config::BASE_DEFENDER_LAND_ALIGN) {
+    float y = e.yaw;
+    while (y > 3.14159f) y -= 6.28318f;
+    while (y < -3.14159f) y += 6.28318f;
+    turnTo(fabsf(y) < 1.5708f ? 0.0f : (y > 0.0f ? 3.14159f : -3.14159f));
+  } else if (hSpeed > 2.0f) {
+    turnTo(atan2f(e.vel.x, e.vel.z));
+  }
+
+  e.pos = Vector3Add(e.pos, Vector3Scale(e.vel, dt));
+  if (e.pos.y <= rest.y - Config::BASE_DEFENDER_STOW_DEPTH) {
+    e.alive = false;
+    --m_liveEnemies;
+  }
+  return true;
 }
 
 // Slice C C.2 — landing apron. A player over the base's apron square
@@ -3612,6 +3763,23 @@ void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
         float lz = (i & 2) ? h - 1.0f : -(h - 1.0f);
         DrawCubeV({e.pos.x + lx, top + 0.35f, e.pos.z + lz},
                   {0.7f, 0.7f, 0.7f}, lamp);
+      }
+      // Defender lift hatches (BUG-029): a yellow-rimmed dark panel the
+      // fighters rise out of and sink back into. The rim is four strips
+      // around the panel, not a slab under it: stacked top faces a few
+      // cm apart z-fight at distance with the 3000 m far plane.
+      Color hatchRim = {200, 170, 60, 255};
+      Color hatch = {38, 42, 48, 255};
+      const float hw = Config::BASE_DEFENDER_HATCH_W * 0.5f;
+      const float hl = Config::BASE_DEFENDER_HATCH_L * 0.5f;
+      const float rim = 0.3f, th = 0.08f, y = top + th * 0.5f;
+      for (int s = 0; s < Config::BASE_DEFENDER_LIFT_COUNT; ++s) {
+        Vector3 p = defenderLiftSpot(e, s);
+        DrawCubeV({p.x, y, p.z}, {2.0f * hw, th, 2.0f * hl}, hatch);
+        DrawCubeV({p.x, y, p.z + hl + rim * 0.5f}, {2.0f * (hw + rim), th, rim}, hatchRim);
+        DrawCubeV({p.x, y, p.z - hl - rim * 0.5f}, {2.0f * (hw + rim), th, rim}, hatchRim);
+        DrawCubeV({p.x + hw + rim * 0.5f, y, p.z}, {rim, th, 2.0f * hl}, hatchRim);
+        DrawCubeV({p.x - hw - rim * 0.5f, y, p.z}, {rim, th, 2.0f * hl}, hatchRim);
       }
     }
     // Ramps — sloped wedges from the platform edge down to the ground.

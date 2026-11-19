@@ -312,6 +312,16 @@ The 5g commit says strafe runs "fire at the friendly", but the friendly-hit chec
 **Reproduction.** Face north on a base platform: the control tower (+X+Z) is on the left and the pad radar tower (−X+Z) is on the right, towards the heading tape's NE marks.
 **Notes.** Fixed 2026-10-15 ([D-033](DECISIONS.md#d-033-world-x-points-west-compass-heading-is-yaw)). The 3D view, flight input (yaw inverted by default) and radar (negated screen X) already agreed with each other: only the compass labelling was mirrored. The heading tape and debug `Hdg` now show heading = −yaw, so 090/E means facing −X and the heading rises as the player turns right. The world convention is now documented as +X = west. `BASE_EAST_SIGN = −1` stays, and is now the true convention rather than a workaround. Mirroring the projection instead was rejected: it would need inverted face culling, input defaults and radar logic just to reach the same result.
 
+### BUG-029: Base defenders pop in above the pad and vanish instead of taking off and landing
+
+**Status:** fixed (2026-11-19)
+**Found:** 2026-11-19 (playtest)
+**Location:** [src/entity/EntityManager.cpp](src/entity/EntityManager.cpp) `EntityManager::launchBaseDefender()` and the defender return-home branch of the allied Fighter AI
+**Severity:** low
+**Description.** `launchBaseDefender()` spawns each defender `BASE_DEFENDER_LAUNCH_HEIGHT` above the pad, at full readiness, with no take-off. When no hostile remains within `BASE_DEFENDER_LEASH`, the defender flies back towards its launch point. It is removed (`alive = false`) as soon as it comes within `BASE_DEFENDER_LAND_DIST` horizontally, at any altitude and speed, with no descent or touchdown. To the player, the defenders appear from nowhere and blink out of the sky.
+**Reproduction.** In either mode, let a hostile approach a base. Fighters appear in mid-air over the pad. Kill the hostile: the defenders return and disappear while still airborne.
+**Notes.** Fixed 2026-11-19. Each defender now owns one of the deck-lift hatches (`BASE_DEFENDER_LIFT_SPOTS`) on the platform. It rises out of the deck, climbs vertically to `BASE_DEFENDER_CLIMB_HEIGHT` and then hands over to the combat AI. When idle inside `BASE_DEFENDER_APPROACH_DIST`, it slows over its hatch, squares up, descends, touches down and sinks back into the deck before being removed. A hostile appearing mid-landing makes it scramble again. The phase lives in a new `Entity::defenderPhase`, because `aiState` must stay `Infected` to keep the ship allied. If the home base is destroyed, its defenders fight on and are removed near the wreck as before (`BASE_DEFENDER_ORPHAN_DESPAWN_DIST`). Originally: this was the C.2 first cut ([D-030](DECISIONS.md#d-030-base-defenders-reuse-the-allied-fighter-path-pads-replace-repair-stations-in-base-mode)): FEATURES F-021 describes the despawn as "land". A fix needs a launch phase (spawn on the pad and climb out vertically before handing over to the allied AI) and a landing phase (hover over the pad, descend, touch down, then despawn). Both can use `aiState`/`stateTimer` without new pools ([D-012](DECISIONS.md#d-012-flat-type-tagged-entity-pools-no-ecs-no-hot-path-allocation)). The pad position has to be wrap-aware ([AV-005](ATTACK_VECTORS.md#av-005-world-fixed-objects-drawn-or-measured-without-the-toroidal-wrap)).
+
 
 ## Won't Fix
 

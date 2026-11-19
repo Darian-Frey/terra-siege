@@ -249,6 +249,8 @@ private:
   // No movement; only renders + animates a landing-light yaw.
   void updateBase(Entity &e, float dt, Player &player);
   void launchBaseDefender(const Entity &base);
+  Vector3 defenderLiftSpot(const Entity &base, int slot) const;
+  bool tickDefenderFlight(Entity &e, float dt, bool hasPrey, Vector3 preyPos);
   void tickBasePad(const Entity &base, float dt, Player &player);
 
   // Ground Turret — stationary, rotates toward player, fires in cone.

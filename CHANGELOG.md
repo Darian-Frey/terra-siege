@@ -49,6 +49,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Stale duplicate of `game_modes_and_features.md` at the repo root
 
 ### Fixed
+- Base defenders appeared in mid-air above the pad and vanished in the sky when idle. They now rise out of a deck-lift hatch on the platform and climb out vertically. When done, they slow over their hatch, descend, touch down and sink back into the deck ([BUG-029](BUGS.md#bug-029-base-defenders-pop-in-above-the-pad-and-vanish-instead-of-taking-off-and-landing))
 - The compass read mirrored against the view: the heading tape and debug heading now increase when turning right, and E is on the right when facing north ([BUG-028](BUGS.md#bug-028-3d-view-is-mirrored-eastwest-relative-to-the-compass-and-heading), [D-033](DECISIONS.md#d-033-world-x-points-west-compass-heading-is-yaw))
 - The radar showed every entity on the map and one booster anywhere boosted range globally; both now follow network coverage ([BUG-001](BUGS.md#bug-001-radar-shows-every-entity-on-the-map-regardless-of-range), [BUG-002](BUGS.md#bug-002-one-radar-booster-anywhere-boosts-radar-range-globally))
 - Base defenders never fired at drones circling them, because they couldn't turn tightly enough for the 16° fire cone. Allied ships now fire within about 45°. Bases also scramble defenders when a hostile is within 220 m, not only when hit, and the base turret range rises from 110 m to 160 m

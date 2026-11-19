@@ -145,6 +145,16 @@ enum class AIState : uint8_t {
   CollectorUnload,
 };
 
+// Base defender flight phase (C.2, BUG-029). Separate from AIState
+// because defenders must keep AIState::Infected throughout, which is what
+// marks them as allied to targeting, radar and projectile ownership.
+enum class DefenderPhase : uint8_t {
+  None = 0,  // not a defender
+  Launching, // rising out of the deck lift, then climbing vertically
+  Active,    // normal allied fighter AI
+  Landing,   // approach, hover over the lift, descend into the deck
+};
+
 // Shield sector — for entities with directional (4-quadrant) shields
 // (Carrier today; player in Phase 4). Order matters: damage routing
 // computes the sector from the hit direction expressed in local
@@ -276,8 +286,10 @@ struct Entity {
   // Slice C C.2 — id of the friendly Base that launched this ship as a
   // defender (0 = not a defender). Defenders fly the allied (Infected)
   // AI path but don't bleed, stay leashed to spawnPos, and land back at
-  // their base when nothing is in range.
+  // their base when nothing is in range. spawnPos is the defender's own
+  // deck-lift spot (its resting position on the deck).
   uint32_t homeBaseId = 0;
+  DefenderPhase defenderPhase = DefenderPhase::None;
 
   // Base platforms (C.2): bit 0 = south ramp, bit 1 = east ramp.
   uint8_t rampMask = 0;

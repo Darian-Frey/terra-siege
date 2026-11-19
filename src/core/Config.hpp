@@ -710,9 +710,34 @@ constexpr float BASE_UNDER_ATTACK_WINDOW = 8.0f;  // s since last hit = "under a
 constexpr float BASE_ALERT_RANGE = 220.0f;        // TUNE — a hostile this close also scrambles defenders
 constexpr int BASE_DEFENDER_MAX = 3;              // TUNE — live defenders per base
 constexpr float BASE_DEFENDER_LAUNCH_INTERVAL = 1.5f; // TUNE — s between launches
-constexpr float BASE_DEFENDER_LAUNCH_HEIGHT = 10.0f;  // spawn this far above the pad
 constexpr float BASE_DEFENDER_LEASH = 260.0f;     // TUNE — only engage enemies this close to home
-constexpr float BASE_DEFENDER_LAND_DIST = 14.0f;  // horizontal distance to "land" (despawn)
+// Deck lifts (BUG-029): each defender rises out of its own hatch, climbs
+// vertically, and on return descends back into it. Spots are
+// {compass east, compass north} offsets from the pad centre, kept clear
+// of the towers (NE, NW), the centre landing spot and the Collector
+// ramp lanes (x = 0 south, z = 0 east).
+constexpr float BASE_DEFENDER_LIFT_SPOTS[][2] = {{-10.0f, -10.0f},  // SW
+                                                 {10.0f, -10.0f},   // SE
+                                                 {-11.0f, 1.0f}};   // W
+constexpr int BASE_DEFENDER_LIFT_COUNT =
+    sizeof(BASE_DEFENDER_LIFT_SPOTS) / sizeof(BASE_DEFENDER_LIFT_SPOTS[0]);
+static_assert(BASE_DEFENDER_LIFT_COUNT >= BASE_DEFENDER_MAX,
+              "every live defender needs its own deck lift");
+constexpr float BASE_DEFENDER_HATCH_W = 4.5f;     // hatch marking, across the fighter (X)
+constexpr float BASE_DEFENDER_HATCH_L = 6.5f;     // hatch marking, nose to tail (Z)
+constexpr float BASE_DEFENDER_REST_HEIGHT = 0.6f; // origin above the deck when sat on it (fighter.obj bottom ≈ −0.55)
+constexpr float BASE_DEFENDER_STOW_DEPTH = 1.8f;  // below rest height = fully inside the deck (fighter.obj top ≈ 1.05)
+constexpr float BASE_DEFENDER_LIFT_SPEED = 1.5f;  // TUNE — m/s on the lift, below the deck
+constexpr float BASE_DEFENDER_CLIMB_SPEED = 12.0f;  // TUNE — vertical climb-out m/s
+constexpr float BASE_DEFENDER_CLIMB_ACCEL = 10.0f;  // TUNE — m/s² vertical, launch and landing
+constexpr float BASE_DEFENDER_CLIMB_HEIGHT = 20.0f; // TUNE — above the deck, hand over to the combat AI
+constexpr float BASE_DEFENDER_APPROACH_DIST = 70.0f;  // TUNE — idle defender this close to its lift starts landing
+constexpr float BASE_DEFENDER_APPROACH_SPEED = 15.0f; // TUNE — max horizontal speed on approach
+constexpr float BASE_DEFENDER_APPROACH_GAIN = 0.6f;   // desired approach speed per metre of offset
+constexpr float BASE_DEFENDER_LAND_ALIGN = 1.5f;      // horizontal error that allows descent
+constexpr float BASE_DEFENDER_DESCENT_SPEED = 10.0f;  // TUNE — max descent m/s
+constexpr float BASE_DEFENDER_TOUCHDOWN_SPEED = 1.5f; // descent m/s just above the deck
+constexpr float BASE_DEFENDER_ORPHAN_DESPAWN_DIST = 14.0f; // home base destroyed: idle defender is removed this close to it
 // Landing apron: a flattened square of terrain under every base, 4× the
 // original 9 m pad. Docking anywhere on the square counts.
 constexpr float BASE_PAD_HALF_SIZE = 18.0f;       // half-width of the apron (36 m square)
