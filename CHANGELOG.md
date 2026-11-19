@@ -30,6 +30,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Project documentation to the development documentation standard: README status header, FEATURES, DECISIONS, ARCHITECTURE, ATTACK_VECTORS, BUGS, IMPROVEMENTS, CHANGELOG, MIT LICENSE ([D-001](DECISIONS.md#d-001-adopt-the-development-documentation-standard))
 
 ### Changed
+- Infected ships now bleed out in `INFECT_BLEED_LIFETIME` (45 s) instead of about 100 s
 - The base platform and its ramps are now models (`base_platform.obj`, `base_ramp.obj`): a tiled deck with a dark centre landing square, the defender lift hatches with yellow rims, a hazard band round the sides and corner lamps. The deck markings are coplanar faces of the deck, so they cannot z-fight at any distance. `GameState::checkBasePartSizes()` warns at load if the models drift from the Config pad and ramp sizes
 - Projectiles are now models (`scripts/meshgen/projectiles.py`): a spindle `bolt` for the lasers, charged laser and cannon tracers, an `orb` for plasma, and a banded `depth_charge` with tail fins. Bolts and orbs are tinted per shot with the old colours, keep a translucent glow copy, and point along their flight path
 - The Radar Booster dish is now a model (`radar_booster_dish.obj`): a turntable, a two-sided faceted bowl and a yellow feed horn on struts, spinning on the mast top (`RADAR_BOOSTER_DISH_HEIGHT`). The booster's health bar sits higher to clear it
@@ -58,6 +59,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Stale duplicate of `game_modes_and_features.md` at the repo root
 
 ### Fixed
+- Waves didn't clear while an infected enemy (or a base defender) was still alive, because allied ships counted as enemies. The game appeared to stop progressing until the infected ship bled out. Allied ships no longer count towards clearing a wave or the HUD enemy count ([BUG-030](BUGS.md#bug-030-allied-ships-infected-enemies-base-defenders-hold-up-wave-clear))
 - Base deck hatches and the feet of base ramps z-fought (flickered) from a distance. The camera near plane moves from 0.05 m to `CAM_NEAR_PLANE`, the hatches are thicker plates, and the drawn ramps run on into the ground instead of meeting it flush ([AV-013](ATTACK_VECTORS.md#av-013-raylib-name-and-default-collisions))
 - Base defenders appeared in mid-air above the pad and vanished in the sky when idle. They now rise out of a deck-lift hatch on the platform and climb out vertically. When done, they slow over their hatch, descend, touch down and sink back into the deck ([BUG-029](BUGS.md#bug-029-base-defenders-pop-in-above-the-pad-and-vanish-instead-of-taking-off-and-landing))
 - The compass read mirrored against the view: the heading tape and debug heading now increase when turning right, and E is on the right when facing north ([BUG-028](BUGS.md#bug-028-3d-view-is-mirrored-eastwest-relative-to-the-compass-and-heading), [D-033](DECISIONS.md#d-033-world-x-points-west-compass-heading-is-yaw))

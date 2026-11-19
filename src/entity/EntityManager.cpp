@@ -1058,7 +1058,7 @@ void EntityManager::update(float dt, const Planet &planet, Player &player,
     // ship's systems; hull drops at INFECT_BLEED_HP_FRAC_PS × hullMax
     // per second, eventually killing it. Uses fraction-of-max so all
     // infectable types take the same wall-clock time to die from the
-    // bleed (~100s at 0.01/s). Normal kill path: emitKillExplosion on
+    // bleed (INFECT_BLEED_LIFETIME). Normal kill path: emitKillExplosion on
     // hullHP hitting zero, mark dead, decrement liveEnemies, skip the
     // rest of the AI tick.
     // Base defenders (C.2) fly the allied path but aren't infected —

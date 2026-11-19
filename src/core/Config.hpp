@@ -324,10 +324,11 @@ constexpr float INFECT_SPEED_PENALTY = 0.80f;  // max-speed multiplier post-flip
 // Infected ships slowly bleed hull HP and eventually explode. Drains
 // as a fraction of hullMax per second so Fighters (160 hull) and
 // Bombers (350 hull) take the same time to die from the bleed
-// alone. At 1%/sec → ~100s of useful life if the ship isn't shot
-// down sooner. The bleed represents the virus consuming systems and
+// alone: INFECT_BLEED_LIFETIME seconds of useful life if the ship isn't
+// shot down sooner. The bleed represents the virus consuming systems and
 // gives the player a reason to push the temporary ally into a fight.
-constexpr float INFECT_BLEED_HP_FRAC_PS = 0.01f;
+constexpr float INFECT_BLEED_LIFETIME = 45.0f; // TUNE — s from full hull to dead
+constexpr float INFECT_BLEED_HP_FRAC_PS = 1.0f / INFECT_BLEED_LIFETIME;
 
 // ----------------------------------------------------------------
 // Weapons — special

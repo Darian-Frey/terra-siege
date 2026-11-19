@@ -192,7 +192,7 @@ Players who want a modern take on the 1988 Argonaut game *Virus*: flat-shaded lo
 **Acceptance:**
 
 - An Infectious Missile hit on a shield-stripped Fighter or Bomber flips it to the player's faction
-- Infected ships bleed hull over time and are excluded from auto-aim
+- Infected ships bleed hull over time (`INFECT_BLEED_LIFETIME`) and are excluded from auto-aim and from wave-clear counting
 - A failed infection (shields still up) is a dud
 
 **Notes:** Seeder and Carrier infection deferred. See [IMP-008](IMPROVEMENTS.md#imp-008-seeder-and-carrier-infection).

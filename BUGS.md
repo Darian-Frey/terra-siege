@@ -322,6 +322,16 @@ The 5g commit says strafe runs "fire at the friendly", but the friendly-hit chec
 **Reproduction.** In either mode, let a hostile approach a base. Fighters appear in mid-air over the pad. Kill the hostile: the defenders return and disappear while still airborne.
 **Notes.** Fixed 2026-11-19. Each defender now owns one of the deck-lift hatches (`BASE_DEFENDER_LIFT_SPOTS`) on the platform. It rises out of the deck, climbs vertically to `BASE_DEFENDER_CLIMB_HEIGHT` and then hands over to the combat AI. When idle inside `BASE_DEFENDER_APPROACH_DIST`, it slows over its hatch, squares up, descends, touches down and sinks back into the deck before being removed. A hostile appearing mid-landing makes it scramble again. The phase lives in a new `Entity::defenderPhase`, because `aiState` must stay `Infected` to keep the ship allied. If the home base is destroyed, its defenders fight on and are removed near the wreck as before (`BASE_DEFENDER_ORPHAN_DESPAWN_DIST`). Originally: this was the C.2 first cut ([D-030](DECISIONS.md#d-030-base-defenders-reuse-the-allied-fighter-path-pads-replace-repair-stations-in-base-mode)): FEATURES F-021 describes the despawn as "land". A fix needs a launch phase (spawn on the pad and climb out vertically before handing over to the allied AI) and a landing phase (hover over the pad, descend, touch down, then despawn). Both can use `aiState`/`stateTimer` without new pools ([D-012](DECISIONS.md#d-012-flat-type-tagged-entity-pools-no-ecs-no-hot-path-allocation)). The pad position has to be wrap-aware ([AV-005](ATTACK_VECTORS.md#av-005-world-fixed-objects-drawn-or-measured-without-the-toroidal-wrap)).
 
+### BUG-030: Allied ships (infected enemies, base defenders) hold up wave clear
+
+**Status:** fixed (2026-11-19)
+**Found:** 2026-11-19 (playtest)
+**Location:** [src/wave/WaveManager.cpp](src/wave/WaveManager.cpp) `WaveManager::aliveEnemyCount()`; HUD wave banner in [src/core/GameState.cpp](src/core/GameState.cpp)
+**Severity:** medium
+**Description.** A wave ends when `aliveEnemyCount()` reaches zero. That count includes every live non-structure ship, so it also counts ships on the player's side. These are infected enemies (`AIState::Infecting` / `Infected`) and base defenders (`homeBaseId != 0`, which fly as `Infected`). After the last hostile dies, the wave stays open until each infected ship bleeds out (`INFECT_BLEED_HP_FRAC_PS`, about 100 s) and every defender has landed. In play this looks like the game has stopped progressing. The HUD "N ENEMIES" banner counts the same ships.
+**Reproduction.** In Wave mode, infect a Fighter with the Infectious Missile, then kill the remaining hostiles. The wave doesn't clear until the infected ship dies.
+**Notes.** Fixed 2026-11-19: `aliveEnemyCount()` skips `Infecting` / `Infected` ships and base defenders, so the wave clears when the last hostile dies, and the HUD count follows. Surviving infected ships carry into the next wave as allies until they bleed out. The bleed was shortened at the same time to `INFECT_BLEED_LIFETIME`. Originally: Base mode is unaffected: its victory gate counts only Landers. Fix: exclude allied ships from `aliveEnemyCount()`, using the same test as `isAutoAimTarget()`.
+
 
 ## Won't Fix
 

@@ -684,7 +684,7 @@ Undo is held at inspector level as full-mesh snapshots (32 deep) and is shared a
 - Infected ships fight where they are and don't retreat.
 - Auto-aim weapons skip infected ships; manual aim can still hit them.
 - The player can't be infected.
-- Added in code, beyond the design doc: infected ships bleed 1% of max hull per second (about 100 s of life). This departs from v1 §5.3 "hull HP unchanged" and keeps converted ships disposable.
+- Added in code, beyond the design doc: infected ships bleed hull at a fixed fraction of max per second, dying after `INFECT_BLEED_LIFETIME` (shortened from about 100 s on 2026-11-19). This departs from v1 §5.3 "hull HP unchanged" and keeps converted ships disposable. Infected ships do not count towards clearing a wave ([BUG-030](BUGS.md#bug-030-allied-ships-infected-enemies-base-defenders-hold-up-wave-clear)).
 
 **Consequences.** Base infection v2 (F-025) changes the gate (shields stripped and hull ≤30%), makes it symmetric and allows re-flips. That will need its own decision when C.6 lands.
 

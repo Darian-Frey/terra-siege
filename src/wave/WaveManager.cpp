@@ -137,6 +137,12 @@ int WaveManager::aliveEnemyCount(const EntityManager &entities) const {
     if (e.type == EntityType::Projectile) continue;
     if (isFriendlyStructure(e.type))
       continue; // friendlies don't count toward wave-clear
+    // Nor do ships on the player's side: infected enemies (which bleed
+    // out on their own) and base defenders, which fly as Infected
+    // (BUG-030).
+    if (e.aiState == AIState::Infected || e.aiState == AIState::Infecting ||
+        e.homeBaseId != 0)
+      continue;
     ++n;
   }
   return n;
