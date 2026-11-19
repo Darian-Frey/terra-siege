@@ -8,7 +8,7 @@ Python definitions for the ship, structure and scenery meshes in `assets/meshes/
 | `player.py` | `hovercraft` |
 | `enemies.py` | `fighter`, `drone`, `bomber`, `seeder`, `carrier`, `tank` |
 | `structures.py` | `base` (control tower), `collector`, `radar_booster`, `lander`. These leave room for the parts the game draws in code: the base turret, Collector cab and booster dish |
-| `scenery.py` | `tree_conifer`, `tree_broadleaf`, `rock_a`, `rock_b`, `rock_c`. Drawn instanced by `Decorations`, so keep them small |
+| `scenery.py` | `tree_conifer`, `tree_broadleaf`, `rock_a`, `rock_b`, `rock_c`, `antenna`, `crash_site`, `crash_debris`. Drawn instanced by `Decorations`, so keep them small |
 | `build.py` | Entry point |
 
 ## Usage

@@ -998,7 +998,7 @@ Undo is held at inspector level as full-mesh snapshots (32 deep) and is shared a
 - Each frame it gathers the cells within `DECOR_RENDER_RADIUS` into a pre-reserved buffer, offset to the toroidal copy nearest the camera. It then issues one `DrawMeshInstanced` per model.
 - An unlit instancing shader, embedded in `Decorations.cpp`, gives the same baked palette colour as raylib's default shader on the other OBJ models.
 - If any model or the shader fails to load, that kind falls back to the old boxes.
-- Antennas and crash sites stay procedural.
+- Antennas and crash sites stay procedural. *Amended 2026-11-19:* they became models too (`antenna`, and `crash_site` plus scattered `crash_debris`), drawn through the same instanced path. A kind falls back to boxes only if its own models fail to load.
 
 **Consequences.**
 

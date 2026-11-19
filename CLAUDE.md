@@ -18,11 +18,11 @@ A C++17 / raylib 5.0 remake of *Virus* (Argonaut, 1988) for Linux: Newtonian hov
 - `src/core/Config.hpp`: working. Every constant. Difficulty preset tables exist but are unused (F-027).
 - `src/entity/Player.*`: working. Flight, assist, shields, weapon selection. Has [BUG-005](BUGS.md#bug-005-holding-q-or-e-to-select-a-laser-colour-suppresses-auto-level-roll).
 - `src/entity/EntityManager.*`: working. Pools, all AI, projectiles, damage, infection v1, Lander (first cut), C.2 base defenders, landing pads and radar stations (procedural render; no OBJ yet). `rebaseAround()` re-centres entities and projectiles on the player each tick, so the world wrap is handled ([BUG-007](BUGS.md#bug-007-ai-collision-and-radar-distances-ignore-the-toroidal-wrap)).
-- `src/world/*`: working. Perlin terrain, lakes, decorations (trees and rocks as instanced OBJ models), wrap-aware rendering. Rivers disabled (F-003). `SkyDome` is empty.
+- `src/world/*`: working. Perlin terrain, lakes, decorations (all instanced OBJ models), wrap-aware rendering. Rivers disabled (F-003). `SkyDome` is empty.
 - `src/hud/Radar.*`: working pulse radar, coverage-gated by the C.4 network (personal 300 m plus online towers). Tower pulses paint contacts beyond 300 m as rim markers.
 - `src/audio/AudioManager.*`: working. No engine loop yet.
 - `src/mesh/*`: working. OBJ, palette, sidecars and registries are all tested.
-- `scripts/meshgen/`: working. Blender-driven Python definitions for the player, enemy, ground-structure and scenery meshes (16 models, including `lander.obj` and the instanced trees and boulders). The base platform, turret, booster dish and Collector cab are still drawn in code.
+- `scripts/meshgen/`: working. Blender-driven Python definitions for the player, enemy, ground-structure and scenery meshes (19 models, including `lander.obj` and the instanced scenery). The base platform, turret, booster dish and Collector cab are still drawn in code.
 - `src/inspector/*`: working. Phases A, B (first cut), C, D, E and F.1–F.5. F.6 and G not started.
 - **Empty stub files:** `src/ai/*`, `src/weapon/*`, `src/renderer/*`, `hud/{HUD,WeaponDisplay,ShieldDisplay}`, `shield/ShieldSystem`, `entity/{Enemy,Friendly,Projectile}`. They contain no code. Don't assume a spatial grid or AI module exists ([BUG-017](BUGS.md#bug-017-documentation-describes-a-spatial-grid-and-module-layout-that-dont-exist)).
 - `tests/`: three doctest binaries covering only the mesh and sidecar layer. No CI.
@@ -129,7 +129,7 @@ Things not to change without asking:
 
 - Accepted decisions in DECISIONS.md. Only revisit one if its reversal conditions are met; otherwise ask.
 - The fixed timestep, pool sizes, the wrap model and the flight model.
-- `assets/meshes/*.obj` and `*.meta.json`. These are authored content; edit them through the inspector or on request. These models are generated: `hovercraft`, `fighter`, `drone`, `bomber`, `seeder`, `carrier`, `tank`, `lander`, `base`, `collector`, `radar_booster`, `tree_conifer`, `tree_broadleaf` and `rock_a`/`rock_b`/`rock_c`. They come from `scripts/meshgen/`: change the definition there and regenerate, or a hand edit will be overwritten.
+- `assets/meshes/*.obj` and `*.meta.json`. These are authored content; edit them through the inspector or on request. These models are generated: `hovercraft`, `fighter`, `drone`, `bomber`, `seeder`, `carrier`, `tank`, `lander`, `base`, `collector`, `radar_booster`, `tree_conifer`, `tree_broadleaf`, `rock_a`/`rock_b`/`rock_c`, `antenna`, `crash_site` and `crash_debris`. They come from `scripts/meshgen/`: change the definition there and regenerate, or a hand edit will be overwritten.
 - Balance values marked `// TUNE`, and TTK targets.
 - `project-status/archive/`, which is historical. Only correct factual banners there.
 - Adding dependencies beyond raylib, doctest and picojson.

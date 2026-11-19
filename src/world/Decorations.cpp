@@ -259,7 +259,9 @@ void main() { finalColor = fragColor; }
 )";
 
 const char *const kModelFiles[] = {"tree_conifer.obj", "tree_broadleaf.obj",
-                                   "rock_a.obj", "rock_b.obj", "rock_c.obj"};
+                                   "rock_a.obj",       "rock_b.obj",
+                                   "rock_c.obj",       "antenna.obj",
+                                   "crash_site.obj",   "crash_debris.obj"};
 
 // Scale, then yaw, then translate — the same order as DrawModelEx.
 Matrix placeMatrix(Vector3 pos, Vector3 scale, float yaw) {
@@ -490,15 +492,15 @@ void Decorations::unloadModels() {
   }
 }
 
-bool Decorations::treesInstanced() const {
-  return m_instReady && m_modelLoaded[kConifer] && m_modelLoaded[kBroadleaf];
-}
+static_assert(static_cast<int>(Decoration::Kind::CrashSite) + 1 == 4,
+              "Decorations::kKindCount must match Decoration::Kind");
 
-bool Decorations::rocksInstanced() const {
-  if (!m_instReady) return false;
-  for (int m = kFirstRock; m < kModelCount; ++m)
-    if (!m_modelLoaded[m]) return false;
-  return true;
+std::array<bool, Decorations::kKindCount> Decorations::instancedKinds() const {
+  std::array<bool, kKindCount> ok;
+  ok.fill(m_instReady);
+  for (int m = 0; m < kModelCount; ++m)
+    if (!m_modelLoaded[m]) ok[static_cast<int>(kSlotKind[m])] = false;
+  return ok;
 }
 
 void Decorations::buildInstances(const Planet &planet) {
@@ -553,6 +555,23 @@ void Decorations::buildInstances(const Planet &planet) {
         p.y = planet.heightAt(p.x, p.z);
         add(kFirstRock + i % kRockVariants, p, {w, h, l}, yaw);
       }
+    } else if (d.kind == Decoration::Kind::Antenna) {
+      add(kAntenna, d.pos, {d.scale, d.scale, d.scale}, d.yaw);
+    } else if (d.kind == Decoration::Kind::CrashSite) {
+      // The wreck, plus debris in the same layout (and RNG sequence) as
+      // drawCrashSite()'s boxes, flattened and yawed.
+      add(kCrashHull, d.pos, {d.scale, d.scale, d.scale}, d.yaw);
+      uint32_t rng = d.seed;
+      int n = 4 + static_cast<int>(xorshift32(rng) % 4);
+      for (int i = 0; i < n; ++i) {
+        float ox = frand(rng, -3.5f, 3.5f) * d.scale;
+        float oz = frand(rng, -3.5f, 3.5f) * d.scale;
+        float sz = frand(rng, 0.3f, 0.9f) * d.scale;
+        float yaw = frand(rng) * 6.2832f;
+        Vector3 p{d.pos.x + ox, 0.0f, d.pos.z + oz};
+        p.y = planet.heightAt(p.x, p.z);
+        add(kCrashDebris, p, {sz, 0.6f * sz, sz}, yaw);
+      }
     }
   }
 
@@ -579,21 +598,22 @@ void Decorations::buildInstances(const Planet &planet) {
 void Decorations::render(const Planet &planet, Vector3 cameraPos) const {
   constexpr float kRenderRadius = Config::DECOR_RENDER_RADIUS;
   constexpr float kRenderRadius2 = kRenderRadius * kRenderRadius;
-  const bool trees = treesInstanced();
-  const bool rocks = rocksInstanced();
+  const std::array<bool, kKindCount> inst = instancedKinds();
+  bool anyInstanced = false;
+  for (bool b : inst) anyInstanced = anyInstanced || b;
 
-  // Instanced trees and rocks. Walk the grid cells under the render
+  // Instanced models. Walk the grid cells under the render
   // circle in unwrapped cell coordinates; a cell's wrapped index picks
   // its instances and the difference is the toroidal offset that moves
   // them next to the (unwrapped) camera.
-  if ((trees || rocks) && m_gridN > 0) {
+  if (anyInstanced && m_gridN > 0) {
     const float cell = Config::DECOR_CELL_SIZE;
     const int x0 = static_cast<int>(floorf((cameraPos.x - kRenderRadius) / cell));
     const int x1 = static_cast<int>(floorf((cameraPos.x + kRenderRadius) / cell));
     const int z0 = static_cast<int>(floorf((cameraPos.z - kRenderRadius) / cell));
     const int z1 = static_cast<int>(floorf((cameraPos.z + kRenderRadius) / cell));
     for (int m = 0; m < kModelCount; ++m) {
-      if (m < kFirstRock ? !trees : !rocks) continue;
+      if (!inst[static_cast<int>(kSlotKind[m])]) continue;
       if (m_xf[m].empty()) continue;
       m_visible.clear();
       for (int uz = z0; uz <= z1; ++uz) {
@@ -623,8 +643,8 @@ void Decorations::render(const Planet &planet, Vector3 cameraPos) const {
   // toroidal copy nearest the camera so they tile with the terrain
   // after the (unwrapped) player crosses a world edge.
   for (const Decoration &item : m_items) {
-    if (trees && item.kind == Decoration::Kind::Tree) continue;
-    if (rocks && item.kind == Decoration::Kind::Rock) continue;
+    // Box fallbacks, for any kind whose models didn't load.
+    if (inst[static_cast<int>(item.kind)]) continue;
     Vector3 p = planet.nearestCopy(item.pos, cameraPos);
     float dx = p.x - cameraPos.x;
     float dz = p.z - cameraPos.z;

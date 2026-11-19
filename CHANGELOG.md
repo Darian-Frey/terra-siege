@@ -10,6 +10,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 ## [Unreleased]
 
 ### Added
+- Antennas and crash sites are now OBJ models too, drawn through the same instanced path as the trees and rocks. Antennas are guyed masts with a red beacon. Crash sites are a burnt-out wreck with its nose dug in and a glowing ember, surrounded by scattered debris chunks ([D-034](DECISIONS.md#d-034-trees-and-rocks-are-obj-models-drawn-with-gpu-instancing))
 - Trees and rock formations are now OBJ models (`scripts/meshgen/scenery.py`): conifer and broadleaf trees, with conifers commoner higher up the grassland, and three boulder variants mixed in each rock cluster. They are drawn with GPU instancing from a prebuilt grid of transforms, one draw call per model ([D-034](DECISIONS.md#d-034-trees-and-rocks-are-obj-models-drawn-with-gpu-instancing))
 - `scripts/meshgen/`: Python definitions for the player, enemy and structure meshes, run headless in Blender to regenerate `assets/meshes/*.obj` (with optional preview renders)
 - Relay towers that land in a lake or the sea now stand on a concrete plinth raised 1.5 m above the water

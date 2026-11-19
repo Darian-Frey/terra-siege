@@ -41,14 +41,14 @@ Players who want a modern take on the 1988 Argonaut game *Virus*: flat-shaded lo
 ### F-002 Atmospheric terrain decorations
 
 **Priority:** Should
-**Status:** Complete (2026-06-08, `bdc63e5`; wrap-aware rendering 2026-10-15, `7e846c3`; instanced OBJ trees and rocks 2026-11-19)
+**Status:** Complete (2026-06-08, `bdc63e5`; wrap-aware rendering 2026-10-15, `7e846c3`; instanced OBJ models for every kind 2026-11-19)
 **Acceptance:**
 
 - Noise-mask forests on grassland only, plus biome-weighted rocks, antennas and crash sites
 - Placement is deterministic for a given terrain seed
 - Visual only: no collision, AI or entity-pool slots
 - Distance-culled at `DECOR_RENDER_RADIUS` and drawn at the toroidal copy nearest the camera
-- Trees (conifer and broadleaf, with more conifers higher up the grass band) and rock boulders are OBJ models drawn with GPU instancing ([D-034](DECISIONS.md#d-034-trees-and-rocks-are-obj-models-drawn-with-gpu-instancing)); antennas and crash sites are procedural
+- Trees (conifer and broadleaf, with more conifers higher up the grass band) rock boulders, antennas and crash sites (a wreck plus scattered debris) are OBJ models drawn with GPU instancing ([D-034](DECISIONS.md#d-034-trees-and-rocks-are-obj-models-drawn-with-gpu-instancing))
 
 ### F-003 Rivers
 
