@@ -97,6 +97,8 @@ private:
 
   // World loading — called from init() and from F5 (DEV_MODE) to reroll seed
   void loadWorld(uint32_t seed);
+  // Warn if base_platform / base_ramp.obj no longer match Config sizes.
+  void checkBasePartSizes() const;
 
   // Render helpers
   void drawHUD() const;

@@ -3791,76 +3791,89 @@ void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
     Color lamp = {255, 220, 80, 255};
     // Damage flash tints only the tower + turret below — flashing the
     // whole 36 m platform white on every hit is glaring.
-    {
-      // Slab runs a metre below the ground so slopes never show a gap.
-      const float bottom = ground - 1.0f;
-      DrawCubeV({e.pos.x, (top + bottom) * 0.5f, e.pos.z},
-                {2.0f * h, top - bottom, 2.0f * h}, slab);
-      for (int i = 0; i < 4; ++i) {
-        float lx = (i & 1) ? h - 1.0f : -(h - 1.0f);
-        float lz = (i & 2) ? h - 1.0f : -(h - 1.0f);
-        DrawCubeV({e.pos.x + lx, top + 0.35f, e.pos.z + lz},
-                  {0.7f, 0.7f, 0.7f}, lamp);
+    using Prop = tsmesh::MeshRegistry::Prop;
+    if (registry && registry->hasProp(Prop::BasePlatform) &&
+        registry->hasProp(Prop::BaseRamp)) {
+      // Platform (slab, deck pattern, lift hatches, lamps) and one ramp
+      // model per flagged side; the south ramp turned to face east.
+      registry->drawProp(Prop::BasePlatform, e.pos, {0, 0, 0}, {1, 1, 1}, WHITE);
+      if (e.rampMask & 1)
+        registry->drawProp(Prop::BaseRamp, e.pos, {0, 0, 1}, {1, 1, 1}, WHITE);
+      if (e.rampMask & 2)
+        registry->drawProp(Prop::BaseRamp, e.pos,
+                           {-Config::BASE_EAST_SIGN, 0, 0}, {1, 1, 1}, WHITE);
+    } else {
+      {
+        // Slab runs a metre below the ground so slopes never show a gap.
+        const float bottom = ground - 1.0f;
+        DrawCubeV({e.pos.x, (top + bottom) * 0.5f, e.pos.z},
+                  {2.0f * h, top - bottom, 2.0f * h}, slab);
+        for (int i = 0; i < 4; ++i) {
+          float lx = (i & 1) ? h - 1.0f : -(h - 1.0f);
+          float lz = (i & 2) ? h - 1.0f : -(h - 1.0f);
+          DrawCubeV({e.pos.x + lx, top + 0.35f, e.pos.z + lz},
+                    {0.7f, 0.7f, 0.7f}, lamp);
+        }
+        // Defender lift hatches (BUG-029): a yellow-rimmed dark panel the
+        // fighters rise out of and sink back into. The rim is four strips
+        // around the panel, not a slab under it, and the panel is a plate
+        // BASE_DEFENDER_HATCH_THICK proud of the deck: with the 0.05 m near
+        // plane, surfaces a few cm apart z-fight from a couple of hundred
+        // metres. Beyond BASE_DEFENDER_HATCH_DRAW_DIST the hatches are a
+        // few pixels and would fight anyway, so they aren't drawn.
+        const float hcx = e.pos.x - camPos.x, hcz = e.pos.z - camPos.z;
+        const bool drawHatches =
+            hcx * hcx + hcz * hcz < Config::BASE_DEFENDER_HATCH_DRAW_DIST *
+                                        Config::BASE_DEFENDER_HATCH_DRAW_DIST;
+        Color hatchRim = {200, 170, 60, 255};
+        Color hatch = {38, 42, 48, 255};
+        const float hw = Config::BASE_DEFENDER_HATCH_W * 0.5f;
+        const float hl = Config::BASE_DEFENDER_HATCH_L * 0.5f;
+        const float rim = 0.3f, th = Config::BASE_DEFENDER_HATCH_THICK;
+        const float y = top + th * 0.5f;
+        for (int s = 0; drawHatches && s < Config::BASE_DEFENDER_LIFT_COUNT; ++s) {
+          Vector3 p = defenderLiftSpot(e, s);
+          DrawCubeV({p.x, y, p.z}, {2.0f * hw, th, 2.0f * hl}, hatch);
+          DrawCubeV({p.x, y, p.z + hl + rim * 0.5f}, {2.0f * (hw + rim), th, rim}, hatchRim);
+          DrawCubeV({p.x, y, p.z - hl - rim * 0.5f}, {2.0f * (hw + rim), th, rim}, hatchRim);
+          DrawCubeV({p.x + hw + rim * 0.5f, y, p.z}, {rim, th, 2.0f * hl}, hatchRim);
+          DrawCubeV({p.x - hw - rim * 0.5f, y, p.z}, {rim, th, 2.0f * hl}, hatchRim);
+        }
       }
-      // Defender lift hatches (BUG-029): a yellow-rimmed dark panel the
-      // fighters rise out of and sink back into. The rim is four strips
-      // around the panel, not a slab under it, and the panel is a plate
-      // BASE_DEFENDER_HATCH_THICK proud of the deck: with the 0.05 m near
-      // plane, surfaces a few cm apart z-fight from a couple of hundred
-      // metres. Beyond BASE_DEFENDER_HATCH_DRAW_DIST the hatches are a
-      // few pixels and would fight anyway, so they aren't drawn.
-      const float hcx = e.pos.x - camPos.x, hcz = e.pos.z - camPos.z;
-      const bool drawHatches =
-          hcx * hcx + hcz * hcz < Config::BASE_DEFENDER_HATCH_DRAW_DIST *
-                                      Config::BASE_DEFENDER_HATCH_DRAW_DIST;
-      Color hatchRim = {200, 170, 60, 255};
-      Color hatch = {38, 42, 48, 255};
-      const float hw = Config::BASE_DEFENDER_HATCH_W * 0.5f;
-      const float hl = Config::BASE_DEFENDER_HATCH_L * 0.5f;
-      const float rim = 0.3f, th = Config::BASE_DEFENDER_HATCH_THICK;
-      const float y = top + th * 0.5f;
-      for (int s = 0; drawHatches && s < Config::BASE_DEFENDER_LIFT_COUNT; ++s) {
-        Vector3 p = defenderLiftSpot(e, s);
-        DrawCubeV({p.x, y, p.z}, {2.0f * hw, th, 2.0f * hl}, hatch);
-        DrawCubeV({p.x, y, p.z + hl + rim * 0.5f}, {2.0f * (hw + rim), th, rim}, hatchRim);
-        DrawCubeV({p.x, y, p.z - hl - rim * 0.5f}, {2.0f * (hw + rim), th, rim}, hatchRim);
-        DrawCubeV({p.x + hw + rim * 0.5f, y, p.z}, {rim, th, 2.0f * hl}, hatchRim);
-        DrawCubeV({p.x - hw - rim * 0.5f, y, p.z}, {rim, th, 2.0f * hl}, hatchRim);
-      }
-    }
-    // Ramps — sloped wedges from the platform edge down to the ground.
-    {
-      const float L = Config::BASE_RAMP_LENGTH;
-      const float w = Config::BASE_RAMP_WIDTH * 0.5f;
-      // Each face is emitted in both windings: DrawTriangle3D is batched,
-      // so toggling backface culling around these calls doesn't survive
-      // to the flush and one winding gets culled.
-      auto tri2 = [](Vector3 a, Vector3 b, Vector3 c, Color col) {
-        DrawTriangle3D(a, b, c, col);
-        DrawTriangle3D(a, c, b, col);
-      };
-      for (int r = 0; r < 2; ++r) {
-        if (!(e.rampMask & (1u << r))) continue;
-        // Axis along the ramp (outward) and across it.
-        Vector3 out = (r == 0) ? Vector3{0, 0, -1} : Vector3{Config::BASE_EAST_SIGN, 0, 0};
-        Vector3 side = (r == 0) ? Vector3{1, 0, 0} : Vector3{0, 0, 1};
-        auto pt = [&](float along, float across, float y) {
-          return Vector3{e.pos.x + out.x * along + side.x * across, y,
-                         e.pos.z + out.z * along + side.z * across};
+      // Ramps — sloped wedges from the platform edge down to the ground.
+      {
+        const float L = Config::BASE_RAMP_LENGTH;
+        const float w = Config::BASE_RAMP_WIDTH * 0.5f;
+        // Each face is emitted in both windings: DrawTriangle3D is batched,
+        // so toggling backface culling around these calls doesn't survive
+        // to the flush and one winding gets culled.
+        auto tri2 = [](Vector3 a, Vector3 b, Vector3 c, Color col) {
+          DrawTriangle3D(a, b, c, col);
+          DrawTriangle3D(a, c, b, col);
         };
-        // The drawn slope carries on past the foot into the ground, so it
-        // crosses the terrain at an angle instead of meeting it flush
-        // (a flush foot z-fights). Collision uses the true ramp
-        // (surfaceHeightAt), which ends at the foot.
-        const float sink = Config::BASE_RAMP_DRAW_SINK;
-        const float Ld = L * (Config::BASE_PAD_HEIGHT + sink) / Config::BASE_PAD_HEIGHT;
-        Vector3 tA = pt(h, -w, top), tB = pt(h, w, top);
-        Vector3 fA = pt(h + Ld, -w, ground - sink), fB = pt(h + Ld, w, ground - sink);
-        Vector3 bA = pt(h, -w, ground - sink), bB = pt(h, w, ground - sink);
-        tri2(tA, fA, fB, slab);
-        tri2(tA, fB, tB, slab);
-        tri2(tA, bA, fA, slabSide);
-        tri2(tB, fB, bB, slabSide);
+        for (int r = 0; r < 2; ++r) {
+          if (!(e.rampMask & (1u << r))) continue;
+          // Axis along the ramp (outward) and across it.
+          Vector3 out = (r == 0) ? Vector3{0, 0, -1} : Vector3{Config::BASE_EAST_SIGN, 0, 0};
+          Vector3 side = (r == 0) ? Vector3{1, 0, 0} : Vector3{0, 0, 1};
+          auto pt = [&](float along, float across, float y) {
+            return Vector3{e.pos.x + out.x * along + side.x * across, y,
+                           e.pos.z + out.z * along + side.z * across};
+          };
+          // The drawn slope carries on past the foot into the ground, so it
+          // crosses the terrain at an angle instead of meeting it flush
+          // (a flush foot z-fights). Collision uses the true ramp
+          // (surfaceHeightAt), which ends at the foot.
+          const float sink = Config::BASE_RAMP_DRAW_SINK;
+          const float Ld = L * (Config::BASE_PAD_HEIGHT + sink) / Config::BASE_PAD_HEIGHT;
+          Vector3 tA = pt(h, -w, top), tB = pt(h, w, top);
+          Vector3 fA = pt(h + Ld, -w, ground - sink), fB = pt(h + Ld, w, ground - sink);
+          Vector3 bA = pt(h, -w, ground - sink), bB = pt(h, w, ground - sink);
+          tri2(tA, fA, fB, slab);
+          tri2(tA, fB, tB, slab);
+          tri2(tA, bA, fA, slabSide);
+          tri2(tB, fB, bB, slabSide);
+        }
       }
     }
 

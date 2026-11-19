@@ -65,6 +65,100 @@ def base_turret():
     return s, 5.0
 
 
+# ---------------------------------------------------------------- Base platform
+# Mirrors of Config values the platform bakes in. The game checks the
+# loaded model's size against Config and warns if they drift; change both
+# and regenerate.
+PAD_HALF = 18.0         # BASE_PAD_HALF_SIZE
+PAD_HEIGHT = 1.5        # BASE_PAD_HEIGHT
+PAD_BURY = 1.0          # slab runs this far below the levelled ground
+RAMP_LENGTH = 8.0       # BASE_RAMP_LENGTH
+RAMP_WIDTH = 8.0        # BASE_RAMP_WIDTH
+RAMP_SINK = 0.3         # BASE_RAMP_DRAW_SINK
+EAST_SIGN = -1.0        # BASE_EAST_SIGN (world +X is west)
+LIFT_SPOTS = [(-10.0, -10.0), (10.0, -10.0), (-11.0, 1.0)]  # BASE_DEFENDER_LIFT_SPOTS {east, north}
+HATCH_W, HATCH_L, HATCH_RIM = 4.5, 6.5, 0.3  # BASE_DEFENDER_HATCH_W / _L, rim
+
+
+def base_platform():
+    """Raised landing platform under every base, origin at the centre of
+    the deck (top at z = 0). The deck is one flat grid of faces: 6 m
+    tiles in two tones, a darker centre landing square and the three lift
+    hatches with yellow rims are all coplanar faces, never overlays, so
+    nothing z-fights. Sides carry a yellow/black hazard band. Corner lamps
+    stand on the deck. Ramps are base_ramp, drawn per base."""
+    s = Ship("base_platform")
+    h = PAD_HALF
+    hatches = []
+    for e, n in LIFT_SPOTS:
+        x, y = EAST_SIGN * e, n  # authoring x = world X, authoring y = world Z
+        hatches.append((x, y))
+    xs, ys = {-h, h}, {-h, h}
+    for k in range(-3, 4):
+        xs.add(6.0 * k); ys.add(6.0 * k)
+    for x, y in hatches:
+        for d in (HATCH_W / 2, HATCH_W / 2 + HATCH_RIM):
+            xs.update((x - d, x + d))
+        for d in (HATCH_L / 2, HATCH_L / 2 + HATCH_RIM):
+            ys.update((y - d, y + d))
+    xs, ys = sorted(xs), sorted(ys)
+    def colour(cx, cy):
+        for x, y in hatches:
+            dx, dy = abs(cx - x), abs(cy - y)
+            if dx < HATCH_W / 2 and dy < HATCH_L / 2:
+                return 22
+            if dx < HATCH_W / 2 + HATCH_RIM and dy < HATCH_L / 2 + HATCH_RIM:
+                return 17
+        if abs(cx) < 6 and abs(cy) < 6:
+            return 21
+        return 30 if (int((cx + h) // 6) + int((cy + h) // 6)) % 2 == 0 else 8
+    for i in range(len(xs) - 1):
+        for j in range(len(ys) - 1):
+            x0, x1, y0, y1 = xs[i], xs[i + 1], ys[j], ys[j + 1]
+            c = colour((x0 + x1) / 2, (y0 + y1) / 2)
+            s.face([s.vert(x0, y0, 0), s.vert(x1, y0, 0), s.vert(x1, y1, 0), s.vert(x0, y1, 0)],
+                   c, (0, 0, -1))
+    # sides: hazard band (2 m yellow/black segments) over concrete
+    bot = -(PAD_HEIGHT + PAD_BURY)
+    band = -0.4
+    for side in range(4):
+        for k in range(18):
+            a, b = -h + 2 * k, -h + 2 * (k + 1)
+            def pt(t, z):
+                return {0: (t, -h, z), 1: (h, t, z), 2: (t, h, z), 3: (-h, t, z)}[side]
+            cband = 17 if k % 2 == 0 else 0
+            s.face([s.vert(*pt(a, 0)), s.vert(*pt(b, 0)), s.vert(*pt(b, band)), s.vert(*pt(a, band))],
+                   cband, (0, 0, band / 2))
+            s.face([s.vert(*pt(a, band)), s.vert(*pt(b, band)), s.vert(*pt(b, bot)), s.vert(*pt(a, bot))],
+                   21, (0, 0, (band + bot) / 2))
+    # corner lamps
+    for sx in (1, -1):
+        for sy in (1, -1):
+            x, y = sx * (h - 1), sy * (h - 1)
+            s.block((x - 0.35, x + 0.35, y - 0.35, y + 0.35, 0.0),
+                    (x - 0.3, x + 0.3, y - 0.3, y + 0.3, 0.7), 17)
+    return s, 40.0
+
+
+def base_ramp():
+    """One platform ramp, on the south side (-y, world -Z), origin at the
+    platform deck centre so it is drawn at the platform's position; the
+    game turns a copy to face east. Its slope carries on RAMP_SINK below
+    the ground so it crosses the terrain at an angle (a flush foot
+    z-fights); collision uses the true ramp, which ends at the foot."""
+    s = Ship("base_ramp")
+    h, w = PAD_HALF, RAMP_WIDTH / 2
+    drop = PAD_HEIGHT + RAMP_SINK
+    run = RAMP_LENGTH * drop / PAD_HEIGHT
+    tA, tB = s.vert(-w, -h, 0), s.vert(w, -h, 0)
+    fA, fB = s.vert(-w, -h - run, -drop), s.vert(w, -h - run, -drop)
+    bA, bB = s.vert(-w, -h, -drop), s.vert(w, -h, -drop)
+    s.face([tA, tB, fB, fA], 30, (0, -h - run / 2, -10))
+    s.face([tA, fA, bA], 21, (10, -h, -drop / 2))
+    s.face([tB, bB, fB], 21, (-10, -h, -drop / 2))
+    return s, 14.0
+
+
 def base_turret_guns():
     """The turret's elevating guns: a mantlet and twin barrels with yellow
     muzzles. Origin on the elevation hinge; the game places it at
@@ -213,7 +307,8 @@ def lander():
     return s, 20.0
 
 
-SHIPS = {"base": base, "base_turret": base_turret,
+SHIPS = {"base": base, "base_platform": base_platform, "base_ramp": base_ramp,
+         "base_turret": base_turret,
          "base_turret_guns": base_turret_guns, "collector": collector,
          "collector_cab_empty": collector_cab_empty,
          "collector_cab_loaded": collector_cab_loaded,
@@ -229,6 +324,22 @@ base_turret.obj — see EntityManager::renderEnemy (Base); nothing here
 rises above y = 4.6 so the rotating barrels stay clear. Local frame: +Z forward.
 c30 plinth/roof, c08 shaft/pedestal, c17 stripes, c15 cab, c10 glazing,
 c02 lamps, c00 pedestal top.""",
+"base_platform": """terra-siege base platform — raised landing apron under every base.
+36 m square slab, deck at y = 0 (the origin), sides down to y = -2.5
+(1 m below the levelled ground). The deck is a flat grid of coplanar
+faces: two-tone 6 m tiles, a dark centre landing square, and three
+defender lift hatches with yellow rims. Yellow/black hazard band round
+the sides; corner lamps on the deck. {verts} verts, {tris} tris.
+Bakes BASE_PAD_HALF_SIZE, BASE_PAD_HEIGHT, BASE_DEFENDER_LIFT_SPOTS and the
+hatch sizes — the game warns at load if its size drifts from Config.
+Drawn at the base position, unrotated. c30/c08 tiles, c21 centre square
+and sides, c22 hatches, c17 rims/band/lamps, c00 band.""",
+"base_ramp": """terra-siege base ramp — one platform ramp, south side.
+Sloped deck from the platform edge down past the ground, with side
+wedges. {verts} verts, {tris} tris. Origin at the platform deck centre;
+drawn at the base position, and turned 90 degrees for the east ramp.
+Bakes BASE_PAD_HALF_SIZE, BASE_PAD_HEIGHT, BASE_RAMP_LENGTH / _WIDTH and
+BASE_RAMP_DRAW_SINK. c30 deck, c21 sides.""",
 "base_turret": """terra-siege base turret housing — rotating mount on the control tower.
 Octagonal rust-red housing on a dark collar, trunnion brackets and a
 sensor pod. {verts} verts, {tris} tris. The guns are base_turret_guns.

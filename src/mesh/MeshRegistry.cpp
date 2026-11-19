@@ -94,12 +94,18 @@ void MeshRegistry::loadAll(const std::filesystem::path &meshesDir) {
   m_turretLoaded = loadInto("base_turret.obj", m_turretModel);
   m_gunsLoaded = loadInto("base_turret_guns.obj", m_gunsModel);
   m_dishLoaded = loadInto("radar_booster_dish.obj", m_dishModel);
-  static const char *const kPropFiles[kPropCount] = {"bolt.obj", "orb.obj",
-                                                     "depth_charge.obj"};
+  static const char *const kPropFiles[kPropCount] = {
+      "bolt.obj", "orb.obj", "depth_charge.obj", "base_platform.obj",
+      "base_ramp.obj"};
   for (int i = 0; i < kPropCount; ++i)
     m_propLoaded[i] = loadInto(kPropFiles[i], m_propModel[i]);
   m_cabLoaded[0] = loadInto("collector_cab_empty.obj", m_cabModel[0]);
   m_cabLoaded[1] = loadInto("collector_cab_loaded.obj", m_cabModel[1]);
+}
+
+BoundingBox MeshRegistry::propBounds(Prop p) const {
+  const int i = static_cast<int>(p);
+  return m_propLoaded[i] ? GetModelBoundingBox(m_propModel[i]) : BoundingBox{};
 }
 
 void MeshRegistry::drawProp(Prop p, Vector3 position, Vector3 dir,

@@ -77,11 +77,14 @@ public:
   void drawBaseTurretGuns(Vector3 pivotPos, float yawRad, float pitchRad,
                           float scale) const;
 
-  // Projectile models. Bolt and Orb are white/light grey, tinted per
-  // shot (and drawn again larger with a translucent tint as the glow);
-  // the depth charge carries its own colours.
-  enum class Prop : uint8_t { Bolt, Orb, DepthCharge, Count };
+  // Models with no entity type of their own. Projectiles: Bolt and Orb
+  // are white/light grey, tinted per shot (and drawn again larger with a
+  // translucent tint as the glow); the depth charge carries its own
+  // colours. Base parts: the platform and one ramp (turned per side).
+  enum class Prop : uint8_t { Bolt, Orb, DepthCharge, BasePlatform, BaseRamp, Count };
   bool hasProp(Prop p) const { return m_propLoaded[static_cast<int>(p)]; }
+  // Model-space bounds, for checking baked-in sizes against Config.
+  BoundingBox propBounds(Prop p) const;
   // Scaled per local axis, then +Z turned onto dir (zero dir = upright,
   // unrotated).
   void drawProp(Prop p, Vector3 position, Vector3 dir, Vector3 scale,

@@ -168,6 +168,35 @@ static void recordSample(const Camera3D &cam, const Player &player,
 }
 #endif
 
+// The base platform and ramp models bake in Config sizes (pad size and
+// height, ramp length and width). Warn if they have drifted apart, so a
+// retune is regenerated rather than silently mismatching the collision
+// surface (surfaceHeightAt).
+void GameState::checkBasePartSizes() const {
+  using Prop = tsmesh::MeshRegistry::Prop;
+  auto near = [](float a, float b) { return fabsf(a - b) < 0.05f; };
+  if (m_meshRegistry.hasProp(Prop::BasePlatform)) {
+    BoundingBox b = m_meshRegistry.propBounds(Prop::BasePlatform);
+    if (!near(b.max.x, Config::BASE_PAD_HALF_SIZE) ||
+        !near(b.max.z, Config::BASE_PAD_HALF_SIZE) ||
+        !near(b.min.y, -Config::BASE_PAD_HEIGHT - 1.0f))
+      TraceLog(LOG_WARNING,
+               "base_platform.obj does not match BASE_PAD_HALF_SIZE / "
+               "BASE_PAD_HEIGHT; regenerate it (scripts/meshgen)");
+  }
+  if (m_meshRegistry.hasProp(Prop::BaseRamp)) {
+    BoundingBox b = m_meshRegistry.propBounds(Prop::BaseRamp);
+    const float drop = Config::BASE_PAD_HEIGHT + Config::BASE_RAMP_DRAW_SINK;
+    const float run = Config::BASE_RAMP_LENGTH * drop / Config::BASE_PAD_HEIGHT;
+    if (!near(b.max.x, Config::BASE_RAMP_WIDTH * 0.5f) ||
+        !near(b.min.z, -Config::BASE_PAD_HALF_SIZE - run) ||
+        !near(b.min.y, -drop))
+      TraceLog(LOG_WARNING,
+               "base_ramp.obj does not match the BASE_RAMP_* / BASE_PAD_* "
+               "constants; regenerate it (scripts/meshgen)");
+  }
+}
+
 // ================================================================
 // init
 // ================================================================
@@ -184,6 +213,7 @@ void GameState::init() {
   m_meshRegistry.loadAll(meshesDir);
   // Trees and boulders, drawn instanced by Decorations.
   m_decorations.loadModels(meshesDir);
+  checkBasePartSizes();
   // F.2 — sidecar profiles are loaded in lockstep. EntityManager
   // pulls hull/shield numbers from here when a sidecar exists,
   // falling back to Config::* defaults when one is absent.
