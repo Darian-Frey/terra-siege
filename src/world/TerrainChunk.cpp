@@ -1,5 +1,6 @@
 #include "TerrainChunk.hpp"
 #include "FieldMap.hpp"
+#include "Roads.hpp"
 #include <cmath>
 #include <cstring>
 #include <vector>
@@ -15,6 +16,10 @@ static constexpr Color kFieldTints[] = {
     {100, 155, 65, 255}, {84, 140, 56, 255},  {118, 166, 70, 255},
     {140, 165, 72, 255}, {178, 160, 84, 255}, {128, 104, 70, 255}};
 static_assert(sizeof(kFieldTints) / sizeof(kFieldTints[0]) == FieldMap::kTintCount);
+// Road surfaces by RoadNetwork::Class: asphalt main roads, lighter
+// tarmac lanes, gravel farm tracks.
+static constexpr Color kRoadColours[] = {
+    {72, 72, 76, 255}, {108, 106, 102, 255}, {150, 132, 100, 255}};
 
 Color TerrainChunk::landColor(float h, int fieldTint) const {
   // h is normalised [0,1]. Remap land portion (above SEA_LEVEL) to [0,1]
@@ -73,7 +78,8 @@ static Color applyLight(Color base, Vector3 normal, bool isWater) {
 // build
 // ================================================================
 void TerrainChunk::build(const Heightmap &hmap, const FieldMap *fields,
-                         int originX, int originZ, int cellsPerEdge) {
+                         const RoadNetwork *roads, int originX, int originZ,
+                         int cellsPerEdge) {
   if (m_built)
     unload();
 
@@ -91,6 +97,7 @@ void TerrainChunk::build(const Heightmap &hmap, const FieldMap *fields,
   cols.reserve(static_cast<size_t>(N) * N * 24);
   float cx = 0.0f, cz = 0.0f;
   std::vector<FieldMap::Piece> pieces;
+  std::vector<RoadNetwork::Piece> roadPieces;
 
   // World height: clamp anything below sea level to flat ocean surface
   auto worldH = [&](int x, int z) -> float {
@@ -166,33 +173,41 @@ void TerrainChunk::build(const Heightmap &hmap, const FieldMap *fields,
           writeVert(c, n, col);
           return;
         }
-        float landH = (avg - Config::SEA_LEVEL) / (1.0f - Config::SEA_LEVEL);
-        if (!fields || landH < Config::BIOME_SAND_MAX ||
-            landH >= Config::BIOME_GRASS_MAX) {
-          Color col = applyLight(landColor(avg), n, false);
-          writeVert(a, n, col);
-          writeVert(b, n, col);
-          writeVert(c, n, col);
-          return;
-        }
+        // Land: split along field edges (grass only), then along road
+        // edges; each piece takes its road, field or biome colour. The
+        // pieces stay in the triangle's plane.
+        const float landH = (avg - Config::SEA_LEVEL) / (1.0f - Config::SEA_LEVEL);
+        const bool grass = landH >= Config::BIOME_SAND_MAX && landH < Config::BIOME_GRASS_MAX;
         pieces.clear();
-        fields->clip({{a.x, a.z}, {b.x, b.z}, {c.x, c.z}}, pieces);
-        // Height on the triangle's plane, from barycentric weights.
+        if (fields && grass)
+          fields->clip({{a.x, a.z}, {b.x, b.z}, {c.x, c.z}}, pieces);
+        else
+          pieces.push_back({-1, {{a.x, a.z}, {b.x, b.z}, {c.x, c.z}}});
         const float det = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
         auto onPlane = [&](FieldMap::Point p) -> Vector3 {
           float wa = ((b.z - c.z) * (p.x - c.x) + (c.x - b.x) * (p.z - c.z)) / det;
           float wb = ((c.z - a.z) * (p.x - c.x) + (a.x - c.x) * (p.z - c.z)) / det;
           return {p.x, wa * a.y + wb * b.y + (1.0f - wa - wb) * c.y, p.z};
         };
-        for (const FieldMap::Piece &pc : pieces) {
-          int tint = fields->isFarmland(pc.field) ? fields->tint(pc.field) : -1;
-          Color col = applyLight(landColor(avg, tint), n, false);
-          Vector3 p0 = onPlane(pc.poly[0]);
-          for (size_t k = 1; k + 1 < pc.poly.size(); ++k) {
+        auto emitPoly = [&](const std::vector<FieldMap::Point> &poly, Color col) {
+          Vector3 p0 = onPlane(poly[0]);
+          for (size_t k = 1; k + 1 < poly.size(); ++k) {
             writeVert(p0, n, col);
-            writeVert(onPlane(pc.poly[k]), n, col);
-            writeVert(onPlane(pc.poly[k + 1]), n, col);
+            writeVert(onPlane(poly[k]), n, col);
+            writeVert(onPlane(poly[k + 1]), n, col);
           }
+        };
+        for (const FieldMap::Piece &pc : pieces) {
+          const int tint = pc.field >= 0 && fields->isFarmland(pc.field) ? fields->tint(pc.field) : -1;
+          const Color land = applyLight(landColor(avg, tint), n, false);
+          if (!roads) {
+            emitPoly(pc.poly, land);
+            continue;
+          }
+          roadPieces.clear();
+          roads->classify(pc.poly, roadPieces);
+          for (const RoadNetwork::Piece &rp : roadPieces)
+            emitPoly(rp.poly, rp.cls >= 0 ? applyLight(kRoadColours[rp.cls], n, false) : land);
         }
       };
       emitTri(v00, v01, v10, dominantWater(hx, hz, hx, hz + 1, hx + 1, hz));

@@ -5,6 +5,7 @@
 #include "raylib.h"
 
 class FieldMap;
+class RoadNetwork;
 
 // ====================================================================
 // TerrainChunk
@@ -17,9 +18,10 @@ public:
   TerrainChunk() = default;
   ~TerrainChunk() = default;
 
-  // fields (optional) tints farmland quads in the grass band.
-  void build(const Heightmap &hmap, const FieldMap *fields, int originX,
-             int originZ, int cellsPerEdge);
+  // fields (optional) tints farmland in the grass band; roads (optional)
+  // are cut into the terrain as their own coloured pieces.
+  void build(const Heightmap &hmap, const FieldMap *fields, const RoadNetwork *roads,
+             int originX, int originZ, int cellsPerEdge);
   // Draw at a world-space offset. Planet picks the tile offset closest to
   // the camera so the toroidal world appears infinite in every direction.
   void draw(Vector3 offset) const;

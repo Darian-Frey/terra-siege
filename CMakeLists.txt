@@ -107,6 +107,8 @@ set(GAME_SOURCES
     src/world/Decorations.cpp
     src/world/FieldMap.cpp
     src/world/Settlements.cpp
+    src/world/Roads.cpp
+    src/world/Roads.hpp
     src/world/Settlements.hpp
     src/world/FieldMap.hpp
     src/world/Decorations.hpp

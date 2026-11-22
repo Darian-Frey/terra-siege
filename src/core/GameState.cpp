@@ -323,6 +323,12 @@ void GameState::loadWorld(uint32_t seed) {
            m_planet.settlements().count(SettlementSite::Kind::Town),
            m_planet.settlements().count(SettlementSite::Kind::Village),
            m_planet.settlements().count(SettlementSite::Kind::Farm));
+  TraceLog(LOG_INFO, "Roads: %zu routes, %.1f km main, %.1f km lanes, %.1f km tracks, %d unconnected",
+           m_planet.roads().roads().size(),
+           m_planet.roads().length(RoadNetwork::Class::Main) / 1000.0f,
+           m_planet.roads().length(RoadNetwork::Class::Lane) / 1000.0f,
+           m_planet.roads().length(RoadNetwork::Class::Track) / 1000.0f,
+           m_planet.roads().unconnected());
   drawLoadingScreen("Planting forests", 0.76f);
   m_decorations.generate(m_planet, seed);
   m_particles.clear();

@@ -8,12 +8,15 @@ void Planet::generate(uint32_t seed, ProgressCb cb) {
   // ---- Heightmap phase (0% → 40%) ----
   if (cb) cb("Generating heightmap", 0.0f);
   m_heightmap.generate(Config::HEIGHTMAP_SIZE, seed);
+  // ---- Settlements and roads (0.40 → 0.50) ----
   if (cb) cb("Choosing settlement sites", 0.4f);
   m_settlements.generate(m_heightmap, seed);
+  m_roads.generate(m_heightmap, m_settlements, seed, [&](const char *step, float p) {
+    if (cb) cb(step, 0.4f + 0.1f * p);
+  });
   m_fields.generate(m_heightmap, seed);
-  if (cb) cb("Heightmap complete, meshing terrain", 0.4f);
 
-  // ---- Chunk phase (40% → 100%) ----
+  // ---- Chunk phase (50% → 100%) ----
   const int chunksPerEdge = Config::CHUNK_COUNT;
   const int cellsPerChunk = (Config::HEIGHTMAP_SIZE - 1) / chunksPerEdge;
   const int totalChunks = chunksPerEdge * chunksPerEdge;
@@ -26,12 +29,12 @@ void Planet::generate(uint32_t seed, ProgressCb cb) {
       int originX = cx * cellsPerChunk;
       int originZ = cz * cellsPerChunk;
       int idx = cz * chunksPerEdge + cx;
-      m_chunks[static_cast<size_t>(idx)].build(m_heightmap, &m_fields, originX,
-                                               originZ, cellsPerChunk);
+      m_chunks[static_cast<size_t>(idx)].build(m_heightmap, &m_fields, &m_roads,
+                                               originX, originZ, cellsPerChunk);
       ++done;
       if (cb)
         cb("Building terrain chunks",
-           0.4f + 0.6f * static_cast<float>(done) /
+           0.5f + 0.5f * static_cast<float>(done) /
                       static_cast<float>(totalChunks));
     }
   }
@@ -86,8 +89,8 @@ float Planet::flattenPad(float worldX, float worldZ, float halfSize,
       int wx = ((cx % chunksPerEdge) + chunksPerEdge) % chunksPerEdge;
       int wz = ((cz % chunksPerEdge) + chunksPerEdge) % chunksPerEdge;
       m_chunks[static_cast<size_t>(wz * chunksPerEdge + wx)].build(
-          m_heightmap, &m_fields, wx * cellsPerChunk, wz * cellsPerChunk,
-          cellsPerChunk);
+          m_heightmap, &m_fields, &m_roads, wx * cellsPerChunk,
+          wz * cellsPerChunk, cellsPerChunk);
     }
   }
   return h;

@@ -1026,6 +1026,29 @@ constexpr float FARM_MAX_RISE = 5.0f;          // m; TUNE
 constexpr float FARM_MIN_SPACING = 230.0f;     // m between farmsteads; TUNE
 constexpr float FARM_GAP = 120.0f;             // m from a town or village edge
 constexpr float FARM_CANDIDATE_STEP = 32.0f;   // m
+// Road network (RoadNetwork, R.2). A* on a ROAD_GRID_STEP grid: a step
+// costs its length × (1 + GRADE_COST·grade² + HEIGHT_COST·landH), times
+// STEEP_PENALTY past MAX_GRADE, times REUSE_FACTOR on existing road (so
+// routes merge). Nodes within WATER_CLEARANCE of water are impassable.
+constexpr float ROAD_GRID_STEP = 16.0f;        // m
+constexpr float ROAD_WATER_CLEARANCE = 14.0f;  // m from any water
+constexpr float ROAD_GRADE_COST = 60.0f;       // TUNE
+constexpr float ROAD_HEIGHT_COST = 0.6f;       // TUNE — prefer valleys
+constexpr float ROAD_MAX_GRADE = 0.18f;        // rise/run before the penalty; TUNE
+constexpr float ROAD_STEEP_PENALTY = 8.0f;     // TUNE
+constexpr float ROAD_REUSE_FACTOR = 0.4f;      // TUNE
+// Smooth cost variation so routes wander over open ground: step cost ×
+// (1 + WOBBLE·noise), noise on a WOBBLE_PERIOD lattice (~200 m blobs).
+constexpr float ROAD_WOBBLE = 0.6f;            // TUNE
+constexpr int ROAD_WOBBLE_PERIOD = 40;
+constexpr int ROAD_EXTRA_TOWN_LINKS = 2;       // main-road loops beyond the spanning tree; TUNE
+constexpr float FARM_TRACK_MAX_COST = 8000.0f; // search budget for a farm track (≈ m); TUNE
+constexpr float ROAD_SIMPLIFY_TOL = 1.0f;      // m, after smoothing
+constexpr float ROAD_MAIN_WIDTH = 7.0f;        // m
+constexpr float ROAD_LANE_WIDTH = 4.5f;        // m
+constexpr float ROAD_TRACK_WIDTH = 3.0f;       // m
+constexpr float ROAD_INDEX_CELL = 64.0f;       // m, spatial index for terrain clipping
+
 // Bases and radar towers keep this far outside any settlement footprint.
 constexpr float SETTLEMENT_BASE_CLEARANCE = 60.0f; // m
 constexpr float SETTLEMENT_OVERLAY_RANGE = 3000.0f; // m, DEV F8 overlay draw range

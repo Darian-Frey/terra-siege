@@ -1,6 +1,6 @@
 # Roads, Villages and Towns — Roadmap
 
-**Status:** In progress. R.1 complete (2026-11-22); R.2 next. Phases are tracked by [F-048](../FEATURES.md#f-048-settlement-sites-and-road-network) for R.1–R.3; later phases get their own feature IDs when they start.
+**Status:** In progress. R.1 and R.2 complete (2026-11-22); R.3 next. Phases are tracked by [F-048](../FEATURES.md#f-048-settlement-sites-and-road-network) for R.1–R.3; later phases get their own feature IDs when they start.
 **Track:** New "Settlements" track, to sit beside the Engine, Features and Tooling tracks in [ROADMAP.md](../ROADMAP.md).
 **Builds on:** the farmland patchwork and forest mask ([D-035](../DECISIONS.md#d-035-farmland-patchwork-from-an-angled-bsp-shared-by-terrain-and-decorations)), instanced scenery and stand models ([D-034](../DECISIONS.md#d-034-trees-and-rocks-are-obj-models-drawn-with-gpu-instancing), [D-036](../DECISIONS.md#d-036-multi-plant-stand-models-cut-the-scenery-instance-count)), and the water surface ([D-038](../DECISIONS.md#d-038-water-is-not-ground-planetsurfaceat-for-anything-above-it)).
 
@@ -291,6 +291,8 @@ Each phase ends playable, and gets its docs (FEATURES, DECISIONS, CHANGELOG) in 
 - load time stays reasonable; record the measured figure here
 **Assets:** road surface colours (5.1).
 **Risks:** routing cost on a 1024² grid (keep it bounded and cached); the extra terrain triangles from clipping.
+**Status:** Complete (2026-11-22). `world/Roads` ([D-039](../DECISIONS.md#d-039-road-network-a-on-a-wrapped-grid-roads-cut-into-the-terrain)). On the default world: 206 routes, 26 km of main road, 18 km of lanes and 49 km of tracks, every settlement connected. Seed 99999 leaves one island farmstead unconnected until bridges (R.6). Roads never touch water (sampled every 2 m). Routing takes about 0.1 s in an optimised build. The whole startup load rose from 7.6 s to 10.1 s in the Debug build, mostly from checking every land triangle against the road index; skipping chunks with no road nearby is the obvious speed-up if it matters. A smooth cost variation (`ROAD_WOBBLE`) stops routes running dead straight along the grid's eight directions.
+**Playtest note for R.3:** roads look right, but field boundaries don't yet match them where they meet. In code order the field map is already generated after the roads, so R.3 can feed road segments straight into the BSP.
 
 ### R.3 — Fields and scenery follow roads (M)
 

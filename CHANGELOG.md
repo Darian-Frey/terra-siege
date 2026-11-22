@@ -10,6 +10,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 ## [Unreleased]
 
 ### Added
+- Road network (F-048, Settlements track R.2): main roads join the towns, lanes the villages and gravel tracks the farmsteads, routed over the terrain round water and steep ground. Roads are cut into the terrain mesh, so they don't flicker ([D-039](DECISIONS.md#d-039-road-network-a-on-a-wrapped-grid-roads-cut-into-the-terrain))
 - Settlement sites (F-048, Settlements track R.1): each world picks up to 4 towns, 22 villages and 180 farmsteads on gentle, dry grassland, spaced apart, with towns near water. Bases and radar towers keep clear of them. DEV: F8 overlay, and F6 also writes a site map. Roads and buildings follow in later phases
 - The player's craft trails damage smoke below half hull, like the enemy ships, until it is repaired on a landing pad (F-017)
 - Hazardous water (F-047): touching sea or lake water damages the hull and drags the craft, and it can't be landed on. The HUD flashes IN WATER. AI flyers stay above the water, tanks and Collectors steer away from it, and any ship that ends up in it takes damage ([D-038](DECISIONS.md#d-038-water-is-not-ground-planetsurfaceat-for-anything-above-it))

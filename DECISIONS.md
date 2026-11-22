@@ -1137,3 +1137,35 @@ Undo is held at inspector level as full-mesh snapshots (32 deep) and is shared a
 
 **Reversal conditions.** Revisit if water becomes navigable (boats, amphibious units), or if lakes gain their own surface level separate from the terrain.
 
+### D-039 Road network: A* on a wrapped grid, roads cut into the terrain
+
+**Decided:** 2026-11-22
+**Recorded:** 2026-11-22
+**Status:** Accepted
+**Authors:** Shane Hartley (with Claude Code)
+**Related:** D-007, D-035, D-038, F-048
+
+**Context.** Settlement sites (R.1) need joining by roads that avoid water, follow the land, connect every settlement and draw cleanly on the flat-shaded terrain ([project-status/ROAD_VILLAGE_TOWN_ROADMAP.md](project-status/ROAD_VILLAGE_TOWN_ROADMAP.md) R.2).
+
+**Options.**
+
+- **A. Straight lines between sites.** Rejected: they cross water and climb straight over ridges.
+- **B. Road meshes or decals over the terrain.** Rejected: overlays z-fight at distance (compare BUG-029), and meshes must follow every terrain triangle anyway.
+- **C. Route over the heightmap; cut roads into the terrain mesh.** Chosen.
+
+**Decision.**
+
+- `world/Roads` (`RoadNetwork`), owned by `Planet`, is generated after the settlement sites and before the field map. Generation order is now heightmap, settlements, roads, fields, chunks.
+- A* runs on a `ROAD_GRID_STEP` grid that wraps with the world. Step cost rises with grade and height and varies smoothly (`ROAD_WOBBLE`) so routes wander. It is cut on existing road (`ROAD_REUSE_FACTOR`) so routes merge. Nodes within `ROAD_WATER_CLEARANCE` of water are impassable.
+- Main roads join the towns: a spanning tree per land mass plus `ROAD_EXTRA_TOWN_LINKS`. Lanes join each village to the nearest connected settlement and stop where they meet road. Tracks join each farmstead to the nearest road. Settlements the search can't reach (islands) are counted, not forced.
+- Paths are smoothed (Chaikin), simplified, and kept in unwrapped coordinates. A smoothed road that would cut a corner into water falls back to its grid path.
+- For drawing, each segment becomes a quad and each vertex an octagon. `TerrainChunk` splits land triangles against them (through a spatial index) and colours the road pieces. Roads are part of the terrain mesh, so they can't z-fight; the wider class wins where roads overlap.
+
+**Consequences.**
+
+- About 90 km of road per world, every main-landmass settlement connected, never touching water. Routing takes about 0.1 s; the per-triangle road check adds a few seconds to a Debug-build load.
+- Roads are flat terrain colouring: no grading yet, so a road on a side slope tilts with the ground.
+- The field map doesn't follow roads yet. R.3 feeds road segments into the BSP as forced cuts, revising [D-035](#d-035-farmland-patchwork-from-an-angled-bsp-shared-by-terrain-and-decorations).
+
+**Reversal conditions.** Revisit if roads need grading or embankments, bridges (R.6) need routing across water, or chunks are rebuilt at run time often enough for the clipping cost to matter.
+

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "FieldMap.hpp"
+#include "Roads.hpp"
 #include "Settlements.hpp"
 #include "Heightmap.hpp"
 #include "TerrainChunk.hpp"
@@ -57,6 +58,8 @@ public:
   const FieldMap &fields() const { return m_fields; }
   // Town, village and farmstead sites, fixed at generate().
   const Settlements &settlements() const { return m_settlements; }
+  // Roads joining the settlements, fixed at generate().
+  const RoadNetwork &roads() const { return m_roads; }
 
   // Top of whatever is underfoot: the terrain, or the sea surface where
   // the terrain is below sea level (lake water lies on the terrain).
@@ -80,6 +83,7 @@ private:
   Heightmap m_heightmap;
   FieldMap m_fields;
   Settlements m_settlements;
+  RoadNetwork m_roads;
   std::vector<TerrainChunk> m_chunks;
   bool m_ready = false;
 };
