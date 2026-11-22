@@ -1,6 +1,6 @@
 # Roads, Villages and Towns — Roadmap
 
-**Status:** In progress. R.1–R.5 complete (2026-11-22); R.6 (bridges, optional) or R.7 (towns) next. R.4–R.5 are tracked by [F-049](../FEATURES.md#f-049-villages-and-farmsteads). Phases are tracked by [F-048](../FEATURES.md#f-048-settlement-sites-and-road-network) for R.1–R.3; later phases get their own feature IDs when they start.
+**Status:** In progress. R.1–R.5 and R.7 complete (2026-11-22). R.6 (bridges) is optional; R.8 (settlement gameplay) waits on the section 4 decisions. R.4–R.5 are tracked by [F-049](../FEATURES.md#f-049-villages-and-farmsteads), R.7 by [F-050](../FEATURES.md#f-050-towns). Phases are tracked by [F-048](../FEATURES.md#f-048-settlement-sites-and-road-network) for R.1–R.3; later phases get their own feature IDs when they start.
 **Track:** New "Settlements" track, to sit beside the Engine, Features and Tooling tracks in [ROADMAP.md](../ROADMAP.md).
 **Builds on:** the farmland patchwork and forest mask ([D-035](../DECISIONS.md#d-035-farmland-patchwork-from-an-angled-bsp-shared-by-terrain-and-decorations)), instanced scenery and stand models ([D-034](../DECISIONS.md#d-034-trees-and-rocks-are-obj-models-drawn-with-gpu-instancing), [D-036](../DECISIONS.md#d-036-multi-plant-stand-models-cut-the-scenery-instance-count)), and the water surface ([D-038](../DECISIONS.md#d-038-water-is-not-ground-planetsurfaceat-for-anything-above-it)).
 
@@ -346,6 +346,7 @@ Each phase ends playable, and gets its docs (FEATURES, DECISIONS, CHANGELOG) in 
 - optionally, coastal props (5.6)
 **Acceptance:** towns read as towns from the air, the frame rate holds, and load time is recorded.
 **Assets:** 5.2, 5.5, optionally 5.6.
+**Status:** Complete (2026-11-22, [D-042](../DECISIONS.md#d-042-towns-street-grids-in-the-road-network-zoned-frontage)). Town streets are two new road classes, `Street` (a tilted grid aligned with the main road, cut at water and steep ground) and `Square` (a paved disc at the centre), so terrain colouring, field regions and scenery clearance apply automatically. Town hall, market hall and church face the square. Frontage is zoned by distance from the centre: shops, joined townhouses and offices; then townhouses, flats and terraces; then houses and an industrial quarter. A petrol station, lamps, parked cars, a phone box, a bus shelter and town-limit signs complete the streets. 26 new models from 5.2 and 5.5 (coastal 5.6 not done). Telegraph poles now line country lanes. Default world: 271 routes, 3,867 settlement pieces, load time unchanged at about 11 s (Debug).
 
 ### R.8 — Settlement gameplay (L, depends on section 4)
 

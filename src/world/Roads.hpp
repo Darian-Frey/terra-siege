@@ -24,6 +24,8 @@ class Settlements;
 //   * Lanes join each village to the nearest connected town or village,
 //     stopping where they meet existing road.
 //   * Tracks join each farmstead to the nearest road.
+//   * Streets (R.7): a rough grid round each town centre, aligned with
+//     the main road, plus a paved square at the centre.
 //
 // Grid paths are smoothed into polylines in unwrapped coordinates (a
 // road may run past the world edge). For drawing, each road becomes
@@ -34,7 +36,10 @@ class Settlements;
 class RoadNetwork {
 public:
   using Point = FieldMap::Point;
-  enum class Class : uint8_t { Main, Lane, Track };
+  // Street and Square are town streets (R.7): a rough grid round each
+  // town centre and a paved square (a single-point road, drawn as a disc).
+  enum class Class : uint8_t { Main, Lane, Track, Street, Square };
+  static float halfWidthOf(Class c);
   struct Road {
     Class cls;
     std::vector<Point> pts; // centre line, unwrapped world coordinates

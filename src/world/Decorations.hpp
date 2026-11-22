@@ -51,14 +51,19 @@ struct Decoration {
                // laid out by SettlementLayout; level, never sheared.
   };
   // Settlement models, in the Decorations building-slot order (from
-  // scripts/meshgen/settlements.py). The last three are 4 m boundary
-  // segments, stretched along their length like hedges.
+  // scripts/meshgen/settlements.py). Garden walls and the picket fence
+  // are 4 m boundary segments, stretched along their length like hedges.
   enum class BuildingModel : uint8_t {
     FarmhouseA, FarmhouseB, BarnA, BarnB, DutchBarn, GrainSilo, OutbuildingA, OutbuildingB,
     Greenhouse, Windmill, HayBalesA, HayBalesB, Tractor,
     CottageA, CottageB, CottageC, HouseA, HouseB, HouseC, TerraceRowA, TerraceRowB,
     ChurchA, ChurchB, Chapel, Pub, VillageShop, VillageHall, WarMemorial,
     GardenWallA, GardenWallB, PicketFence,
+    // Town set and street furniture (R.7).
+    TownhouseA, TownhouseB, TownhouseC, ShopRowA, ShopRowB, TownHall, MarketHall,
+    ApartmentBlockA, ApartmentBlockB, OfficeBlockA, OfficeBlockB, WarehouseA, WarehouseB,
+    Factory, Chimney, WaterTower, PetrolStation, ParkedCarA, ParkedCarB, ParkedCarC,
+    StreetLamp, TelegraphPole, RoadSign, Signpost, BusShelter, PhoneBox,
     Count
   };
 

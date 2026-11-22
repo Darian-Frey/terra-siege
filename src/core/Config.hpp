@@ -1047,6 +1047,16 @@ constexpr float ROAD_SIMPLIFY_TOL = 1.0f;      // m, after smoothing
 constexpr float ROAD_MAIN_WIDTH = 7.0f;        // m
 constexpr float ROAD_LANE_WIDTH = 4.5f;        // m
 constexpr float ROAD_TRACK_WIDTH = 3.0f;       // m
+constexpr float ROAD_STREET_WIDTH = 6.0f;      // m, town streets (R.7)
+// Town streets: a grid TOWN_STREET_SPACING apart reaching
+// TOWN_STREET_REACH of the town radius, each line tilted up to
+// TOWN_STREET_TILT and cut where the ground gets steeper than
+// TOWN_STREET_MAX_GRADE; a paved square of TOWN_SQUARE_RADIUS at the centre.
+constexpr float TOWN_STREET_SPACING = 56.0f;   // m; TUNE
+constexpr float TOWN_STREET_REACH = 0.95f;     // TUNE
+constexpr float TOWN_STREET_TILT = 0.09f;      // rad; TUNE
+constexpr float TOWN_STREET_MAX_GRADE = 0.16f; // TUNE
+constexpr float TOWN_SQUARE_RADIUS = 22.0f;    // m
 constexpr float ROAD_INDEX_CELL = 64.0f;       // m, spatial index for terrain clipping
 // Scenery clearance from road edges (R.3).
 constexpr float ROAD_TREE_CLEARANCE = 2.5f;    // m, trees (plus the stand radius for groves/copses)
@@ -1075,6 +1085,20 @@ constexpr float FRONTAGE_GAP_MAX = 5.0f;        // TUNE
 constexpr float FRONTAGE_BOUNDARY_OFFSET = 1.0f; // m from road edge to a front-garden wall
 constexpr float FARM_WINDMILL_CHANCE = 0.05f;   // TUNE
 constexpr float SCENERY_BUILDING_CLEARANCE = 1.5f; // m trees, hedges and rocks keep from buildings
+// Towns (R.7): zones by distance from the centre as a fraction of the
+// town radius (core: shops, townhouses, offices; mid: townhouses, flats,
+// terraces; edge: houses, plus an industrial quarter within
+// TOWN_INDUSTRY_HALF_ANGLE of a random bearing).
+constexpr int TOWN_MAX_BUILDINGS = 240;        // frontage buildings per town; TUNE
+constexpr float TOWN_CORE_FRAC = 0.35f;        // TUNE
+constexpr float TOWN_MID_FRAC = 0.7f;          // TUNE
+constexpr float TOWN_INDUSTRY_HALF_ANGLE = 0.9f; // rad; TUNE
+constexpr float TOWN_LAMP_SPACING = 24.0f;     // m along streets, alternating sides; TUNE
+constexpr float TOWN_CAR_SPACING = 9.0f;       // m between parked-car chances; TUNE
+constexpr float TOWN_CAR_CHANCE = 0.3f;        // TUNE
+constexpr float FURNITURE_ROAD_CLEARANCE = 0.2f; // m, lamps, signs, poles
+constexpr float TELEGRAPH_POLE_SPACING = 45.0f;  // m along country lanes; TUNE
+constexpr float TELEGRAPH_POLE_OFFSET = 2.2f;    // m beyond the lane edge
 
 // Bases and radar towers keep this far outside any settlement footprint.
 constexpr float SETTLEMENT_BASE_CLEARANCE = 60.0f; // m

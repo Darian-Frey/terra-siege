@@ -54,13 +54,6 @@ void splitByLine(const Poly &p, Point a, Point b, Poly &in, Poly &out) {
   if (out.size() < 3 || fabsf(area2(out)) < 1e-4f) out.clear();
 }
 
-float halfWidth(RoadNetwork::Class c) {
-  switch (c) {
-  case RoadNetwork::Class::Main: return 0.5f * Config::ROAD_MAIN_WIDTH;
-  case RoadNetwork::Class::Lane: return 0.5f * Config::ROAD_LANE_WIDTH;
-  default: return 0.5f * Config::ROAD_TRACK_WIDTH;
-  }
-}
 
 // Chaikin corner cutting, endpoints kept.
 Poly chaikin(const Poly &p) {
@@ -109,6 +102,17 @@ Poly simplified(const Poly &p, float tol) {
 }
 
 } // namespace
+
+float RoadNetwork::halfWidthOf(Class c) {
+  switch (c) {
+  case Class::Main: return 0.5f * Config::ROAD_MAIN_WIDTH;
+  case Class::Lane: return 0.5f * Config::ROAD_LANE_WIDTH;
+  case Class::Track: return 0.5f * Config::ROAD_TRACK_WIDTH;
+  case Class::Street: return 0.5f * Config::ROAD_STREET_WIDTH;
+  case Class::Square: return Config::TOWN_SQUARE_RADIUS;
+  }
+  return 0.0f;
+}
 
 float RoadNetwork::length(Class c) const {
   float total = 0.0f;
@@ -384,6 +388,83 @@ void RoadNetwork::generate(const Heightmap &hmap, const Settlements &settlements
     for (size_t t : towns) connected[t] = connected[t] || compOf(t) >= 0;
   }
 
+  // ---- Town streets: a rough grid round each town centre ----
+  // Lines every TOWN_STREET_SPACING across and along the main road's
+  // direction near the centre, offset half a block so the main road is
+  // the high street; each line is cut where it meets water or steep
+  // ground. A paved square sits on the centre.
+  report("Laying out town streets", 0.4f);
+  for (size_t t : towns) {
+    const SettlementSite &site = sites[t];
+    if (node[t] < 0) continue;
+    // Axis: the nearest existing road's direction near the centre.
+    float ux = 1.0f, uz = 0.0f, best = 1e30f;
+    for (const Road &r : m_roads)
+      for (size_t i = 0; i + 1 < r.pts.size(); ++i) {
+        float dx = r.pts[i].x - site.x, dz = r.pts[i].z - site.z;
+        dx -= roundf(dx / ws) * ws;
+        dz -= roundf(dz / ws) * ws;
+        const float d2 = dx * dx + dz * dz;
+        const float ex = r.pts[i + 1].x - r.pts[i].x, ez = r.pts[i + 1].z - r.pts[i].z;
+        const float l = sqrtf(ex * ex + ez * ez);
+        if (d2 < best && l > 1.0f) {
+          best = d2;
+          ux = ex / l;
+          uz = ez / l;
+        }
+      }
+    const float vx = -uz, vz = ux;
+    const float R = Config::TOWN_STREET_REACH * site.radius, S = Config::TOWN_STREET_SPACING;
+    auto dryGentle = [&](float x, float z) {
+      const int i = idx(static_cast<int>(floorf(x / G)), static_cast<int>(floorf(z / G)));
+      return passable[i] != 0;
+    };
+    uint32_t h = static_cast<uint32_t>(t) * 2654435761u ^ seed;
+    auto jit = [&]() {
+      h ^= h << 13;
+      h ^= h >> 17;
+      h ^= h << 5;
+      return ((h & 0xffffu) / 65536.0f - 0.5f) * 2.0f;
+    };
+    for (int dirn = 0; dirn < 2; ++dirn) {
+      const float ax = dirn ? vx : ux, az = dirn ? vz : uz;   // along the line
+      const float px = dirn ? ux : vx, pz = dirn ? uz : vz;   // across the lines
+      const int n = static_cast<int>(R / S);
+      for (int k = -n; k < n; ++k) {
+        const float off = (k + 0.5f) * S;
+        if (fabsf(off) >= R) continue;
+        const float half = sqrtf(R * R - off * off);
+        const float tilt = jit() * Config::TOWN_STREET_TILT;
+        const float lx = ax * cosf(tilt) - az * sinf(tilt), lz = ax * sinf(tilt) + az * cosf(tilt);
+        Poly run;
+        float prevH = 0.0f;
+        auto flush = [&]() {
+          if (run.size() >= 3) {
+            m_roads.push_back({Class::Street, run});
+            for (const Point &q : run)
+              onRoad[idx(static_cast<int>(floorf(q.x / G)), static_cast<int>(floorf(q.z / G)))] = 1;
+          }
+          run.clear();
+        };
+        for (float s = -half; s <= half; s += 8.0f) {
+          const float x = site.x + px * off + lx * s, z = site.z + pz * off + lz * s;
+          const float hh = hmap.get(static_cast<int>(lroundf(x / Config::TERRAIN_SCALE)),
+                                    static_cast<int>(lroundf(z / Config::TERRAIN_SCALE))) * hm;
+          const bool ok = dryGentle(x, z) &&
+                          (run.empty() || fabsf(hh - prevH) / 8.0f < Config::TOWN_STREET_MAX_GRADE);
+          if (!ok) {
+            flush();
+            continue;
+          }
+          run.push_back({x, z});
+          prevH = hh;
+        }
+        flush();
+      }
+    }
+    if (passable[node[t]]) m_roads.push_back({Class::Square, {{site.x, site.z}}});
+  }
+
   // ---- Lanes: each village to the nearest connected settlement on its
   // land mass, nearest-to-the-network first, cut where they meet road ----
   std::sort(villages.begin(), villages.end(), [&](size_t a, size_t b) {
@@ -579,7 +660,7 @@ void RoadNetwork::buildShapes() {
   m_index.assign(static_cast<size_t>(m_indexN) * m_indexN, {});
   m_segIndex.assign(static_cast<size_t>(m_indexN) * m_indexN, {});
   for (const Road &r : m_roads) {
-    const float w = halfWidth(r.cls);
+    const float w = halfWidthOf(r.cls);
     const int cls = static_cast<int>(r.cls);
     for (size_t i = 0; i + 1 < r.pts.size(); ++i) {
       const Point a = r.pts[i], b = r.pts[i + 1];
@@ -590,6 +671,7 @@ void RoadNetwork::buildShapes() {
       addShape(cls, {{a.x + nx, a.z + nz}, {b.x + nx, b.z + nz}, {b.x - nx, b.z - nz}, {a.x - nx, a.z - nz}});
       addSegment({a, b, w});
     }
+    if (r.pts.size() == 1) addSegment({r.pts[0], r.pts[0], w}); // a square: a disc
     // Octagons at every vertex fill the wedge at bends and round the ends.
     for (const Point &p : r.pts) {
       Poly oct;

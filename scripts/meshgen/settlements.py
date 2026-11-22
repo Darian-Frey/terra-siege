@@ -549,6 +549,352 @@ def picket_fence():
     return s, 6.0
 
 
+# ---------------------------------------------------------------- town set
+def _flat_roof(s, w, d, h, col, x0=0.0, y0=0.0, parapet=0.5):
+    """Flat roof with a low parapet round it."""
+    s.block((x0 - w / 2, x0 + w / 2, y0 - d / 2, y0 + d / 2, h),
+            (x0 - w / 2, x0 + w / 2, y0 - d / 2, y0 + d / 2, h + parapet), col)
+
+
+def _townhouse(name, wall, roof):
+    """Three-storey terraced townhouse, 6 m wide: a street segment whose
+    side walls meet its neighbours, ridge along the street."""
+    s = Ship(name)
+    w, d, h = 6.0, 10.0, 8.6
+    _walls(s, w, d, h, wall)
+    _gable(s, w, d, h, 2.6, roof, wall, over=0.0)
+    _chimney(s, w / 2 - 0.4, 0.0, h + 1.2, h + 3.4, col=4, size=0.8)
+    for z in (3.2, 6.0):
+        _row(s, "front", 2, w - 1.6, z, 1.0, 1.5, w, d)
+    _panel(s, "front", -1.4, 0.0, 1.0, 2.3, w, d, DOOR)
+    _panel(s, "front", 1.2, 0.8, 1.6, 1.5, w, d, GLASS)
+    _row(s, "back", 2, w - 1.6, 4.0, 1.0, 1.3, w, d)
+    return s, 16.0
+
+
+def townhouse_a():
+    """Brick townhouse with a slate roof."""
+    return _townhouse("townhouse_a", 4, 21)
+
+
+def townhouse_b():
+    """Rendered townhouse with a tile roof."""
+    return _townhouse("townhouse_b", 15, 27)
+
+
+def townhouse_c():
+    """Stone townhouse with a slate roof."""
+    return _townhouse("townhouse_c", 26, 21)
+
+
+def _shop_row(name, wall, awnings):
+    """Row of three shops (18 m) with flats above: wide shopfronts,
+    awnings, a flat roof behind a parapet."""
+    s = Ship(name)
+    w, d, h = 18.0, 10.0, 7.2
+    _walls(s, w, d, h, wall)
+    _flat_roof(s, w, d, h, 30)
+    for i, col in enumerate(awnings):
+        x0 = -w / 2 + 3.0 + 6.0 * i
+        _panel(s, "front", x0 - 0.6, 0.4, 3.8, 2.2, w, d, 10)
+        _panel(s, "front", x0 + 2.0, 0.0, 0.9, 2.3, w, d, DOOR)
+        s.twoside([s.vert(x0 - 2.7, d / 2 + 0.15, 3.1), s.vert(x0 + 1.5, d / 2 + 0.15, 3.1),
+                   s.vert(x0 + 1.5, d / 2 + 1.4, 2.6), s.vert(x0 - 2.7, d / 2 + 1.4, 2.6)], col)
+        _row(s, "front", 2, 4.4, 4.4, 1.1, 1.5, w, d, x0=x0)
+    return s, 24.0
+
+
+def shop_row_a():
+    """Brick shop row with red, green and blue awnings."""
+    return _shop_row("shop_row_a", 4, (16, 13, 10))
+
+
+def shop_row_b():
+    """Rendered shop row with yellow, red and white awnings."""
+    return _shop_row("shop_row_b", 15, (17, 16, 1))
+
+
+def town_hall():
+    """Stone town hall: two storeys, a pillared portico and a central
+    clock tower."""
+    s = Ship("town_hall")
+    w, d, h = 24.0, 14.0, 9.0
+    _walls(s, w, d, h, 26)
+    _hip(s, w, d, h, 3.0, 21, over=0.3)
+    _row(s, "front", 8, w - 2.0, 5.4, 1.2, 2.0, w, d, skip=(3, 4))
+    _row(s, "front", 8, w - 2.0, 1.4, 1.2, 2.0, w, d, skip=(3, 4))
+    # Portico: four columns, an entablature and a pediment.
+    for x in (-3.0, -1.0, 1.0, 3.0):
+        s.stack([(0.0, 0.35, 0.35), (6.5, 0.3, 0.3)], [15], n=6, cx=x, cy=d / 2 + 2.2)
+    s.block((-3.8, 3.8, d / 2, d / 2 + 3.0, 6.5), (-3.8, 3.8, d / 2, d / 2 + 3.0, 7.3), 15)
+    pd = [s.vert(-3.8, d / 2 + 3.0, 7.3), s.vert(3.8, d / 2 + 3.0, 7.3), s.vert(0.0, d / 2 + 3.0, 9.0)]
+    s.face(pd, 15, (0, 0, 7.5))
+    s.face([s.vert(-3.8, d / 2, 7.3), s.vert(-3.8, d / 2 + 3.0, 7.3), s.vert(0.0, d / 2 + 3.0, 9.0),
+            s.vert(0.0, d / 2, 9.0)], 21, (0, d / 2 + 1.5, 6.0))
+    s.face([s.vert(3.8, d / 2 + 3.0, 7.3), s.vert(3.8, d / 2, 7.3), s.vert(0.0, d / 2, 9.0),
+            s.vert(0.0, d / 2 + 3.0, 9.0)], 21, (0, d / 2 + 1.5, 6.0))
+    _panel(s, "front", 0.0, 0.0, 2.0, 3.4, w, d, DOOR)
+    # Clock tower with a face on each side and a small spire.
+    _walls(s, 4.0, 4.0, 19.0, 26)
+    for face in ("front", "back", "left", "right"):
+        _panel(s, face, 0.0, 15.5, 2.2, 2.2, 4.0, 4.0, 1)
+    base = [s.vert(2.3 * math.cos(math.pi / 4 + k * math.pi / 2) * 1.41 / 1.41 * 1.0,
+                   2.3 * math.sin(math.pi / 4 + k * math.pi / 2), 19.0) for k in range(4)]
+    s.spike(base, (0.0, 0.0, 23.5), 21)
+    return s, 32.0
+
+
+def market_hall():
+    """Market hall: open arcade on pillars below, a brick upper floor and
+    a hipped tile roof."""
+    s = Ship("market_hall")
+    w, d = 18.0, 12.0
+    for x in (-8.5, -4.25, 0.0, 4.25, 8.5):
+        for y in (-5.5, 5.5):
+            s.block((x - 0.35, x + 0.35, y - 0.35, y + 0.35, FOUND), (x - 0.35, x + 0.35, y - 0.35, y + 0.35, 3.6), 26)
+    for x in (-8.5, 8.5):
+        s.block((x - 0.35, x + 0.35, -0.35, 0.35, FOUND), (x - 0.35, x + 0.35, 0.35 - 0.7, 0.35, 3.6), 26)
+    s.block((-w / 2, w / 2, -d / 2, d / 2, 3.6), (-w / 2, w / 2, -d / 2, d / 2, 7.4), 4)
+    _hip(s, w, d, 7.4, 3.2, 27)
+    _row(s, "front", 5, w - 2.0, 4.6, 1.2, 1.8, w, d)
+    _row(s, "back", 5, w - 2.0, 4.6, 1.2, 1.8, w, d)
+    for face in ("left", "right"):
+        _row(s, face, 3, d - 2.0, 4.6, 1.2, 1.8, w, d)
+    return s, 24.0
+
+
+def _apartments(name, h, wall, floors):
+    """Flat-roofed block of flats, 20 × 12 m, a grid of windows."""
+    s = Ship(name)
+    w, d = 20.0, 12.0
+    _walls(s, w, d, h, wall)
+    _flat_roof(s, w, d, h, 30)
+    s.block((-2.0, 2.0, -2.0, 2.0, h + 0.5), (-2.0, 2.0, -2.0, 2.0, h + 2.6), 30)  # lift housing
+    step = (h - 1.0) / floors
+    for f in range(floors):
+        z = 0.9 + f * step
+        _row(s, "front", 6, w - 2.0, z, 1.4, 1.5, w, d, skip=(2,) if f == 0 else ())
+        _row(s, "back", 6, w - 2.0, z, 1.4, 1.5, w, d)
+    _panel(s, "front", -1.1, 0.0, 2.2, 2.4, w, d, DOOR)
+    return s, 28.0
+
+
+def apartment_block_a():
+    """Five-storey concrete block of flats."""
+    return _apartments("apartment_block_a", 15.0, 8, 5)
+
+
+def apartment_block_b():
+    """Six-storey brick block of flats."""
+    return _apartments("apartment_block_b", 18.0, 4, 6)
+
+
+def _office(name, floors, glass):
+    """Office block, 16 m square: alternating concrete and glass bands
+    floor by floor, a plant room on the roof."""
+    s = Ship(name)
+    w = 16.0
+    z = FOUND
+    s.block((-w / 2, w / 2, -w / 2, w / 2, z), (-w / 2, w / 2, -w / 2, w / 2, 1.0), 8)
+    z = 1.0
+    for f in range(floors):
+        s.block((-w / 2, w / 2, -w / 2, w / 2, z), (-w / 2, w / 2, -w / 2, w / 2, z + 2.2), glass)
+        s.block((-w / 2 - 0.15, w / 2 + 0.15, -w / 2 - 0.15, w / 2 + 0.15, z + 2.2),
+                (-w / 2 - 0.15, w / 2 + 0.15, -w / 2 - 0.15, w / 2 + 0.15, z + 3.2), 15)
+        z += 3.2
+    s.block((-4.0, 4.0, -3.0, 3.0, z), (-4.0, 4.0, -3.0, 3.0, z + 2.5), 30)
+    _panel(s, "front", 0.0, 0.0, 3.0, 2.6, w + 0.3, w + 0.3, 0)
+    return s, 32.0
+
+
+def office_block_a():
+    """Six-storey glass-and-concrete office block."""
+    return _office("office_block_a", 6, 23)
+
+
+def office_block_b():
+    """Eight-storey dark-glass office block."""
+    return _office("office_block_b", 8, 10)
+
+
+def _warehouse(name, wall, roof):
+    """Industrial shed, 30 × 18 m, shallow roof, roller doors."""
+    s = Ship(name)
+    w, d, h = 30.0, 18.0, 7.0
+    _walls(s, w, d, h, wall)
+    _gable(s, w, d, h, 1.8, roof, wall, over=0.3, along_y=True)
+    for a in (-8.0, 0.0, 8.0):
+        _panel(s, "front", a, 0.0, 4.5, 5.0, w, d, 0)
+    return s, 36.0
+
+
+def warehouse_a():
+    """Grey warehouse with a dark roof."""
+    return _warehouse("warehouse_a", 8, 21)
+
+
+def warehouse_b():
+    """Pale warehouse with a blue roof."""
+    return _warehouse("warehouse_b", 15, 10)
+
+
+def factory():
+    """Factory: brick walls under a sawtooth roof with north-light glazing."""
+    s = Ship("factory")
+    w, d, h = 36.0, 22.0, 7.0
+    _walls(s, w, d, h, 4)
+    teeth = 4
+    for k in range(teeth):
+        y0 = -d / 2 + d * k / teeth
+        y1 = -d / 2 + d * (k + 1) / teeth
+        lo = [s.vert(-w / 2, y0, h), s.vert(w / 2, y0, h)]
+        hi = [s.vert(-w / 2, y1, h + 3.0), s.vert(w / 2, y1, h + 3.0)]
+        base1 = [s.vert(-w / 2, y1, h), s.vert(w / 2, y1, h)]
+        s.face([lo[0], lo[1], hi[1], hi[0]], 21, (0, y0 + (y1 - y0) * 0.7, h - 1.0))  # sloping roof
+        s.face([base1[1], base1[0], hi[0], hi[1]], 23, (0, y0, h + 1.0))            # glazing
+        for sx in (-1, 1):  # gable infill at the ends
+            s.face([s.vert(sx * w / 2, y0, h), s.vert(sx * w / 2, y1, h), s.vert(sx * w / 2, y1, h + 3.0)],
+                   4, (0, (y0 + y1) / 2, h + 1.0))
+    for a in (-10.0, 10.0):
+        _panel(s, "front", a, 0.0, 5.0, 5.0, w, d, 0)
+    _row(s, "front", 6, w - 4.0, 3.0, 1.6, 2.0, w, d, skip=(1, 4))
+    return s, 42.0
+
+
+def chimney():
+    """Tall tapering brick factory chimney with a dark top band."""
+    s = Ship("chimney")
+    s.stack([(FOUND, 2.2, 2.2), (0.0, 2.2, 2.2), (1.5, 2.0, 2.0), (27.0, 1.2, 1.2),
+             (28.5, 1.25, 1.25), (30.0, 1.2, 1.2)], [26, 26, 4, 0, 0], n=8, rot=math.pi / 8)
+    return s, 34.0
+
+
+def water_tower():
+    """Water tower: four splayed legs, a cylindrical tank, a cone roof."""
+    s = Ship("water_tower")
+    for k in range(4):
+        a = math.pi / 4 + k * math.pi / 2
+        s.strut((math.cos(a) * 4.0, math.sin(a) * 4.0, FOUND), (math.cos(a) * 2.6, math.sin(a) * 2.6, 14.0), 0.3, 8)
+    for z in (5.0, 10.0):
+        for k in range(4):
+            a0, a1 = math.pi / 4 + k * math.pi / 2, math.pi / 4 + (k + 1) * math.pi / 2
+            r = 4.0 - 1.4 * (z / 14.0)
+            s.strut((math.cos(a0) * r, math.sin(a0) * r, z), (math.cos(a1) * r, math.sin(a1) * r, z), 0.12, 8)
+    s.stack([(14.0, 3.2, 3.2), (19.0, 3.2, 3.2), (19.2, 3.4, 3.4)], [15, 8], n=10, bottom=8)
+    rim = s.stack([(19.2, 3.4, 3.4)], [], n=10)
+    s.spike(rim[0], (0.0, 0.0, 21.5), 21)
+    return s, 26.0
+
+
+def petrol_station():
+    """Petrol station: a canopy on four posts over two pumps, and a kiosk."""
+    s = Ship("petrol_station")
+    for x in (-5.0, 5.0):
+        for y in (0.0, 5.0):
+            s.block((x - 0.2, x + 0.2, y - 0.2, y + 0.2, FOUND * 0.25), (x - 0.2, x + 0.2, y - 0.2, y + 0.2, 4.6), 15)
+    s.block((-6.5, 6.5, -1.5, 6.5, 4.6), (-6.5, 6.5, -1.5, 6.5, 5.4), 15)
+    s.block((-6.6, 6.6, -1.6, 6.6, 5.0), (-6.6, 6.6, -1.6, 6.6, 5.3), 16)
+    for x in (-2.0, 2.0):
+        s.block((x - 0.4, x + 0.4, 2.1, 2.9, FOUND * 0.25), (x - 0.4, x + 0.4, 2.1, 2.9, 1.7), 16)
+        _panel(s, "front", 0.0, 0.8, 0.5, 0.5, 0.8, 0.8, 1, x0=x, y0=2.5)
+    s.block((-4.0, 4.0, -7.0, -2.5, FOUND), (-4.0, 4.0, -7.0, -2.5, 3.2), 15)
+    _flat_roof(s, 8.0, 4.5, 3.2, 30, y0=-4.75, parapet=0.3)
+    _panel(s, "front", -1.0, 0.3, 4.0, 2.2, 8.0, 4.5, 10, y0=-4.75)
+    _panel(s, "front", 2.6, 0.0, 1.0, 2.2, 8.0, 4.5, 23, y0=-4.75)
+    return s, 18.0
+
+
+def _car(name, col):
+    """Small parked car, 4.2 m long along +y."""
+    s = Ship(name)
+    s.block((-0.85, 0.85, -2.1, 2.1, 0.3), (-0.85, 0.85, -2.05, 2.05, 0.95), col)
+    s.block((-0.75, 0.75, -1.2, 0.9, 0.95), (-0.65, 0.65, -0.9, 0.5, 1.5), col)
+    for face, a in (("front", 0.0), ("back", 0.0)):
+        _panel(s, face, a, 1.0, 1.1, 0.4, 1.3, 1.6, GLASS, y0=-0.2)
+    for x in (-0.9, 0.9):
+        for y in (-1.3, 1.3):
+            s.block((x - 0.12, x + 0.12, y - 0.35, y + 0.35, 0.0), (x - 0.12, x + 0.12, y - 0.35, y + 0.35, 0.6), 0)
+    return s, 6.0
+
+
+def parked_car_a():
+    """Red parked car."""
+    return _car("parked_car_a", 16)
+
+
+def parked_car_b():
+    """Blue parked car."""
+    return _car("parked_car_b", 10)
+
+
+def parked_car_c():
+    """White parked car."""
+    return _car("parked_car_c", 15)
+
+
+def street_lamp():
+    """Town street lamp: a post with an arm reaching over the road (+y)."""
+    s = Ship("street_lamp")
+    s.strut((0.0, 0.0, -0.5), (0.0, 0.0, 5.6), 0.07, 30)
+    s.strut((0.0, 0.0, 5.5), (0.0, 1.2, 5.7), 0.05, 30)
+    s.block((-0.18, 0.18, 1.0, 1.5, 5.45), (-0.15, 0.15, 1.05, 1.45, 5.65), 17)
+    return s, 8.0
+
+
+def telegraph_pole():
+    """Wooden telegraph pole with a crossbar and insulators."""
+    s = Ship("telegraph_pole")
+    s.strut((0.0, 0.0, -1.0), (0.0, 0.0, 7.0), 0.1, 14)
+    s.strut((-0.9, 0.0, 6.6), (0.9, 0.0, 6.6), 0.06, 14)
+    for x in (-0.75, -0.25, 0.25, 0.75):
+        s.block((x - 0.04, x + 0.04, -0.04, 0.04, 6.66), (x - 0.04, x + 0.04, -0.04, 0.04, 6.85), 1)
+    return s, 9.0
+
+
+def road_sign():
+    """Post-mounted road sign facing +y (a town-limit sign)."""
+    s = Ship("road_sign")
+    s.strut((-0.6, 0.0, -0.4), (-0.6, 0.0, 2.2), 0.04, 8)
+    s.strut((0.6, 0.0, -0.4), (0.6, 0.0, 2.2), 0.04, 8)
+    s.block((-0.8, 0.8, -0.03, 0.03, 1.4), (-0.8, 0.8, -0.03, 0.03, 2.3), 1)
+    _panel(s, "front", 0.0, 1.55, 1.3, 0.6, 1.6, 0.06, 0)
+    return s, 4.0
+
+
+def signpost():
+    """Finger post for junctions: a white post with three arms."""
+    s = Ship("signpost")
+    s.strut((0.0, 0.0, -0.4), (0.0, 0.0, 2.6), 0.06, 1)
+    for k, a in enumerate((0.3, 2.2, 4.1)):
+        z = 2.3 - 0.3 * k
+        x, y = math.cos(a), math.sin(a)
+        s.block((min(0, x * 0.9) - 0.03, max(0, x * 0.9) + 0.03, min(0, y * 0.9) - 0.03, max(0, y * 0.9) + 0.03, z),
+                (min(0, x * 0.9) - 0.03, max(0, x * 0.9) + 0.03, min(0, y * 0.9) - 0.03, max(0, y * 0.9) + 0.03, z + 0.18), 1)
+    return s, 4.0
+
+
+def bus_shelter():
+    """Glazed bus shelter open to the front (+y), with a flat roof."""
+    s = Ship("bus_shelter")
+    w, d = 3.2, 1.5
+    s.block((-w / 2, w / 2, -d / 2, -d / 2 + 0.06, -0.3), (-w / 2, w / 2, -d / 2, -d / 2 + 0.06, 2.3), 23)
+    for x in (-w / 2, w / 2):
+        s.block((x - 0.03, x + 0.03, -d / 2, d / 2, -0.3), (x - 0.03, x + 0.03, -d / 2, d / 2, 2.3), 23)
+    s.block((-w / 2 - 0.15, w / 2 + 0.15, -d / 2 - 0.15, d / 2 + 0.15, 2.3),
+            (-w / 2 - 0.15, w / 2 + 0.15, -d / 2 - 0.15, d / 2 + 0.15, 2.5), 16)
+    return s, 5.0
+
+
+def phone_box():
+    """Red telephone kiosk with glazed panels."""
+    s = Ship("phone_box")
+    s.block((-0.5, 0.5, -0.5, 0.5, -0.3), (-0.5, 0.5, -0.5, 0.5, 2.4), 16)
+    s.block((-0.55, 0.55, -0.55, 0.55, 2.4), (-0.4, 0.4, -0.4, 0.4, 2.7), 16)
+    for face in ("front", "back", "left", "right"):
+        _panel(s, face, 0.0, 0.7, 0.6, 1.4, 1.0, 1.0, GLASS)
+    return s, 4.0
+
+
 SHIPS = {
     "farmhouse_a": farmhouse_a, "farmhouse_b": farmhouse_b, "barn_a": barn_a, "barn_b": barn_b,
     "dutch_barn": dutch_barn, "grain_silo": grain_silo, "outbuilding_a": outbuilding_a,
@@ -560,6 +906,15 @@ SHIPS = {
     "church_a": church_a, "church_b": church_b, "chapel": chapel, "pub": pub,
     "village_shop": village_shop, "village_hall": village_hall, "war_memorial": war_memorial,
     "garden_wall_a": garden_wall_a, "garden_wall_b": garden_wall_b, "picket_fence": picket_fence,
+    "townhouse_a": townhouse_a, "townhouse_b": townhouse_b, "townhouse_c": townhouse_c,
+    "shop_row_a": shop_row_a, "shop_row_b": shop_row_b, "town_hall": town_hall,
+    "market_hall": market_hall, "apartment_block_a": apartment_block_a,
+    "apartment_block_b": apartment_block_b, "office_block_a": office_block_a,
+    "office_block_b": office_block_b, "warehouse_a": warehouse_a, "warehouse_b": warehouse_b,
+    "factory": factory, "chimney": chimney, "water_tower": water_tower,
+    "petrol_station": petrol_station, "parked_car_a": parked_car_a, "parked_car_b": parked_car_b,
+    "parked_car_c": parked_car_c, "street_lamp": street_lamp, "telegraph_pole": telegraph_pole,
+    "road_sign": road_sign, "signpost": signpost, "bus_shelter": bus_shelter, "phone_box": phone_box,
 }
 
 _COMMON = """Settlement model (Settlements track R.4), drawn instanced. Origin at

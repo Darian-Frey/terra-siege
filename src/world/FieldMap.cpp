@@ -232,13 +232,10 @@ void FieldMap::buildRegions(const RoadNetwork &roads) {
     return m_region[static_cast<size_t>((z % N + N) % N) * N + ((x % N + N) % N)];
   };
   for (const RoadNetwork::Road &r : roads.roads()) {
-    const float w = (r.cls == RoadNetwork::Class::Main   ? Config::ROAD_MAIN_WIDTH
-                     : r.cls == RoadNetwork::Class::Lane ? Config::ROAD_LANE_WIDTH
-                                                         : Config::ROAD_TRACK_WIDTH) *
-                        0.5f +
-                    Config::FIELD_REGION_BARRIER;
-    for (size_t i = 0; i + 1 < r.pts.size(); ++i) {
-      const Point a = r.pts[i], b = r.pts[i + 1];
+    const float w = RoadNetwork::halfWidthOf(r.cls) + Config::FIELD_REGION_BARRIER;
+    const size_t segs = r.pts.size() == 1 ? 1 : r.pts.size() - 1; // a square is one point
+    for (size_t i = 0; i < segs; ++i) {
+      const Point a = r.pts[i], b = r.pts[std::min(i + 1, r.pts.size() - 1)];
       const int x0 = static_cast<int>(floorf((fminf(a.x, b.x) - w) / cell));
       const int x1 = static_cast<int>(floorf((fmaxf(a.x, b.x) + w) / cell));
       const int z0 = static_cast<int>(floorf((fminf(a.z, b.z) - w) / cell));

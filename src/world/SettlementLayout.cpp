@@ -80,9 +80,40 @@ constexpr Size kSize[static_cast<int>(BM::Count)] = {
     {0.0f, 0.0f, 0.2f, 2.0f},   // GardenWallA (segment along z)
     {0.0f, 0.0f, 0.2f, 2.0f},   // GardenWallB
     {0.0f, 0.0f, 0.15f, 2.0f},  // PicketFence
+    {0.0f, 0.0f, 3.0f, 5.1f},   // TownhouseA (row segment: walls meet)
+    {0.0f, 0.0f, 3.0f, 5.1f},   // TownhouseB
+    {0.0f, 0.0f, 3.0f, 5.1f},   // TownhouseC
+    {0.0f, 0.7f, 9.0f, 5.7f},   // ShopRowA (awnings)
+    {0.0f, 0.7f, 9.0f, 5.7f},   // ShopRowB
+    {0.0f, 1.35f, 12.3f, 8.7f}, // TownHall (portico)
+    {0.0f, 0.0f, 9.4f, 6.4f},   // MarketHall
+    {0.0f, 0.0f, 10.0f, 6.1f},  // ApartmentBlockA
+    {0.0f, 0.0f, 10.0f, 6.1f},  // ApartmentBlockB
+    {0.0f, 0.0f, 8.2f, 8.2f},   // OfficeBlockA
+    {0.0f, 0.0f, 8.2f, 8.2f},   // OfficeBlockB
+    {0.0f, 0.0f, 15.3f, 9.3f},  // WarehouseA
+    {0.0f, 0.0f, 15.3f, 9.3f},  // WarehouseB
+    {0.0f, 0.0f, 18.0f, 11.1f}, // Factory
+    {0.0f, 0.0f, 2.2f, 2.2f},   // Chimney
+    {0.0f, 0.0f, 4.0f, 4.0f},   // WaterTower
+    {0.0f, -0.2f, 6.6f, 6.8f},  // PetrolStation
+    {0.0f, 0.0f, 0.95f, 2.1f},  // ParkedCarA
+    {0.0f, 0.0f, 0.95f, 2.1f},  // ParkedCarB
+    {0.0f, 0.0f, 0.95f, 2.1f},  // ParkedCarC
+    {0.0f, 0.7f, 0.2f, 0.8f},   // StreetLamp (arm over the road, +z)
+    {0.0f, 0.0f, 0.9f, 0.15f},  // TelegraphPole
+    {0.0f, 0.0f, 0.8f, 0.1f},   // RoadSign
+    {0.0f, 0.0f, 0.9f, 0.9f},   // Signpost
+    {0.0f, 0.0f, 1.75f, 0.9f},  // BusShelter
+    {0.0f, 0.0f, 0.55f, 0.55f}, // PhoneBox
 };
+static_assert(sizeof(kSize) / sizeof(kSize[0]) == static_cast<size_t>(BM::Count),
+              "a footprint for every building model");
 
 bool isSegment(BM m) { return m == BM::GardenWallA || m == BM::GardenWallB || m == BM::PicketFence; }
+// Street props: small, sit on the ground at their centre, may stand
+// close to the road (parked cars on it).
+bool isFurniture(BM m) { return m >= BM::ParkedCarA && m <= BM::PhoneBox; }
 
 } // namespace
 
@@ -167,13 +198,18 @@ void SettlementLayout::build(const Planet &planet, uint32_t seed, std::vector<De
   Rng rng{mix(seed ^ 0x51ed270bu) | 1u};
 
   // Try to put `model` at (x, z) facing yaw; on success append it and
-  // record its footprint.
-  auto place = [&](BM model, float x, float z, float yaw, float stretch = 1.0f) {
+  // record its footprint. gap < 0 uses the kind's default spacing (row
+  // houses pass a small gap so terraces join). onRoad lets parked cars
+  // stand on the carriageway.
+  auto place = [&](BM model, float x, float z, float yaw, float stretch = 1.0f, float gap = -1.0f,
+                   bool onRoad = false) {
     const Footprint f = footprintOf(model, x, z, yaw, stretch);
-    const bool seg = isSegment(model);
+    const bool small = isSegment(model) || isFurniture(model);
     const float c = cosf(f.yaw), s = sinf(f.yaw);
     float lo = 1e30f, hi = -1e30f;
-    const float roadClear = seg ? Config::SEGMENT_ROAD_CLEARANCE : Config::BUILDING_ROAD_CLEARANCE;
+    const float roadClear = isFurniture(model) ? Config::FURNITURE_ROAD_CLEARANCE
+                            : small            ? Config::SEGMENT_ROAD_CLEARANCE
+                                               : Config::BUILDING_ROAD_CLEARANCE;
     // Sample the outline every few metres, plus the centre.
     const int nx = std::max(1, static_cast<int>(ceilf(2.0f * f.hw / 3.0f)));
     const int nz = std::max(1, static_cast<int>(ceilf(2.0f * f.hd / 3.0f)));
@@ -183,17 +219,18 @@ void SettlementLayout::build(const Planet &planet, uint32_t seed, std::vector<De
         const float lx = -f.hw + 2.0f * f.hw * ix / nx, lz = -f.hd + 2.0f * f.hd * iz / nz;
         const float px = f.x + c * lx + s * lz, pz = f.z - s * lx + c * lz;
         if (planet.isWater(px, pz)) return false;
-        if (roads.edgeDistance(px, pz, roadClear + 1.0f) < roadClear) return false;
+        if (!onRoad && roads.edgeDistance(px, pz, roadClear + 1.0f) < roadClear) return false;
         const float h = planet.heightAt(px, pz);
         lo = fminf(lo, h);
         hi = fmaxf(hi, h);
       }
-    if (hi - lo > (seg ? Config::BUILDING_MAX_RISE * 2.0f : Config::BUILDING_MAX_RISE)) return false;
-    if (overlaps(f, seg ? Config::SEGMENT_GAP : Config::BUILDING_GAP)) return false;
+    if (hi - lo > (small ? Config::BUILDING_MAX_RISE * 2.0f : Config::BUILDING_MAX_RISE)) return false;
+    const float g = gap >= 0.0f ? gap : small ? Config::SEGMENT_GAP : Config::BUILDING_GAP;
+    if (overlaps(f, g)) return false;
     Decoration d;
     d.kind = Decoration::Kind::Building;
     d.building = model;
-    d.pos = {x, seg ? planet.heightAt(x, z) : hi - Config::BUILDING_SINK, z};
+    d.pos = {x, small ? planet.heightAt(x, z) : hi - Config::BUILDING_SINK, z};
     d.yaw = yaw;
     d.scale = 1.0f;
     d.stretch = stretch;
@@ -224,7 +261,107 @@ void SettlementLayout::build(const Planet &planet, uint32_t seed, std::vector<De
     return false;
   };
 
+  // ---- Frontage walker, shared by villages and towns ----
+  // Walks every road through a site (both sides, metre by metre) and asks
+  // `choose` what to build at each free spot: a model, its setback from
+  // the road edge, the gap to the next building, and whether it gets a
+  // front-garden boundary. Returns how many it placed.
+  struct Pick {
+    BM model;
+    float setback, gapAlong, gapMin;
+    bool boundary;
+  };
+  auto frontage = [&](const SettlementSite &site, bool streets, int maxCount, BM boundary,
+                      const auto &choose, const auto &placed) {
+    int count = 0;
+    for (const RoadNetwork::Road &rd : roads.roads()) {
+      using C = RoadNetwork::Class;
+      if (rd.cls == C::Track || rd.cls == C::Square || rd.pts.size() < 2) continue;
+      if (rd.cls == C::Street && !streets) continue;
+      std::vector<RoadNetwork::Point> pts;
+      float dx, dz;
+      wrapDelta(site.x, site.z, rd.pts[0].x, rd.pts[0].z, dx, dz);
+      const float sx = site.x + dx - rd.pts[0].x, sz = site.z + dz - rd.pts[0].z;
+      bool near = false;
+      for (const auto &q : rd.pts) {
+        pts.push_back({q.x + sx, q.z + sz});
+        const float ex = pts.back().x - site.x, ez = pts.back().z - site.z;
+        near = near || ex * ex + ez * ez < (site.radius + 30.0f) * (site.radius + 30.0f);
+      }
+      if (!near) continue;
+      const float rhw = RoadNetwork::halfWidthOf(rd.cls);
+      for (int side = -1; side <= 1; side += 2) {
+        float nextFree = 0.0f, arc = 0.0f;
+        for (size_t i = 0; i + 1 < pts.size() && count < maxCount; ++i) {
+          const auto a = pts[i], b = pts[i + 1];
+          const float ex = b.x - a.x, ez = b.z - a.z, len = sqrtf(ex * ex + ez * ez);
+          if (len < 0.01f) continue;
+          const float tx = ex / len, tz = ez / len, nx = -tz * side, nz = tx * side;
+          for (float t = 0.0f; t < len && count < maxCount; t += 1.0f) {
+            const float at = arc + t;
+            if (at < nextFree) continue;
+            const float px = a.x + tx * t, pz = a.z + tz * t;
+            const float dcx = px - site.x, dcz = pz - site.z, dc = sqrtf(dcx * dcx + dcz * dcz);
+            if (dc > site.radius) continue;
+            Pick pk;
+            if (!choose(dc, atan2f(dcz, dcx), rd.cls, pk)) {
+              nextFree = at + 2.0f;
+              continue;
+            }
+            const Size &z = kSize[static_cast<int>(pk.model)];
+            const float off = rhw + pk.setback + z.hd + z.oz; // front edge at the setback
+            const float cx = px + tx * z.hw + nx * off, cz = pz + tz * z.hw + nz * off;
+            const float yaw = atan2f(-nx, -nz); // front towards the road
+            if (place(pk.model, cx, cz, yaw, 1.0f, pk.gapMin)) {
+              ++count;
+              placed(pk.model, out.back());
+              const float gl = 2.0f * z.hw - 1.5f;
+              const float go = rhw + Config::FRONTAGE_BOUNDARY_OFFSET;
+              if (pk.boundary && gl > 1.0f)
+                place(boundary, px + tx * z.hw + nx * go, pz + tz * z.hw + nz * go, atan2f(tx, tz),
+                      gl / 4.0f);
+              nextFree = at + 2.0f * z.hw + pk.gapAlong;
+            } else {
+              nextFree = at + 2.0f;
+            }
+          }
+          arc += len;
+        }
+      }
+    }
+    return count;
+  };
+  // Every point along a site's roads of the given classes, every `step`
+  // metres, with the road direction and half-width (for street props).
+  auto alongRoads = [&](float cx, float cz, float radius, bool streetsOnly, float step,
+                        const auto &visit) {
+    for (const RoadNetwork::Road &rd : roads.roads()) {
+      using C = RoadNetwork::Class;
+      if (rd.pts.size() < 2 || rd.cls == C::Track || rd.cls == C::Square) continue;
+      if (streetsOnly && rd.cls != C::Street) continue;
+      float dx, dz;
+      wrapDelta(cx, cz, rd.pts[0].x, rd.pts[0].z, dx, dz);
+      const float sx = cx + dx - rd.pts[0].x, sz = cz + dz - rd.pts[0].z;
+      float carry = 0.0f;
+      for (size_t i = 0; i + 1 < rd.pts.size(); ++i) {
+        const float ax = rd.pts[i].x + sx, az = rd.pts[i].z + sz;
+        const float ex = rd.pts[i + 1].x - rd.pts[i].x, ez = rd.pts[i + 1].z - rd.pts[i].z;
+        const float len = sqrtf(ex * ex + ez * ez);
+        if (len < 0.01f) continue;
+        for (float t = carry; t < len; t += step) {
+          const float px = ax + ex / len * t, pz = az + ez / len * t;
+          if ((px - cx) * (px - cx) + (pz - cz) * (pz - cz) <= radius * radius)
+            visit(px, pz, ex / len, ez / len, RoadNetwork::halfWidthOf(rd.cls), rd.cls);
+        }
+        carry = fmodf(carry - len, step);
+        if (carry < 0.0f) carry += step;
+      }
+    }
+  };
+  auto pickOf = [&](std::initializer_list<BM> l) { return *(l.begin() + rng.i(static_cast<int>(l.size()))); };
+
   using K = SettlementSite::Kind;
+  using C = RoadNetwork::Class;
   for (const SettlementSite &site : planet.settlements().sites()) {
     if (site.kind == K::Village) {
       const bool bigChurch = rng.f() < 0.7f;
@@ -242,81 +379,143 @@ void SettlementLayout::build(const Planet &planet, uint32_t seed, std::vector<De
       }
       // ---- Street frontage along the main roads and lanes through it ----
       bool pub = false, shop = false, hall = false;
-      int houses = 0;
+      frontage(site, false, Config::VILLAGE_MAX_BUILDINGS, boundary,
+               [&](float dc, float, C, Pick &pk) {
+                 const bool core = dc < 0.55f * site.radius;
+                 if (core && !pub && rng.f() < 0.5f) pk.model = BM::Pub;
+                 else if (core && !shop && rng.f() < 0.5f) pk.model = BM::VillageShop;
+                 else if (core && !hall && rng.f() < 0.3f) pk.model = BM::VillageHall;
+                 else if (core && rng.f() < 0.35f) pk.model = pickOf({BM::TerraceRowA, BM::TerraceRowB});
+                 else pk.model = pickOf({BM::CottageA, BM::CottageB, BM::CottageC, BM::HouseA, BM::HouseB, BM::HouseC});
+                 pk.setback = rng.f(Config::FRONTAGE_SETBACK_MIN, Config::FRONTAGE_SETBACK_MAX);
+                 pk.gapAlong = rng.f(Config::FRONTAGE_GAP_MIN, Config::FRONTAGE_GAP_MAX);
+                 pk.gapMin = -1.0f;
+                 pk.boundary = true;
+                 return true;
+               },
+               [&](BM m, const Decoration &) {
+                 pub = pub || m == BM::Pub;
+                 shop = shop || m == BM::VillageShop;
+                 hall = hall || m == BM::VillageHall;
+               });
+      // ---- Fringe: a few farm buildings round the edge ----
+      const int fringe = 1 + rng.i(3);
+      for (int k = 0; k < fringe; ++k)
+        placeNear(pickOf({BM::BarnA, BM::BarnB, BM::OutbuildingA, BM::OutbuildingB, BM::HayBalesA, BM::DutchBarn}),
+                  site.x, site.z, 0.8f * site.radius, 1.25f * site.radius, 80.0f);
+    } else if (site.kind == K::Town) {
+      // ---- Square: town hall, market hall and church facing it ----
+      const float sqR = Config::TOWN_SQUARE_RADIUS;
+      const float axis = rng.f(0.0f, 6.2831853f);
+      for (BM m : {BM::TownHall, BM::MarketHall, rng.f() < 0.5f ? BM::ChurchA : BM::ChurchB}) {
+        const Size &z = kSize[static_cast<int>(m)];
+        for (int k = 0; k < 16; ++k) {
+          const float a = axis + k * 0.3927f;
+          const float r = sqR + 3.0f + z.hd + z.oz;
+          const float x = site.x + cosf(a) * r, zz = site.z + sinf(a) * r;
+          if (place(m, x, zz, atan2f(site.x - x, site.z - zz))) break;
+        }
+      }
+      // ---- Frontage by zone: shops and terraces at the centre,
+      // townhouses and flats further out, houses and an industrial
+      // quarter at the edge ----
+      const BM boundary = rng.f() < 0.5f ? BM::GardenWallA : BM::GardenWallB;
+      const float industry = rng.f(0.0f, 6.2831853f);
+      bool petrol = false;
+      const float R = site.radius;
+      frontage(site, true, Config::TOWN_MAX_BUILDINGS, boundary,
+               [&](float dc, float ang, C cls, Pick &pk) {
+                 float da = fabsf(ang - industry);
+                 da = fminf(da, 6.2831853f - da);
+                 pk.boundary = false;
+                 pk.gapMin = -1.0f;
+                 if (!petrol && cls == C::Main && dc > 0.6f * R && rng.f() < 0.3f) {
+                   pk.model = BM::PetrolStation;
+                   pk.setback = 2.0f;
+                   pk.gapAlong = 6.0f;
+                 } else if (dc < Config::TOWN_CORE_FRAC * R) {
+                   const float r = rng.f();
+                   pk.model = r < 0.4f ? pickOf({BM::ShopRowA, BM::ShopRowB})
+                              : r < 0.75f ? pickOf({BM::TownhouseA, BM::TownhouseB, BM::TownhouseC})
+                              : r < 0.88f ? pickOf({BM::OfficeBlockA, BM::OfficeBlockB})
+                                          : pickOf({BM::ApartmentBlockA, BM::ApartmentBlockB});
+                   pk.setback = rng.f(0.5f, 1.5f);
+                   pk.gapAlong = rng.f(0.0f, 0.4f);
+                   pk.gapMin = 0.1f; // terraces join
+                 } else if (dc < Config::TOWN_MID_FRAC * R) {
+                   const float r = rng.f();
+                   pk.model = r < 0.45f ? pickOf({BM::TownhouseA, BM::TownhouseB, BM::TownhouseC})
+                              : r < 0.6f ? pickOf({BM::ApartmentBlockA, BM::ApartmentBlockB})
+                              : r < 0.75f ? pickOf({BM::TerraceRowA, BM::TerraceRowB})
+                                          : pickOf({BM::HouseA, BM::HouseB, BM::HouseC});
+                   pk.setback = rng.f(1.5f, 3.5f);
+                   pk.gapAlong = rng.f(0.3f, 2.5f);
+                   pk.gapMin = 0.3f;
+                   pk.boundary = pk.model == BM::HouseA || pk.model == BM::HouseB || pk.model == BM::HouseC;
+                 } else if (da < Config::TOWN_INDUSTRY_HALF_ANGLE) {
+                   const float r = rng.f();
+                   pk.model = r < 0.6f ? pickOf({BM::WarehouseA, BM::WarehouseB}) : r < 0.85f ? BM::Factory : BM::HouseA;
+                   pk.setback = rng.f(4.0f, 8.0f);
+                   pk.gapAlong = rng.f(3.0f, 8.0f);
+                 } else {
+                   pk.model = pickOf({BM::HouseA, BM::HouseB, BM::HouseC, BM::CottageB, BM::CottageC,
+                                      BM::TerraceRowA, BM::TerraceRowB});
+                   pk.setback = rng.f(Config::FRONTAGE_SETBACK_MIN, Config::FRONTAGE_SETBACK_MAX);
+                   pk.gapAlong = rng.f(Config::FRONTAGE_GAP_MIN, Config::FRONTAGE_GAP_MAX);
+                   pk.boundary = true;
+                 }
+                 return true;
+               },
+               [&](BM m, const Decoration &d) {
+                 petrol = petrol || m == BM::PetrolStation;
+                 if (m == BM::Factory) { // its chimney beside it
+                   const float fx = sinf(d.yaw), fz = cosf(d.yaw);
+                   for (float side : {1.0f, -1.0f})
+                     if (place(BM::Chimney, d.pos.x + fz * side * 21.0f - fx * 6.0f,
+                               d.pos.z - fx * side * 21.0f - fz * 6.0f, d.yaw, 1.0f, 0.5f))
+                       break;
+                 }
+               });
+      placeNear(BM::WaterTower, site.x + cosf(industry) * 0.8f * R, site.z + sinf(industry) * 0.8f * R,
+                0.0f, 0.4f * R, 80.0f);
+      // ---- Street props: lamps, parked cars, a phone box and a bus
+      // shelter on the square, and town-limit signs on the main roads ----
+      int lampSide = 1;
+      alongRoads(site.x, site.z, R, false, Config::TOWN_LAMP_SPACING,
+                 [&](float px, float pz, float tx, float tz, float rhw, C) {
+                   const float nx = -tz * lampSide, nz = tx * lampSide;
+                   const float o = rhw + 0.6f;
+                   place(BM::StreetLamp, px + nx * o, pz + nz * o, atan2f(-nx, -nz));
+                   lampSide = -lampSide;
+                 });
+      alongRoads(site.x, site.z, R, true, Config::TOWN_CAR_SPACING,
+                 [&](float px, float pz, float tx, float tz, float rhw, C) {
+                   if (rng.f() > Config::TOWN_CAR_CHANCE) return;
+                   const float side = rng.f() < 0.5f ? 1.0f : -1.0f;
+                   const float nx = -tz * side, nz = tx * side, o = rhw - 1.1f;
+                   const BM car = pickOf({BM::ParkedCarA, BM::ParkedCarB, BM::ParkedCarC});
+                   place(car, px + nx * o, pz + nz * o, atan2f(tx * side, tz * side), 1.0f, 0.3f, true);
+                 });
+      placeNear(BM::PhoneBox, site.x, site.z, sqR + 2.0f, sqR + 12.0f, 30.0f);
+      placeNear(BM::BusShelter, site.x, site.z, sqR + 2.0f, sqR + 14.0f, 30.0f);
       for (const RoadNetwork::Road &rd : roads.roads()) {
-        if (rd.cls == RoadNetwork::Class::Track || rd.pts.size() < 2) continue;
-        // Bring the road into the village's frame (nearest copy).
-        std::vector<RoadNetwork::Point> pts;
+        if (rd.cls != C::Main || rd.pts.size() < 2) continue;
         float dx, dz;
         wrapDelta(site.x, site.z, rd.pts[0].x, rd.pts[0].z, dx, dz);
         const float sx = site.x + dx - rd.pts[0].x, sz = site.z + dz - rd.pts[0].z;
-        bool near = false;
-        for (const auto &p : rd.pts) {
-          pts.push_back({p.x + sx, p.z + sz});
-          const float ex = pts.back().x - site.x, ez = pts.back().z - site.z;
-          near = near || ex * ex + ez * ez < (site.radius + 30.0f) * (site.radius + 30.0f);
-        }
-        if (!near) continue;
-        const float rhw = 0.5f * (rd.cls == RoadNetwork::Class::Main ? Config::ROAD_MAIN_WIDTH
-                                                                     : Config::ROAD_LANE_WIDTH);
-        for (int side = -1; side <= 1; side += 2) {
-          float nextFree = 0.0f, arc = 0.0f;
-          for (size_t i = 0; i + 1 < pts.size(); ++i) {
-            const auto a = pts[i], b = pts[i + 1];
-            const float ex = b.x - a.x, ez = b.z - a.z, len = sqrtf(ex * ex + ez * ez);
-            if (len < 0.01f) continue;
-            const float tx = ex / len, tz = ez / len, nx = -tz * side, nz = tx * side;
-            for (float t = 0.0f; t < len; t += 1.0f) {
-              const float at = arc + t;
-              if (at < nextFree) continue;
-              const float px = a.x + tx * t, pz = a.z + tz * t;
-              const float dcx = px - site.x, dcz = pz - site.z, dc = sqrtf(dcx * dcx + dcz * dcz);
-              if (dc > site.radius) continue;
-              if (houses >= Config::VILLAGE_MAX_BUILDINGS) break;
-              // Pick the building: the pub, shop and hall near the core, then
-              // terraces near the core and cottages and houses elsewhere.
-              BM m;
-              const bool core = dc < 0.55f * site.radius;
-              if (core && !pub && rng.f() < 0.5f) m = BM::Pub;
-              else if (core && !shop && rng.f() < 0.5f) m = BM::VillageShop;
-              else if (core && !hall && rng.f() < 0.3f) m = BM::VillageHall;
-              else if (core && rng.f() < 0.35f) m = rng.f() < 0.5f ? BM::TerraceRowA : BM::TerraceRowB;
-              else {
-                static constexpr BM kHomes[] = {BM::CottageA, BM::CottageB, BM::CottageC,
-                                                BM::HouseA, BM::HouseB, BM::HouseC};
-                m = kHomes[rng.i(6)];
-              }
-              const Size &sz = kSize[static_cast<int>(m)];
-              const float setback = rng.f(Config::FRONTAGE_SETBACK_MIN, Config::FRONTAGE_SETBACK_MAX);
-              const float off = rhw + setback + sz.hd + sz.oz; // front edge at the setback
-              const float cx = px + tx * sz.hw + nx * off, cz = pz + tz * sz.hw + nz * off;
-              const float yaw = atan2f(-nx, -nz); // front towards the road
-              if (place(m, cx, cz, yaw)) {
-                ++houses;
-                pub = pub || m == BM::Pub;
-                shop = shop || m == BM::VillageShop;
-                hall = hall || m == BM::VillageHall;
-                // Front-garden boundary between the house and the road.
-                const float gl = 2.0f * sz.hw - 1.5f;
-                const float go = rhw + Config::FRONTAGE_BOUNDARY_OFFSET;
-                if (gl > 1.0f)
-                  place(boundary, px + tx * sz.hw + nx * go, pz + tz * sz.hw + nz * go, atan2f(tx, tz),
-                        gl / 4.0f);
-                nextFree = at + 2.0f * sz.hw + rng.f(Config::FRONTAGE_GAP_MIN, Config::FRONTAGE_GAP_MAX);
-              } else {
-                nextFree = at + 2.0f;
-              }
-            }
-            arc += len;
-          }
+        for (size_t i = 0; i + 1 < rd.pts.size(); ++i) {
+          const float ax = rd.pts[i].x + sx, az = rd.pts[i].z + sz;
+          const float bx = rd.pts[i + 1].x + sx, bz = rd.pts[i + 1].z + sz;
+          const float da = hypotf(ax - site.x, az - site.z), db = hypotf(bx - site.x, bz - site.z);
+          if ((da - R) * (db - R) > 0.0f) continue; // the edge of town lies between them
+          const float t = (R - da) / (db - da);
+          const float px = ax + (bx - ax) * t, pz = az + (bz - az) * t;
+          const float ux = (bx - ax) / hypotf(bx - ax, bz - az), uz = (bz - az) / hypotf(bx - ax, bz - az);
+          const float out = db > da ? 1.0f : -1.0f; // along the road, away from town
+          const float o = RoadNetwork::halfWidthOf(C::Main) + 1.5f;
+          place(BM::RoadSign, px - uz * o, pz + ux * o, atan2f(ux * out, uz * out));
         }
       }
-      // ---- Fringe: a few farm buildings round the edge ----
-      const int fringe = 1 + rng.i(3);
-      static constexpr BM kFringe[] = {BM::BarnA, BM::BarnB, BM::OutbuildingA, BM::OutbuildingB,
-                                       BM::HayBalesA, BM::DutchBarn};
-      for (int k = 0; k < fringe; ++k)
-        placeNear(kFringe[rng.i(6)], site.x, site.z, 0.8f * site.radius, 1.25f * site.radius, 80.0f);
     } else if (site.kind == K::Farm) {
       // ---- Farmstead: farmhouse, barn, outbuilding, then extras ----
       std::vector<BM> list{rng.f() < 0.5f ? BM::FarmhouseA : BM::FarmhouseB,
@@ -329,6 +528,26 @@ void SettlementLayout::build(const Planet &planet, uint32_t seed, std::vector<De
       if (rng.f() < 0.15f) list.push_back(BM::Greenhouse);
       if (rng.f() < Config::FARM_WINDMILL_CHANCE) list.push_back(BM::Windmill);
       for (BM m : list) placeNear(m, site.x, site.z, 6.0f, site.radius + 14.0f, 50.0f);
+    }
+  }
+
+  // ---- Telegraph poles along country lanes, clear of settlements ----
+  const Settlements &settlements = planet.settlements();
+  for (const RoadNetwork::Road &rd : roads.roads()) {
+    if (rd.cls != C::Lane || rd.pts.size() < 2) continue;
+    float carry = 0.0f;
+    const float o = RoadNetwork::halfWidthOf(C::Lane) + Config::TELEGRAPH_POLE_OFFSET;
+    for (size_t i = 0; i + 1 < rd.pts.size(); ++i) {
+      const auto a = rd.pts[i], b = rd.pts[i + 1];
+      const float ex = b.x - a.x, ez = b.z - a.z, len = sqrtf(ex * ex + ez * ez);
+      if (len < 0.01f) continue;
+      const float tx = ex / len, tz = ez / len;
+      for (float t = carry; t < len; t += Config::TELEGRAPH_POLE_SPACING) {
+        const float px = a.x + tx * t - tz * o, pz = a.z + tz * t + tx * o;
+        if (!settlements.occupied(px, pz, 10.0f)) place(BM::TelegraphPole, px, pz, atan2f(tx, tz));
+      }
+      carry = fmodf(carry - len, Config::TELEGRAPH_POLE_SPACING);
+      if (carry < 0.0f) carry += Config::TELEGRAPH_POLE_SPACING;
     }
   }
 }

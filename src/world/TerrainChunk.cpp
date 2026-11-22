@@ -19,7 +19,10 @@ static_assert(sizeof(kFieldTints) / sizeof(kFieldTints[0]) == FieldMap::kTintCou
 // Road surfaces by RoadNetwork::Class: asphalt main roads, lighter
 // tarmac lanes, gravel farm tracks.
 static constexpr Color kRoadColours[] = {
-    {72, 72, 76, 255}, {108, 106, 102, 255}, {150, 132, 100, 255}};
+    {72, 72, 76, 255}, {108, 106, 102, 255}, {150, 132, 100, 255},
+    {84, 84, 88, 255},    // town street
+    {156, 148, 136, 255}  // paved square
+};
 
 Color TerrainChunk::landColor(float h, int fieldTint) const {
   // h is normalised [0,1]. Remap land portion (above SEA_LEVEL) to [0,1]

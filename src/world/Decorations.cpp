@@ -253,7 +253,15 @@ const char *const kModelFiles[] = {"tree_conifer.obj", "tree_broadleaf.obj",
                                    "terrace_row_b.obj", "church_a.obj", "church_b.obj", "chapel.obj",
                                    "pub.obj", "village_shop.obj", "village_hall.obj",
                                    "war_memorial.obj", "garden_wall_a.obj", "garden_wall_b.obj",
-                                   "picket_fence.obj"};
+                                   "picket_fence.obj",
+                                   "townhouse_a.obj", "townhouse_b.obj", "townhouse_c.obj",
+                                   "shop_row_a.obj", "shop_row_b.obj", "town_hall.obj",
+                                   "market_hall.obj", "apartment_block_a.obj", "apartment_block_b.obj",
+                                   "office_block_a.obj", "office_block_b.obj", "warehouse_a.obj",
+                                   "warehouse_b.obj", "factory.obj", "chimney.obj", "water_tower.obj",
+                                   "petrol_station.obj", "parked_car_a.obj", "parked_car_b.obj",
+                                   "parked_car_c.obj", "street_lamp.obj", "telegraph_pole.obj",
+                                   "road_sign.obj", "signpost.obj", "bus_shelter.obj", "phone_box.obj"};
 
 // Scale, then yaw, then translate — the same order as DrawModelEx.
 Matrix placeMatrix(Vector3 pos, Vector3 scale, float yaw) {
@@ -705,10 +713,8 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
   // farmland. Each side of each road has one style.
   for (size_t ri = 0; ri < roads.roads().size(); ++ri) {
     const RoadNetwork::Road &rd = roads.roads()[ri];
-    if (rd.pts.size() < 2) continue;
-    const float hw = 0.5f * (rd.cls == RoadNetwork::Class::Main   ? Config::ROAD_MAIN_WIDTH
-                             : rd.cls == RoadNetwork::Class::Lane ? Config::ROAD_LANE_WIDTH
-                                                                  : Config::ROAD_TRACK_WIDTH);
+    if (rd.pts.size() < 2 || rd.cls == RoadNetwork::Class::Street) continue; // farmland roads only
+    const float hw = RoadNetwork::halfWidthOf(rd.cls);
     const float off = hw + Config::ROADSIDE_OFFSET;
     for (int side = -1; side <= 1; side += 2) {
       const uint32_t key = xorshift32(rng) ^ static_cast<uint32_t>(ri * 2654435761u + side);

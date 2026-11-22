@@ -91,6 +91,18 @@ Players who want a modern take on the 1988 Argonaut game *Virus*: flat-shaded lo
 
 **Notes:** Plan in [project-status/ROAD_VILLAGE_TOWN_ROADMAP.md](project-status/ROAD_VILLAGE_TOWN_ROADMAP.md) (phases R.4–R.5). Palette slots 4 and 5 became red brick and thatch ([D-010](DECISIONS.md#d-010-32-colour-palette-via-obj-material-names), amended).
 
+### F-050 Towns
+
+**Priority:** Should
+**Status:** Complete (2026-11-22)
+**Acceptance:**
+
+- Each town has a street grid aligned with its main road and a paved square, cut into the terrain like other roads
+- The town hall, market hall and a church face the square. Frontage is zoned: shop rows, joined townhouses and offices at the centre; townhouses, flats and terraces further out; houses and an industrial quarter (warehouses, a factory and chimney, a water tower) at the edge
+- Street props: a petrol station, street lamps, parked cars, a phone box, a bus shelter and town-limit signs. Telegraph poles line the country lanes
+
+**Notes:** Settlements track R.7 ([project-status/ROAD_VILLAGE_TOWN_ROADMAP.md](project-status/ROAD_VILLAGE_TOWN_ROADMAP.md)), [D-042](DECISIONS.md#d-042-towns-street-grids-in-the-road-network-zoned-frontage). Coastal props (harbour, lighthouse) not done.
+
 ### F-003 Rivers
 
 **Priority:** Could

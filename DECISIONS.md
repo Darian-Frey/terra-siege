@@ -1236,3 +1236,32 @@ Undo is held at inspector level as full-mesh snapshots (32 deep) and is shared a
 
 **Reversal conditions.** Revisit if buildings need damage states or per-building gameplay (R.8: a lightweight store, still not entities), or if towns (R.7) need a different layout model, such as street grids rather than frontage walks.
 
+### D-042 Towns: street grids in the road network, zoned frontage
+
+**Decided:** 2026-11-22
+**Recorded:** 2026-11-22
+**Status:** Accepted
+**Authors:** Shane Hartley (with Claude Code)
+**Related:** D-039, D-040, D-041, F-050
+
+**Context.** The town sites (R.1) were empty. A town needs a denser street pattern than a village's frontage along existing roads, a centre, distinct zones and street props ([project-status/ROAD_VILLAGE_TOWN_ROADMAP.md](project-status/ROAD_VILLAGE_TOWN_ROADMAP.md) R.7).
+
+**Options.**
+
+- **A. Lay buildings out in a town-local grid, separate from the roads.** Rejected: streets would then need their own terrain colouring, field and scenery rules, duplicating R.2–R.3.
+- **B. Make town streets part of the road network.** Chosen.
+
+**Decision.**
+
+- `RoadNetwork` gains `Class::Street` and `Class::Square`, generated after the main roads. The street grid is `TOWN_STREET_SPACING` apart, aligned with the nearest road, offset half a block so the main road is the high street, each line tilted up to `TOWN_STREET_TILT` and cut at water or steep ground. A single-point `Square` road is drawn as a disc. Street nodes count as existing road, so lanes and tracks join them. `RoadNetwork::halfWidthOf()` is the one source of road widths.
+- `SettlementLayout` uses one frontage walker for villages and towns. Towns pick models by zone (`TOWN_CORE_FRAC`, `TOWN_MID_FRAC`, an industrial sector of `TOWN_INDUSTRY_HALF_ANGLE`). Centre terraces are placed with a small gap so rows join. The civic buildings face the square.
+- Street props (cars, lamps, signs, poles, shelter, kiosk) are `BuildingModel`s with relaxed placement: `FURNITURE_ROAD_CLEARANCE`, ground height at their centre, and parked cars allowed on the carriageway.
+
+**Consequences.**
+
+- Towns of up to `TOWN_MAX_BUILDINGS` frontage buildings. The default world has 271 road routes and 3,867 settlement pieces. Load time is unchanged.
+- Streets inherit everything roads get: terrain cut, field regions, scenery clearance and roadside rules (roadside hedges skip streets).
+- Block interiors stay open (backs and gardens); there are no back lanes.
+
+**Reversal conditions.** Revisit if towns need non-grid plans (radial or organic old towns), back lanes and courtyards, or coastal layouts (harbours, 5.6).
+
