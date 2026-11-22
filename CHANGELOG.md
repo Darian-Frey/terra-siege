@@ -10,6 +10,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 ## [Unreleased]
 
 ### Added
+- The player's craft trails damage smoke below half hull, like the enemy ships, until it is repaired on a landing pad (F-017)
 - Hazardous water (F-047): touching sea or lake water damages the hull and drags the craft, and it can't be landed on. The HUD flashes IN WATER. AI flyers stay above the water, tanks and Collectors steer away from it, and any ship that ends up in it takes damage ([D-038](DECISIONS.md#d-038-water-is-not-ground-planetsurfaceat-for-anything-above-it))
 - Countryside: grassland now splits into farming country and wild country ([D-035](DECISIONS.md#d-035-farmland-patchwork-from-an-angled-bsp-shared-by-terrain-and-decorations)).
   - Farming country is a patchwork of irregular fields, cut at random angles, some with bowed or S-bent edges. They are tinted meadow, two greens, young crop, wheat or ploughed earth, and terrain triangles are split along field edges so the colours meet cleanly.

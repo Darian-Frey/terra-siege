@@ -231,10 +231,11 @@ Players who want a modern take on the 1988 Argonaut game *Virus*: flat-shaded lo
 ### F-017 Damage smoke and retreat AI
 
 **Priority:** Should
-**Status:** Complete (2026-06-03, `c99848f`)
+**Status:** Complete (2026-06-03, `c99848f`; player smoke 2026-11-22)
 **Acceptance:**
 
-- Enemies trail smoke below 50% hull
+- Enemies trail smoke below 50% hull (`SMOKE_HP_THRESHOLD`)
+- The player's craft trails the same smoke from its tail below that threshold, until pad repair lifts the hull back over it
 - Fighter, Bomber and Seeder retreat to their spawn point below 40% hull
 - The Carrier smokes but never retreats
 

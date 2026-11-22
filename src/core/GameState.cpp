@@ -367,6 +367,36 @@ Vector3 GameState::pickHomeSite() const {
   return {mid, m_planet.heightAt(mid, mid), mid};
 }
 
+// Damage smoke, as enemies have (EntityManager::tickDamageSmoke): below
+// SMOKE_HP_THRESHOLD of hull the craft trails dark smoke from its tail,
+// thicker and darker as it nears death. Pad repair lifts the hull back
+// over the threshold and the trail stops.
+void GameState::tickPlayerDamageSmoke(float dt) {
+  if (!m_player.isAlive()) return;
+  const float hpFrac = m_player.health() / Config::PLAYER_HULL_HP;
+  if (hpFrac >= Config::SMOKE_HP_THRESHOLD) {
+    m_playerSmokeTimer = 0.0f;
+    return;
+  }
+  float damageFrac = 1.0f - hpFrac / Config::SMOKE_HP_THRESHOLD;
+  damageFrac = damageFrac < 0.0f ? 0.0f : (damageFrac > 1.0f ? 1.0f : damageFrac);
+  m_playerSmokeTimer -= dt;
+  if (m_playerSmokeTimer > 0.0f) return;
+  const float emitRate =
+      Config::SMOKE_EMIT_RATE_MIN +
+      damageFrac * (Config::SMOKE_EMIT_RATE_MAX - Config::SMOKE_EMIT_RATE_MIN);
+  m_playerSmokeTimer = 1.0f / emitRate;
+  const Vector3 tail = Vector3Add(
+      m_player.position(),
+      Vector3Add(Vector3Scale(m_player.forward(), -Config::PLAYER_SMOKE_TAIL_OFFSET),
+                 Vector3Scale(m_player.up(), 0.3f)));
+  Vector3 trailVel = Vector3Scale(m_player.velocity(), -0.3f);
+  trailVel.y += 1.5f;
+  const unsigned char alpha = static_cast<unsigned char>(160.0f + 70.0f * damageFrac);
+  m_particles.emit(tail, trailVel, Color{120, 100, 80, alpha}, 0.45f, Config::SMOKE_LIFETIME,
+                   ParticleSystem::Shape::Cube, ParticleSystem::FLAG_GRAVITY);
+}
+
 void GameState::placePlayerOnHomePad(Vector3 homeSite) {
   // The pad centre is kept clear (towers NE/NW, deck lifts off-centre).
   // The deck is solid to the player, so the craft rests on it; the first
@@ -1283,6 +1313,7 @@ void GameState::update(float dt) {
             Vector3Add(m_player.position(), Vector3Scale(down, 0.6f));
         m_particles.emitExhaust(thrusterPos, down, m_player.velocity(), dt);
       }
+      tickPlayerDamageSmoke(dt);
       m_particles.update(dt, m_planet);
 
       // ---- Player weapon spawns ----

@@ -450,6 +450,7 @@ constexpr float SMOKE_HP_THRESHOLD = 0.50f;  // emit smoke below this hull fract
 constexpr float SMOKE_EMIT_RATE_MIN = 3.0f;  // particles/sec at the threshold
 constexpr float SMOKE_EMIT_RATE_MAX = 15.0f; // particles/sec at 0 hp
 constexpr float SMOKE_LIFETIME = 1.2f;       // seconds per particle
+constexpr float PLAYER_SMOKE_TAIL_OFFSET = 2.0f; // m behind the player's origin
 constexpr float RETREAT_HP_THRESHOLD =
     0.40f; // enter Retreating below this hull fraction
 constexpr float RETREAT_SPEED_FRAC =

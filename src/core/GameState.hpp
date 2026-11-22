@@ -211,6 +211,8 @@ private:
   // hits the ground — then we fire the final explosion and switch
   // to GameOver. Reset on every transition into Playing.
   bool m_playerDeathHandled = false;
+  float m_playerSmokeTimer = 0.0f; // next damage-smoke puff
+  void tickPlayerDamageSmoke(float dt);
 
   // Slice C C.7 — session-result tracking. Set when we transition
   // out of Playing; consumed by drawSessionResult() to render the
