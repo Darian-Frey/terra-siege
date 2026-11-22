@@ -342,6 +342,9 @@ void GameState::loadWorld(uint32_t seed) {
     drawLoadingScreen(step, 0.85f + 0.15f * p);
   });
   placePlayerOnHomePad(home);
+  m_settlementStatus.build(m_planet, seed);
+  m_settlementEvents.reserve(Config::MAX_SETTLEMENT_TARGETS * 3);
+  m_decorations.setInfectionTexture(m_planet.infection().texture());
 
   // Snapshot the total for the "alive vs total" HUD readout and
   // game-over detection (need a known baseline since friendlies
@@ -408,6 +411,91 @@ void GameState::drawSettlementOverlay() const {
   }
 }
 #endif
+
+// R.8a — settlements: tell Seeders where they are, advance infection and
+// cleansing, push infection to the building tints and markers to the
+// radar, and turn events into a HUD line and a sound.
+void GameState::updateSettlements(float dt) {
+  const auto &entries = m_settlementStatus.entries();
+  std::array<EntityManager::SettlementTarget, Config::MAX_SETTLEMENT_TARGETS> targets{};
+  std::array<Radar::SettlementMarker, Config::MAX_SETTLEMENT_TARGETS> markers{};
+  const int n = std::min(static_cast<int>(entries.size()), Config::MAX_SETTLEMENT_TARGETS);
+  for (int i = 0; i < n; ++i) targets[i] = {entries[i].pos, entries[i].radius, !entries[i].lost};
+  m_em.setSettlementTargets(targets.data(), n);
+  m_em.setInfectionField(&m_planet.infection());
+
+  const Vector3 p = m_player.position();
+  m_settlementEvents.clear();
+  m_settlementStatus.update(dt, m_em, p, p.y - m_planet.surfaceAt(p.x, p.z), m_planet,
+                            m_settlementEvents);
+  // The ground texture follows the field at most INFECTION_UPLOAD_HZ.
+  m_infectionUploadTimer -= dt;
+  if (m_infectionUploadTimer <= 0.0f) {
+    m_planet.infection().upload();
+    m_infectionUploadTimer = 1.0f / Config::INFECTION_UPLOAD_HZ;
+  }
+  int markerCount = 0;
+  for (int i = 0; i < n; ++i) {
+    const SettlementStatus::Entry &e = entries[i];
+    if (!e.listed) continue; // farmsteads stay off the radar
+    using S = SettlementStatus::State;
+    const Color c = e.state == S::UnderAttack ? Color{255, 150, 40, 255}
+                    : e.state == S::Infected  ? Color{190, 80, 230, 255}
+                    : e.state == S::Infecting ? Color{240, 200, 90, 255}
+                                              : Color{220, 230, 240, 255};
+    markers[markerCount++] = {e.pos, e.town, c, e.state == S::UnderAttack};
+  }
+  m_radar.setSettlementMarkers(markers.data(), markerCount);
+
+  for (const SettlementStatus::Event &ev : m_settlementEvents) {
+    const char *name = entries[ev.entry].name.c_str();
+    switch (ev.kind) {
+    case SettlementStatus::Event::Kind::UnderAttack:
+      snprintf(m_settlementMessage, sizeof(m_settlementMessage), "%s UNDER ATTACK", name);
+      break;
+    case SettlementStatus::Event::Kind::Lost:
+      snprintf(m_settlementMessage, sizeof(m_settlementMessage), "%s LOST TO THE INFECTION", name);
+      break;
+    case SettlementStatus::Event::Kind::Reclaimed:
+      snprintf(m_settlementMessage, sizeof(m_settlementMessage), "%s RECLAIMED", name);
+      break;
+    }
+    m_settlementMessageTimer = Config::SETTLEMENT_MESSAGE_TIME;
+    m_audio.play2D(SfxId::UIBlip, 0.7f);
+  }
+  if (m_settlementMessageTimer > 0.0f) m_settlementMessageTimer -= dt;
+}
+
+// R.8a — names of the towns and villages near the camera, over their
+// centres, with their state; and the latest settlement event line.
+void GameState::drawSettlementLabels() const {
+  using S = SettlementStatus::State;
+  for (const SettlementStatus::Entry &e : m_settlementStatus.entries()) {
+    if (!e.listed) continue;
+    const Vector3 c = m_planet.nearestCopy(e.pos, m_camera.position);
+    const float dx = c.x - m_camera.position.x, dz = c.z - m_camera.position.z;
+    if (dx * dx + dz * dz > Config::SETTLEMENT_NAME_RANGE * Config::SETTLEMENT_NAME_RANGE) continue;
+    const Vector3 up{c.x, c.y + (e.town ? 45.0f : 25.0f), c.z};
+    const Vector3 toP{up.x - m_camera.position.x, up.y - m_camera.position.y, up.z - m_camera.position.z};
+    const Vector3 fwd = Vector3Subtract(m_camera.target, m_camera.position);
+    if (Vector3DotProduct(toP, fwd) <= 0.0f) continue; // behind the camera
+    const Vector2 sp = GetWorldToScreen(up, m_camera);
+    const char *tag = e.state == S::UnderAttack ? " (UNDER ATTACK)"
+                      : e.state == S::Infected  ? " (INFECTED)"
+                      : e.state == S::Infecting ? " (INFECTION)"
+                                                : "";
+    char buf[96];
+    snprintf(buf, sizeof(buf), "%s%s", e.name.c_str(), tag);
+    const int size = e.town ? 16 : 13;
+    const int w = measureHudText(buf, size);
+    const Color col = e.state == S::Safe ? Color{230, 235, 245, 220} : Color{255, 170, 90, 240};
+    drawHudText(buf, static_cast<int>(sp.x) - w / 2, static_cast<int>(sp.y), size, col);
+  }
+  if (m_settlementMessageTimer > 0.0f) {
+    const int w = measureHudText(m_settlementMessage, 18);
+    drawHudText(m_settlementMessage, GetScreenWidth() / 2 - w / 2, 150, 18, {255, 190, 110, 255});
+  }
+}
 
 void GameState::tickPlayerDamageSmoke(float dt) {
   if (!m_player.isAlive()) return;
@@ -1690,6 +1778,7 @@ void GameState::update(float dt) {
         m_audio.setListener(m_camera.position, fwd, right);
       }
       m_em.update(dt, m_planet, m_player, m_particles);
+      updateSettlements(dt);
       m_radar.update(dt, m_em, m_player.position(), m_player.yaw(),
                      static_cast<float>(GetTime()));
       // WaveManager spawns enemies on a stagger and drives the
@@ -2046,6 +2135,7 @@ void GameState::drawSessionResult() {
 // HUD
 // ================================================================
 void GameState::drawHUD() const {
+  drawSettlementLabels();
   const int sw = GetScreenWidth();
   const int sh = GetScreenHeight();
 
@@ -3119,6 +3209,11 @@ void GameState::resetCombat() {
   placePlayerOnHomePad(home);
   drawLoadingScreen("Ready", 1.0f);
   TraceLog(LOG_INFO, "Battlefield setup: %.2f seconds", GetTime() - t0);
+  // Fresh round: every settlement clean again.
+  m_settlementStatus.build(m_planet, m_seed);
+  m_planet.infection().clear();
+  m_planet.infection().upload();
+  m_settlementMessageTimer = 0.0f;
   m_friendlyTotalAtStart = liveDefendedCount();
   // Slice C C.7 — snapshot lander total for the result-screen stat
   // line + the Base-mode victory gate. Zero in Wave mode (no landers

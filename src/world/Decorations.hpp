@@ -96,6 +96,7 @@ struct Decoration {
   float scale = 1.0f;   // per-instance size variation
   float stretch = 1.0f; // extra scale along local Z (boundary segments fit their edge)
   float slope = 0.0f;   // bridge spans: rise per metre along local Z (deck shear)
+  uint16_t site = 0xffff; // buildings: index of their settlement site (R.8)
   uint32_t seed = 0;    // per-instance RNG (cluster count, debris jitter, ...)
 };
 
@@ -136,6 +137,11 @@ public:
   void rebuildInstances(const Planet &planet) { buildInstances(planet); }
   size_t count() const { return m_items.size(); }
 
+  // Ground infection overlay (R.8a): the InfectionField texture the
+  // instancing shader samples at each object's origin.
+  void setInfectionTexture(Texture2D tex) {
+    if (m_instReady) m_instMaterial.maps[MATERIAL_MAP_ALBEDO].texture = tex;
+  }
 private:
   // Instanced scenery models, in kModelFiles order.
   enum ModelSlot {
@@ -185,6 +191,7 @@ private:
   std::array<std::vector<Matrix>, kModelCount> m_xf;
   std::array<std::vector<uint32_t>, kModelCount> m_cellStart;
   int m_gridN = 0;
+  Texture2D m_noInfection{}; // 1×1 black: clean ground before a world exists
   // Per-frame gather buffer for the visible instances of one model.
   // Reserved at build time to the largest model's count, so render()
   // never allocates.

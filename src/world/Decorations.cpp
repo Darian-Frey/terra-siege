@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 #include <cstdio>
 
 namespace {
@@ -210,15 +211,23 @@ bool sampleAndPush(std::vector<Decoration> &out,
 // Unlit instancing shader: the per-instance model matrix comes in as a
 // vertex attribute; colour is the baked palette vertex colour, exactly
 // what raylib's default shader gives the other OBJ models.
+// The ground infection (R.8a) is sampled at each instance's origin from
+// texture0 (the InfectionField texture, world-wrapped), so a whole tree,
+// hedge or building turns alien with the land under it.
 const char *kInstVs = R"(#version 330
 in vec3 vertexPosition;
 in vec4 vertexColor;
 in mat4 instanceTransform;
 uniform mat4 mvp;
 uniform vec4 colDiffuse;
+uniform sampler2D texture0;
 out vec4 fragColor;
 void main() {
-  fragColor = vertexColor * colDiffuse;
+  vec3 origin = instanceTransform[3].xyz;
+  float infect = textureLod(texture0, origin.xz / WORLD_SIZE, 0.0).r;
+  float lum = dot(vertexColor.rgb, vec3(0.3, 0.59, 0.11));
+  vec4 alien = vec4(vec3(0.55, 0.22, 0.72) * (0.6 + 0.8 * lum), 1.0);
+  fragColor = mix(vertexColor, alien, infect * 0.85) * colDiffuse;
   gl_Position = mvp * instanceTransform * vec4(vertexPosition, 1.0);
 }
 )";
@@ -865,7 +874,10 @@ void Decorations::loadModels(const std::filesystem::path &meshesDir) {
     m_models[m] = tsmesh::loadModel(p);
     m_modelLoaded[m] = m_models[m].meshCount > 0;
   }
-  m_instShader = LoadShaderFromMemory(kInstVs, kInstFs);
+  std::string vs = kInstVs;
+  const std::string key = "WORLD_SIZE";
+  vs.replace(vs.find(key), key.size(), std::to_string(Config::WORLD_SIZE));
+  m_instShader = LoadShaderFromMemory(vs.c_str(), kInstFs);
   m_instReady = m_instShader.id != 0 && m_instShader.id != rlGetShaderIdDefault();
   if (!m_instReady) {
     std::fprintf(stderr, "[Decorations] instancing shader failed, using boxes\n");
@@ -875,6 +887,11 @@ void Decorations::loadModels(const std::filesystem::path &meshesDir) {
       GetShaderLocationAttrib(m_instShader, "instanceTransform");
   m_instMaterial = LoadMaterialDefault();
   m_instMaterial.shader = m_instShader;
+  // Clean ground until the world's infection texture is attached.
+  Image black = GenImageColor(1, 1, BLACK);
+  m_noInfection = LoadTextureFromImage(black);
+  UnloadImage(black);
+  m_instMaterial.maps[MATERIAL_MAP_ALBEDO].texture = m_noInfection;
 }
 
 void Decorations::unloadModels() {
@@ -885,6 +902,8 @@ void Decorations::unloadModels() {
   if (m_instReady) {
     UnloadShader(m_instShader);
     MemFree(m_instMaterial.maps); // LoadMaterialDefault's map array
+    if (m_noInfection.id != 0) UnloadTexture(m_noInfection);
+    m_noInfection = {};
     m_instReady = false;
   }
 }
@@ -1024,6 +1043,7 @@ void Decorations::buildInstances(const Planet &planet) {
   m_visible.clear();
   m_visible.reserve(largest);
 }
+
 
 // ====================================================================
 // Render — distance-culled. raylib's DrawCube doesn't frustum-cull,

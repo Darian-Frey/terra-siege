@@ -93,7 +93,7 @@ The register was created on 2026-10-15 ([D-001](DECISIONS.md#d-001-adopt-the-dev
 **Effort:** medium
 **Description.** Only Fighters and Bombers can be infected. Seeder and Carrier orbit-and-drop AI "doesn't map cleanly" to attacking former allies.
 **Proposal.** Define infected behaviours: an infected Seeder drops friendly drones; an infected Carrier deploys drones against its former side.
-**Trade-offs.** An infected Carrier could trivialise the boss fight. This may be better left out, and revisited alongside infection v2 (F-025).
+**Trade-offs.** Since F-052 the Seeder no longer drops drones, so the Seeder half needs a new behaviour (perhaps cleansing). An infected Carrier could trivialise the boss fight. This may be better left out, and revisited alongside infection v2 (F-025).
 
 ### IMP-009: Inspector Phase B: mirror, weld, split
 

@@ -1300,3 +1300,35 @@ Undo is held at inspector level as full-mesh snapshots (32 deep) and is shared a
 
 **Reversal conditions.** Revisit if ground units should use bridges, if the player should land on them, or if longer crossings (causeways, ferries) are wanted.
 
+
+### D-044 Ground infection field; Seeders infect settlements
+
+**Decided:** 2026-11-22
+**Recorded:** 2026-11-22
+**Status:** Accepted
+**Authors:** Shane Hartley (with Claude Code)
+**Related:** D-012, D-013, D-034, D-041, F-052
+
+**Context.** R.8 made settlements infection targets ([project-status/ROAD_VILLAGE_TOWN_ROADMAP.md](project-status/ROAD_VILLAGE_TOWN_ROADMAP.md) section 4). The Seeder played as a mothership dropping drones. In playtest the user asked for it to fly down to a farm, village or town and emit particles that infect the buildings, trees and land.
+
+**Options.**
+
+- **A. Per-building tint.** A per-settlement infection level written into each building instance. Rejected: only buildings change; the land and trees around them stay green.
+- **B. A ground infection field.** Chosen.
+
+**Decision.**
+
+- `InfectionField` holds one value per heightmap cell over the whole toroidal world, mirrored in a single-channel GPU texture (wrap repeat, bilinear). `Planet` owns it.
+- The terrain shader samples it per triangle (flat) from the world position. The instancing shader samples it at each instance's origin. Both shift towards alien purple, so land and everything on it turn together with no per-object state.
+- Seeders deposit infection under themselves while circling a settlement low. A settlement's level is the field's mean over its area (`SettlementStatus`, one record per site, not an entity). The player cleanses by flying low.
+- CPU writes mark the field dirty; `GameState` uploads it at `INFECTION_UPLOAD_HZ`.
+- The Seeder no longer deploys drones (the `SEEDER_DEPLOY_*` constants are gone).
+
+**Consequences.**
+
+- Infection is visible at any distance and reads as a spreading blight, in the spirit of *Virus*.
+- The texture costs one 1 MB upload at most `INFECTION_UPLOAD_HZ` times a second, only when infection changed.
+- Without the Seeder's drones, waves 6+ field fewer drones; the drone cap and Carrier deploys are unchanged.
+- Infection doesn't spread by itself, and Landers don't infect settlements.
+
+**Reversal conditions.** Revisit if infection should spread on its own (a diffusion pass over the field), if other enemies should infect, or if the upload cost shows in profiles.

@@ -3,6 +3,7 @@
 #include "audio/AudioManager.hpp"
 #include "core/Particles.hpp"
 #include "core/Settings.hpp"
+#include "core/SettlementStatus.hpp"
 #include "entity/EntityManager.hpp"
 #include "entity/Player.hpp"
 #include "hud/Radar.hpp"
@@ -300,6 +301,14 @@ private:
   ParticleSystem m_particles;
   EntityManager m_em;
   Radar m_radar;
+  // R.8a — settlement infection state, and the HUD line for its events.
+  SettlementStatus m_settlementStatus;
+  std::vector<SettlementStatus::Event> m_settlementEvents; // reserved; reused each tick
+  char m_settlementMessage[96] = {};
+  float m_settlementMessageTimer = 0.0f;
+  float m_infectionUploadTimer = 0.0f;
+  void updateSettlements(float dt);
+  void drawSettlementLabels() const;
   WaveManager m_waves;
   // Mesh registry — startup-loaded raylib Models indexed by EntityType
   // (and a dedicated player slot). Entities not yet migrated to OBJ

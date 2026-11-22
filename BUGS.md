@@ -404,6 +404,16 @@ The 5g commit says strafe runs "fire at the friendly", but the friendly-hit chec
 **Reproduction.** Default world: a relay tower on a track near the north of a town.
 **Notes.** Fixed 2026-11-22. The home site and grass spots need a whole base site (pad and ramps) plus `STRUCTURE_ROAD_CLEARANCE` clear of roads. Relay towers step sideways off their chain line, up to 60 m, until clear, and are skipped if no spot is found. Four fewer relay nodes on the default world (49, 45 online).
 
+### BUG-037: F7 skip-wave kills friendly structures and allies too
+
+**Status:** fixed (2026-11-22)
+**Found:** 2026-11-22 (playtest)
+**Location:** [src/entity/EntityManager.cpp](src/entity/EntityManager.cpp) `killAllEnemies()`
+**Severity:** low (DEV only)
+**Description.** The DEV skip-wave key (F7) killed every live entity, including bases, landing pads, radar towers, Collectors, base defenders and infected (allied) ships.
+**Reproduction.** Press F7 in Base mode. Every friendly structure disappears.
+**Notes.** Fixed 2026-11-22. It now skips friendly structures, infected or infecting ships and base defenders, and decrements the live-enemy count per kill.
+
 ## Won't Fix
 
 _None._

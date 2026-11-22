@@ -25,6 +25,12 @@ public:
   // Draw at a world-space offset. Planet picks the tile offset closest to
   // the camera so the toroidal world appears infinite in every direction.
   void draw(Vector3 offset) const;
+  // Draw with this shader and its texture0 (the infection overlay, R.8a).
+  void setOverlay(Shader shader, Texture2D texture) {
+    if (!m_built) return;
+    m_model.materials[0].shader = shader;
+    m_model.materials[0].maps[MATERIAL_MAP_ALBEDO].texture = texture;
+  }
   void unload();
 
   bool isBuilt() const { return m_built; }

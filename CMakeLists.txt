@@ -94,6 +94,8 @@ set(GAME_SOURCES
     src/core/Particles.cpp
     src/core/Particles.hpp
     src/core/Settings.cpp
+    src/core/SettlementStatus.cpp
+    src/core/SettlementStatus.hpp
     src/core/Settings.hpp
 
     src/world/Planet.cpp
@@ -108,6 +110,8 @@ set(GAME_SOURCES
     src/world/FieldMap.cpp
     src/world/Settlements.cpp
     src/world/Roads.cpp
+    src/world/InfectionField.cpp
+    src/world/InfectionField.hpp
     src/world/SettlementLayout.cpp
     src/world/SettlementLayout.hpp
     src/world/Roads.hpp

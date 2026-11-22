@@ -86,6 +86,20 @@ public:
   void drawAltitudeStripOnly(Vector2 stripTopLeft, float height,
                              float width) const;
 
+  // Settlement markers (R.8a): towns and villages, coloured by state.
+  // Static friendly landmarks, so always shown within the disc (no pulse
+  // painting). Set by GameState each tick; fixed capacity.
+  struct SettlementMarker {
+    Vector3 pos;  // world position
+    bool town;
+    Color colour;
+    bool flash;   // under attack
+  };
+  void setSettlementMarkers(const SettlementMarker *markers, int count) {
+    m_markerCount = count < Config::MAX_SETTLEMENT_TARGETS ? count : Config::MAX_SETTLEMENT_TARGETS;
+    for (int i = 0; i < m_markerCount; ++i) m_markers[i] = markers[i];
+  }
+
   bool boosted() const { return m_boosted; }
   float activeRange() const { return m_activeRange; }
 
@@ -180,4 +194,6 @@ private:
   // Draw the rim-mounted incoming-missile warnings as red blinking
   // arrows pointing at each threat's bearing.
   void drawMissileWarnings(Vector2 centre, float radius) const;
+  std::array<SettlementMarker, Config::MAX_SETTLEMENT_TARGETS> m_markers{};
+  int m_markerCount = 0;
 };

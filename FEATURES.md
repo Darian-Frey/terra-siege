@@ -115,6 +115,20 @@ Players who want a modern take on the 1988 Argonaut game *Virus*: flat-shaded lo
 
 **Notes:** Settlements track R.6 ([project-status/ROAD_VILLAGE_TOWN_ROADMAP.md](project-status/ROAD_VILLAGE_TOWN_ROADMAP.md)), [D-043](DECISIONS.md#d-043-bridges-water-near-land-is-bridgeable-at-a-cost-spans-laid-along-the-road). Bridges appear only where geography needs them; the default seed has none.
 
+### F-052 Settlement gameplay
+
+**Priority:** Should
+**Status:** In progress (R.8a complete 2026-11-22; R.8b building damage and score hooks not started)
+**Acceptance:**
+
+- R.8a: Seeders are infectors. Each picks the nearest settlement not yet lost (within `SEEDER_SEEK_RANGE`), descends to `SEEDER_INFECT_AGL`, circles it spraying spore particles and deposits ground infection. It climbs away from a close player
+- R.8a: infection lives on the ground and turns land, trees, hedges and buildings alien together. A settlement's infection is the mean over its area. It is lost at `SETTLEMENT_LOST_LEVEL` and reclaimed below `SETTLEMENT_RECLAIM_LEVEL`
+- R.8a: flying below `SETTLEMENT_CLEANSE_AGL` with no Seeder within `CLEANSE_SAFE_RANGE` cleanses the ground under the player
+- R.8a: towns and villages get generated names (shown within `SETTLEMENT_NAME_RANGE`), radar squares (flashing under attack) and HUD events: under attack, lost, reclaimed. Farmsteads are targets but stay off the radar
+- R.8b: building damage (rubble, burnt shells, smoke), a friendly-fire penalty, and lost settlements costing score and counting towards defeat in Base mode
+
+**Notes:** Settlements track R.8 ([project-status/ROAD_VILLAGE_TOWN_ROADMAP.md](project-status/ROAD_VILLAGE_TOWN_ROADMAP.md)), [D-044](DECISIONS.md#d-044-ground-infection-field-seeders-infect-settlements). Infection doesn't spread on its own. Seeders no longer drop drones.
+
 ### F-003 Rivers
 
 **Priority:** Could
@@ -270,7 +284,7 @@ Players who want a modern take on the 1988 Argonaut game *Virus*: flat-shaded lo
 **Status:** Complete (2026-06-01, `667e52b`)
 **Acceptance:**
 
-- Drone (stand-off gunship swarm, global cap 16), Fighter, Seeder, Bomber, Carrier (4-sector shield boss) and Ground Tank
+- Drone (stand-off gunship swarm, global cap 16), Fighter, Seeder (settlement infector since F-052), Bomber, Carrier (4-sector shield boss) and Ground Tank
 - Enemy HP derives from time-to-kill targets × 100 DPS reference ([D-014](DECISIONS.md#d-014-ttk-derived-enemy-hp))
 - Fighter AI: IDLE → PURSUE → ATTACK → EVADE. Bomber adds STRAFE_FRIENDLY
 - Per-entity stats come from sidecar profiles (F-034)

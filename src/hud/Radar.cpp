@@ -594,6 +594,21 @@ void Radar::draw(Vector2 discCentre, float discRadius) const {
                1.0f, ghost);
   }
 
+  // Settlement markers — squares under the blips (towns filled, villages
+  // outlined), dropped when outside the disc.
+  for (int i = 0; i < m_markerCount; ++i) {
+    const SettlementMarker &m = m_markers[i];
+    if (m.flash && fmodf(m_gameTime, 0.6f) > 0.35f) continue;
+    Vector2 rp = worldToRadar(nearestCopy(m.pos, m_playerPos), discCentre, discRadius);
+    const float bx = rp.x - discCentre.x, by = rp.y - discCentre.y;
+    if (bx * bx + by * by > discRadius * discRadius) continue;
+    const float s = m.town ? 5.0f : 3.5f;
+    if (m.town)
+      DrawRectangleV({rp.x - s, rp.y - s}, {2.0f * s, 2.0f * s}, m.colour);
+    else
+      DrawRectangleLinesEx({rp.x - s, rp.y - s, 2.0f * s, 2.0f * s}, 1.5f, m.colour);
+  }
+
   // Active blips — clamp out-of-range contacts to the disc rim so the
   // player still sees a directional indicator even for distant threats.
   // Jam jitter applied per-contact for Tier 2 Carrier-proximity effect.

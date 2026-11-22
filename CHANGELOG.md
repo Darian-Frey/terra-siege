@@ -10,6 +10,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 ## [Unreleased]
 
 ### Added
+- Settlement infection (F-052, Settlements track R.8a): Seeders are now infectors. They fly to the nearest farm, village or town, circle it low spraying purple spores, and the ground under them turns alien, land, trees, hedges and buildings together. A settlement is lost when heavily infected and reclaimed once cleansed; fly low with no Seeder near to cleanse the ground. Towns and villages have generated names, radar squares that flash under attack, and HUD messages ([D-044](DECISIONS.md#d-044-ground-infection-field-seeders-infect-settlements))
 - Bridges (F-051, Settlements track R.6): roads may cross narrow water when it saves a long detour. Crossings get stone arch or steel girder spans that meet the road on both banks and rise clear of the water, with piers at the joints ([D-043](DECISIONS.md#d-043-bridges-water-near-land-is-bridgeable-at-a-cost-spans-laid-along-the-road))
 - DEV: in free cam (F1) the debug panel shows the camera's world coordinates
 - Towns (F-050, Settlements track R.7): street grids round a paved square, with a town hall, market hall and church on the square; shop rows, terraces, offices and flats in the centre; houses and an industrial quarter (warehouses, factory, chimney, water tower) at the edge; a petrol station, street lamps, parked cars, a phone box, a bus shelter and town signs. 26 new models. Telegraph poles now line country lanes ([D-042](DECISIONS.md#d-042-towns-street-grids-in-the-road-network-zoned-frontage))
@@ -45,6 +46,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Project documentation to the development documentation standard: README status header, FEATURES, DECISIONS, ARCHITECTURE, ATTACK_VECTORS, BUGS, IMPROVEMENTS, CHANGELOG, MIT LICENSE ([D-001](DECISIONS.md#d-001-adopt-the-development-documentation-standard))
 
 ### Changed
+- Seeders no longer drop drones; they infect settlements instead (F-052)
 - Base platform decks are solid for the player: a landed craft sits on the deck instead of floating at the 5 m terrain floor, and its shadow lies on the deck ([D-037](DECISIONS.md#d-037-base-platform-decks-are-solid-ground-for-the-player))
 - Scenery object count cut from about 422,000 to 164,000 ([D-036](DECISIONS.md#d-036-multi-plant-stand-models-cut-the-scenery-instance-count)):
   - Forests are now built from stand models: six 16 m groves (conifer, broadleaf, birch, mixed) and four 9 m copses, sheared onto the slope. They grow in single-species stands, with loose trees filling the gaps.
@@ -80,6 +82,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Stale duplicate of `game_modes_and_features.md` at the repo root
 
 ### Fixed
+- DEV skip-wave (F7) killed friendly structures and allies as well as enemies ([BUG-037](BUGS.md#bug-037-f7-skip-wave-kills-friendly-structures-and-allies-too))
 - Road routing artefacts: lanes and tracks stopping short of town streets, dead-end street stubs, main roads staircasing through towns (they now run as straight spokes to the square), and roads clipping the edge of water ([BUG-035](BUGS.md#bug-035-road-network-routing-artefacts-gaps-stubs-staircases-and-water-clips))
 - Bases and radar relay towers could be placed on roads ([BUG-036](BUGS.md#bug-036-bases-and-radar-towers-placed-on-roads))
 - Float precision dropped terrain pieces near roads, leaving holes along them. Polygon areas are now measured from a local origin ([BUG-034](BUGS.md#bug-034-terrain-pieces-near-roads-dropped-from-the-mesh))

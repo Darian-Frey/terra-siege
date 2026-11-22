@@ -1,5 +1,38 @@
 #include "Planet.hpp"
 #include <cmath>
+#include <string>
+
+namespace {
+// Terrain: baked vertex colours (lighting included), blended towards
+// alien purple by the ground infection, sampled once per triangle at
+// its provoking vertex (flat) so the flat-shaded look holds.
+const char *kTerrainVs = R"(#version 330
+in vec3 vertexPosition;
+in vec4 vertexColor;
+uniform mat4 mvp;
+uniform mat4 matModel;
+uniform sampler2D texture0;
+out vec4 fragColor;
+flat out float infect;
+void main() {
+  vec4 wp = matModel * vec4(vertexPosition, 1.0);
+  infect = textureLod(texture0, wp.xz / WORLD_SIZE, 0.0).r;
+  fragColor = vertexColor;
+  gl_Position = mvp * vec4(vertexPosition, 1.0);
+}
+)";
+const char *kTerrainFs = R"(#version 330
+in vec4 fragColor;
+flat in float infect;
+uniform vec4 colDiffuse;
+out vec4 finalColor;
+void main() {
+  float lum = dot(fragColor.rgb, vec3(0.3, 0.59, 0.11));
+  vec3 alien = vec3(0.42, 0.12, 0.50) * (0.55 + 0.9 * lum);
+  finalColor = vec4(mix(fragColor.rgb, alien, infect * 0.85), fragColor.a) * colDiffuse;
+}
+)";
+} // namespace
 
 void Planet::generate(uint32_t seed, ProgressCb cb) {
   if (m_ready)
@@ -39,8 +72,24 @@ void Planet::generate(uint32_t seed, ProgressCb cb) {
     }
   }
 
+  // Infection overlay: a clean field and the terrain shader on every chunk.
+  if (!m_infection.ready()) m_infection.init();
+  else m_infection.clear();
+  if (m_terrainShader.id == 0) {
+    std::string vs = kTerrainVs;
+    const std::string key = "WORLD_SIZE";
+    vs.replace(vs.find(key), key.size(), std::to_string(Config::WORLD_SIZE));
+    m_terrainShader = LoadShaderFromMemory(vs.c_str(), kTerrainFs);
+  }
+  applyOverlay();
+
   if (cb) cb("Complete", 1.0f);
   m_ready = true;
+}
+
+void Planet::applyOverlay() {
+  if (m_terrainShader.id == 0 || !m_infection.ready()) return;
+  for (auto &chunk : m_chunks) chunk.setOverlay(m_terrainShader, m_infection.texture());
 }
 
 void Planet::draw(Vector3 cameraPos) const {
@@ -93,6 +142,7 @@ float Planet::flattenPad(float worldX, float worldZ, float halfSize,
           wz * cellsPerChunk, cellsPerChunk);
     }
   }
+  applyOverlay(); // rebuilt chunks get fresh materials
   return h;
 }
 
@@ -115,6 +165,9 @@ void Planet::unload() {
   for (auto &chunk : m_chunks)
     chunk.unload();
   m_chunks.clear();
+  m_infection.unload();
+  if (m_terrainShader.id != 0) UnloadShader(m_terrainShader);
+  m_terrainShader = {};
   m_ready = false;
 }
 

@@ -8,6 +8,7 @@
 #include <vector>
 
 class Planet;
+class InfectionField;
 class Player;
 class ParticleSystem;
 class AudioManager;
@@ -48,6 +49,21 @@ public:
   // Non-owning. Defaults to nullptr so unit tests / inspector that
   // don't wire one still run silently.
   void setAudio(AudioManager *a) { m_audio = a; }
+
+  // Settlements Seeders head for (R.8a): world positions and radii, and
+  // whether each is still worth infecting (not yet lost). Set by
+  // GameState each tick; fixed capacity, no allocation.
+  struct SettlementTarget {
+    Vector3 pos;
+    float radius;
+    bool open;
+  };
+  // Ground infection Seeders spread (R.8a); owned by the Planet.
+  void setInfectionField(InfectionField *f) { m_infection = f; }
+  void setSettlementTargets(const SettlementTarget *targets, int count) {
+    m_targetCount = count < Config::MAX_SETTLEMENT_TARGETS ? count : Config::MAX_SETTLEMENT_TARGETS;
+    for (int i = 0; i < m_targetCount; ++i) m_targets[i] = targets[i];
+  }
   // True while the player is docked on a friendly base's pad (HUD cue).
   bool playerOnPad() const { return m_playerOnPad; }
   // Top of the base platform under p (entity frame), or NAN if none.
@@ -221,8 +237,9 @@ private:
   void fireBomberShot(Entity &e, Vector3 targetPos, bool infected);
 
   // Seeder — slow drift + periodic drone deployment.
-  void updateSeeder(Entity &e, float dt, const Planet &planet,
-                    const Player &player);
+  void updateSeeder(Entity &e, float dt, const Planet &planet, const Player &player,
+                    ParticleSystem &particles);
+  float frandSpore();
 
   // Carrier — boss-tier. 4-sector shield, hovers high, continuously
   // deploys drones. Same hover-and-drift movement pattern as Seeder
@@ -343,4 +360,8 @@ private:
                    const tsmesh::MeshRegistry *registry) const;
   void renderProjectile(const Entity &p,
                         const tsmesh::MeshRegistry *registry) const;
+  std::array<SettlementTarget, Config::MAX_SETTLEMENT_TARGETS> m_targets{};
+  int m_targetCount = 0;
+  InfectionField *m_infection = nullptr;
+  uint32_t m_sporeRng = 0x2545f491u;
 };

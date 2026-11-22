@@ -1,6 +1,6 @@
 # Roads, Villages and Towns — Roadmap
 
-**Status:** In progress. R.1–R.7 complete (2026-11-22); only R.8 (settlement gameplay) remains, and it waits on the section 4 decisions. R.4–R.5 are tracked by [F-049](../FEATURES.md#f-049-villages-and-farmsteads), R.6 by [F-051](../FEATURES.md#f-051-bridges), R.7 by [F-050](../FEATURES.md#f-050-towns). Phases are tracked by [F-048](../FEATURES.md#f-048-settlement-sites-and-road-network) for R.1–R.3; later phases get their own feature IDs when they start.
+**Status:** In progress. R.1–R.7 complete (2026-11-22); R.8a (settlement infection) complete (2026-11-22, [F-052](../FEATURES.md#f-052-settlement-gameplay)); R.8b remains. R.4–R.5 are tracked by [F-049](../FEATURES.md#f-049-villages-and-farmsteads), R.6 by [F-051](../FEATURES.md#f-051-bridges), R.7 by [F-050](../FEATURES.md#f-050-towns). Phases are tracked by [F-048](../FEATURES.md#f-048-settlement-sites-and-road-network) for R.1–R.3; later phases get their own feature IDs when they start.
 **Track:** New "Settlements" track, to sit beside the Engine, Features and Tooling tracks in [ROADMAP.md](../ROADMAP.md).
 **Builds on:** the farmland patchwork and forest mask ([D-035](../DECISIONS.md#d-035-farmland-patchwork-from-an-angled-bsp-shared-by-terrain-and-decorations)), instanced scenery and stand models ([D-034](../DECISIONS.md#d-034-trees-and-rocks-are-obj-models-drawn-with-gpu-instancing), [D-036](../DECISIONS.md#d-036-multi-plant-stand-models-cut-the-scenery-instance-count)), and the water surface ([D-038](../DECISIONS.md#d-038-water-is-not-ground-planetsurfaceat-for-anything-above-it)).
 
@@ -358,6 +358,8 @@ Each phase ends playable, and gets its docs (FEATURES, DECISIONS, CHANGELOG) in 
 - radar or map markers, and score or penalty hooks
 **Acceptance:** defined once section 4 is settled.
 **Assets:** 5.7.
+**Decisions (2026-11-22):** settlements are infection targets; buildings can be damaged, with a friendly-fire cost; roads don't matter to gameplay yet; towns and villages get radar markers and names.
+**Status:** R.8a complete (2026-11-22, [D-044](../DECISIONS.md#d-044-ground-infection-field-seeders-infect-settlements)). Seeders fly to the nearest settlement and infect it; infection is a ground field shared by the terrain and scenery shaders; `SettlementStatus` tracks each site; radar squares, names and HUD events for towns and villages; low flight cleanses. R.8b (building damage, friendly-fire penalty, score and Base-mode defeat hooks) not started.
 
 ---
 

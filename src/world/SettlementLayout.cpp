@@ -200,6 +200,7 @@ void SettlementLayout::build(const Planet &planet, uint32_t seed, std::vector<De
   const RoadNetwork &roads = planet.roads();
   Rng rng{mix(seed ^ 0x51ed270bu) | 1u};
 
+  uint16_t siteIndex = 0xffff; // settlement the buildings being placed belong to
   // Try to put `model` at (x, z) facing yaw; on success append it and
   // record its footprint. gap < 0 uses the kind's default spacing (row
   // houses pass a small gap so terraces join). onRoad lets parked cars
@@ -238,6 +239,7 @@ void SettlementLayout::build(const Planet &planet, uint32_t seed, std::vector<De
     d.scale = 1.0f;
     d.stretch = stretch;
     d.seed = rng.next();
+    d.site = siteIndex;
     out.push_back(d);
     index(f);
     return true;
@@ -366,6 +368,7 @@ void SettlementLayout::build(const Planet &planet, uint32_t seed, std::vector<De
   using K = SettlementSite::Kind;
   using C = RoadNetwork::Class;
   for (const SettlementSite &site : planet.settlements().sites()) {
+    siteIndex = static_cast<uint16_t>(&site - planet.settlements().sites().data());
     if (site.kind == K::Village) {
       const bool bigChurch = rng.f() < 0.7f;
       const BM church = bigChurch ? (rng.f() < 0.5f ? BM::ChurchA : BM::ChurchB) : BM::Chapel;
@@ -534,6 +537,7 @@ void SettlementLayout::build(const Planet &planet, uint32_t seed, std::vector<De
     }
   }
 
+  siteIndex = 0xffff; // street furniture outside settlements, poles and bridges
   // ---- Telegraph poles along country lanes, clear of settlements ----
   const Settlements &settlements = planet.settlements();
   for (const RoadNetwork::Road &rd : roads.roads()) {

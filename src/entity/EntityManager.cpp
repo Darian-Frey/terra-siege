@@ -8,6 +8,7 @@
 #include "rlgl.h"
 #include "shield/ShieldRenderer.hpp"
 #include "world/Planet.hpp"
+#include "world/InfectionField.hpp"
 #include <cmath>
 
 namespace {
@@ -237,11 +238,15 @@ float EntityManager::deckHeightAt(Vector3 p) const {
 // no particle bursts; just flips the alive flag so wave-clear detection
 // fires on the next tick. Projectiles are intentionally left alone.
 void EntityManager::killAllEnemies() {
+  // Hostiles only: friendly structures (bases, radar towers, Collectors,
+  // repair stations, boosters) and allied ships (infected enemies, base
+  // defenders) are left alone. m_liveEnemies counts the whole pool.
   for (auto &e : m_entities) {
-    if (!e.alive) continue;
+    if (!e.alive || isFriendlyStructure(e.type)) continue;
+    if (e.aiState == AIState::Infected || e.aiState == AIState::Infecting || e.homeBaseId != 0) continue;
     e.alive = false;
+    --m_liveEnemies;
   }
-  m_liveEnemies = 0;
 }
 
 // ====================================================================
@@ -424,7 +429,7 @@ Entity *EntityManager::spawnEnemy(EntityType type, Vector3 pos) {
     e->hullHP = e->hullMax;
     e->shieldMax = 0.0f;
     e->shieldHP = 0.0f;
-    e->fireTimer = Config::SEEDER_FIRST_DROP_DELAY;
+    e->fireTimer = 0.0f;
     break;
   case EntityType::Carrier:
     // Boss-tier — 4-sector directional shield, huge hull, no weapons.
@@ -946,6 +951,13 @@ void EntityManager::tickDamageSmoke(Entity &e, ParticleSystem &particles,
   e.smokeTimer = 1.0f / emitRate;
 }
 
+float EntityManager::frandSpore() {
+  m_sporeRng ^= m_sporeRng << 13;
+  m_sporeRng ^= m_sporeRng >> 17;
+  m_sporeRng ^= m_sporeRng << 5;
+  return (m_sporeRng & 0xffffffu) / 16777216.0f;
+}
+
 bool EntityManager::tickRetreat(Entity &e, float dt, const Planet &planet,
                                 float maxSpeed, float turnRate,
                                 float thrust) {
@@ -1156,7 +1168,7 @@ void EntityManager::update(float dt, const Planet &planet, Player &player,
       updateBomber(e, dt, planet, player, particles);
       break;
     case EntityType::Seeder:
-      updateSeeder(e, dt, planet, player);
+      updateSeeder(e, dt, planet, player, particles);
       break;
     case EntityType::Carrier:
       updateCarrier(e, dt, planet, player);
@@ -1800,18 +1812,13 @@ int EntityManager::liveEnemyOfType(EntityType t) const {
 }
 
 // ====================================================================
-// Seeder — high-altitude drone dispenser. Drifts in a loose orbit
-// around the player and drops a fresh drone every SEEDER_DEPLOY_INTERVAL
-// seconds (subject to a SEEDER_DEPLOY_RANGE gate so a faraway seeder
-// doesn't silently flood the map). Peels away if the player closes to
-// SEEDER_RETREAT_RANGE — fragile, doesn't want a knife-fight.
-//
-// fireTimer is re-purposed as the deploy cooldown for this entity
-// type. AI state stays Idle — seeders have no PURSUE/ATTACK/EVADE
-// transitions; their behaviour is driven by player range alone.
+// Seeder — the infector (R.8a). Flies to a settlement, drops low and
+// circles it raining spores that infect the ground (InfectionField).
+// Peels away and climbs if the player closes to SEEDER_RETREAT_RANGE —
+// fragile, doesn't want a knife-fight. fireTimer paces the spores.
 // ====================================================================
 void EntityManager::updateSeeder(Entity &e, float dt, const Planet &planet,
-                                 const Player &player) {
+                                 const Player &player, ParticleSystem &particles) {
   // Slice A — retreat. Seeders are fragile (50 HP) so the band
   // between aiRetreatHPFrac and zero is narrow, but a wounded seeder
   // visibly peels off rather than continuing to drift in orbit.
@@ -1825,79 +1832,98 @@ void EntityManager::updateSeeder(Entity &e, float dt, const Planet &planet,
     return;
   }
 
+  // R.8a — the Seeder is the infector. It picks the nearest settlement
+  // (farm, village or town) not yet lost, cruises there high, then drops
+  // to SEEDER_INFECT_AGL and circles slowly over it, raining spores that
+  // infect the ground, trees and buildings below. A close player drives
+  // it up and away. No target: it loiters round the player, high.
   Vector3 toPlayer = Vector3Subtract(player.position(), e.pos);
   Vector3 toPlayerH = {toPlayer.x, 0.0f, toPlayer.z};
-  float distH = Vector3Length(toPlayerH);
+  const float distH = Vector3Length(toPlayerH);
 
-  // Desired horizontal heading: orbit at SEEDER_DRIFT_RADIUS. If too
-  // far, head in. If too close, peel away. Otherwise circle by
-  // adding a 90° tangent to the toward-player vector.
-  Vector3 desiredDir = {0, 0, 0};
-  if (distH > 0.001f) {
-    Vector3 toN = Vector3Scale(toPlayerH, 1.0f / distH);
-    if (distH < Config::SEEDER_RETREAT_RANGE) {
-      desiredDir = Vector3Scale(toN, -1.0f); // peel away
-    } else if (distH > Config::SEEDER_DRIFT_RADIUS * 1.2f) {
-      desiredDir = toN; // close in
-    } else {
-      // Tangent — rotate toN by 90° in the XZ plane for orbital drift.
-      desiredDir = {-toN.z, 0.0f, toN.x};
+  int target = -1;
+  float targetD2 = Config::SEEDER_SEEK_RANGE * Config::SEEDER_SEEK_RANGE;
+  Vector3 toTarget{};
+  for (int i = 0; i < m_targetCount; ++i) {
+    if (!m_targets[i].open) continue;
+    const Vector3 c = planet.nearestCopy(m_targets[i].pos, e.pos);
+    const float dx = c.x - e.pos.x, dz = c.z - e.pos.z;
+    if (dx * dx + dz * dz < targetD2) {
+      targetD2 = dx * dx + dz * dz;
+      target = i;
+      toTarget = {dx, 0.0f, dz};
     }
   }
 
-  // Apply thrust along desired direction.
-  e.vel.x += desiredDir.x * Config::SEEDER_THRUST * dt;
-  e.vel.z += desiredDir.z * Config::SEEDER_THRUST * dt;
-
-  // Yaw follows velocity for visual alignment.
-  if (fabsf(e.vel.x) + fabsf(e.vel.z) > 0.05f) {
-    e.yaw = atan2f(e.vel.x, e.vel.z);
+  const bool threatened = distH < Config::SEEDER_RETREAT_RANGE;
+  bool infecting = false;
+  float wantAlt = Config::SEEDER_PREFERRED_ALT;
+  float maxSpeed = Config::SEEDER_MAX_SPEED;
+  Vector3 desiredDir = {0, 0, 0};
+  if (threatened && distH > 0.001f) {
+    desiredDir = Vector3Scale(toPlayerH, -1.0f / distH); // up and away
+  } else if (target >= 0) {
+    const float d = sqrtf(targetD2);
+    const float reach = m_targets[target].radius + Config::SEEDER_INFECT_REACH;
+    const float orbit = fmaxf(10.0f, 0.45f * m_targets[target].radius);
+    if (d > 0.001f) {
+      const Vector3 toN = Vector3Scale(toTarget, 1.0f / d);
+      if (d > reach) {
+        desiredDir = toN; // cruise in
+      } else {
+        infecting = true;
+        wantAlt = Config::SEEDER_INFECT_AGL;
+        maxSpeed = Config::SEEDER_INFECT_SPEED;
+        desiredDir = d > orbit * 1.3f ? toN : Vector3{-toN.z, 0.0f, toN.x};
+      }
+    }
+  } else if (distH > 0.001f) {
+    const Vector3 toN = Vector3Scale(toPlayerH, 1.0f / distH);
+    desiredDir = distH > Config::SEEDER_DRIFT_RADIUS * 1.2f ? toN : Vector3{-toN.z, 0.0f, toN.x};
   }
 
-  // Altitude hold — sit high.
-  float ground = planet.surfaceAt(e.pos.x, e.pos.z);
-  float targetY = ground + Config::SEEDER_PREFERRED_ALT;
-  float altErr = targetY - e.pos.y;
-  e.vel.y += altErr * 0.3f * dt;
+  e.vel.x += desiredDir.x * Config::SEEDER_THRUST * dt;
+  e.vel.z += desiredDir.z * Config::SEEDER_THRUST * dt;
+  if (fabsf(e.vel.x) + fabsf(e.vel.z) > 0.05f) e.yaw = atan2f(e.vel.x, e.vel.z);
+
+  // Altitude hold: high to cruise, low to infect.
+  const float ground = planet.surfaceAt(e.pos.x, e.pos.z);
+  e.vel.y += (ground + wantAlt - e.pos.y) * 0.4f * dt;
   e.vel.y *= 1.0f - 1.0f * dt;
 
-  // Speed cap (horizontal only — vertical is governed by altitude hold).
-  float spdH = sqrtf(e.vel.x * e.vel.x + e.vel.z * e.vel.z);
-  if (spdH > Config::SEEDER_MAX_SPEED) {
-    float k = Config::SEEDER_MAX_SPEED / spdH;
+  const float spdH = sqrtf(e.vel.x * e.vel.x + e.vel.z * e.vel.z);
+  if (spdH > maxSpeed) {
+    const float k = maxSpeed / spdH;
     e.vel.x *= k;
     e.vel.z *= k;
   }
-
-  // Light drag (so peel-away doesn't accelerate forever).
-  float drag = 0.6f * dt;
-  if (drag > 1.0f) drag = 1.0f;
+  const float drag = fminf(1.0f, 0.6f * dt);
   e.vel.x *= 1.0f - drag;
   e.vel.z *= 1.0f - drag;
-
-  // Integrate.
   e.pos = Vector3Add(e.pos, Vector3Scale(e.vel, dt));
 
-  // Don't sink (shouldn't happen at this altitude, but defensively).
-  float floor = planet.surfaceAt(e.pos.x, e.pos.z) +
-                Config::SEEDER_PREFERRED_ALT * 0.5f;
+  const float floor = planet.surfaceAt(e.pos.x, e.pos.z) + 0.6f * Config::SEEDER_INFECT_AGL;
   if (e.pos.y < floor) {
     e.pos.y = floor;
     if (e.vel.y < 0.0f) e.vel.y = 0.0f;
   }
 
-  // Drone drop — fireTimer is the deploy cooldown for seeders.
-  // Already decremented at the top of update() so we just check it.
-  // Gate on player range so distant seeders don't flood the global pool,
-  // AND on the global drone cap — when full, we DO NOT consume the
-  // cooldown, so the next drone-death immediately frees the slot for a
-  // fresh drop (no surprise stack-up the moment a kill happens).
-  float dist = Vector3Length(toPlayer);
-  if (e.fireTimer <= 0.0f && dist < Config::SEEDER_DEPLOY_RANGE &&
-      liveDroneCount() < Config::DRONE_GLOBAL_CAP) {
-    Vector3 dropPos = {e.pos.x, e.pos.y - 4.0f, e.pos.z};
-    spawnEnemy(EntityType::Drone, dropPos);
-    e.fireTimer = Config::SEEDER_DEPLOY_INTERVAL;
+  // Spores: once down low over its target, the Seeder rains purple spores
+  // and infects the ground beneath it.
+  const float agl = e.pos.y - planet.surfaceAt(e.pos.x, e.pos.z);
+  if (infecting && agl < Config::SEEDER_INFECT_AGL + 15.0f) {
+    if (m_infection) m_infection->deposit(e.pos.x, e.pos.z, Config::SEEDER_SPORE_RADIUS,
+                                          Config::SEEDER_SPORE_RATE * dt);
+    e.fireTimer -= dt; // spore pacing (smokeTimer is the damage smoke)
+    while (e.fireTimer <= 0.0f) {
+      e.fireTimer += 1.0f / Config::SEEDER_SPORE_EMIT_RATE;
+      const float a = frandSpore() * 6.2831853f, r = frandSpore() * 2.0f;
+      const Vector3 from = {e.pos.x + cosf(a) * r, e.pos.y - 1.5f, e.pos.z + sinf(a) * r};
+      const Vector3 vel = {cosf(a) * 2.5f + e.vel.x * 0.3f, -5.0f - frandSpore() * 3.0f,
+                           sinf(a) * 2.5f + e.vel.z * 0.3f};
+      particles.emit(from, vel, Color{190, 90, 230, 210}, 0.45f, 2.2f, ParticleSystem::Shape::Cube,
+                     ParticleSystem::FLAG_GRAVITY);
+    }
   }
 }
 

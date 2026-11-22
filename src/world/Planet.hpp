@@ -1,6 +1,7 @@
 #pragma once
 
 #include "FieldMap.hpp"
+#include "InfectionField.hpp"
 #include "Roads.hpp"
 #include "Settlements.hpp"
 #include "Heightmap.hpp"
@@ -60,6 +61,10 @@ public:
   const Settlements &settlements() const { return m_settlements; }
   // Roads joining the settlements, fixed at generate().
   const RoadNetwork &roads() const { return m_roads; }
+  // Ground infection (R.8a): written by Seeders and the player, drawn on
+  // the terrain and sampled by the scenery shader.
+  InfectionField &infection() { return m_infection; }
+  const InfectionField &infection() const { return m_infection; }
 
   // Top of whatever is underfoot: the terrain, or the sea surface where
   // the terrain is below sea level (lake water lies on the terrain).
@@ -84,6 +89,9 @@ private:
   FieldMap m_fields;
   Settlements m_settlements;
   RoadNetwork m_roads;
+  InfectionField m_infection;
+  Shader m_terrainShader{}; // vertex colours plus the infection overlay
+  void applyOverlay();
   std::vector<TerrainChunk> m_chunks;
   bool m_ready = false;
 };

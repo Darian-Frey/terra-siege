@@ -593,13 +593,9 @@ constexpr float SEEDER_THRUST = 8.0f;           // m/s² (slow)
 constexpr float SEEDER_MAX_SPEED = 14.0f;       // top horizontal speed
 constexpr float SEEDER_PREFERRED_ALT = 95.0f;   // hovers high — above fighter
 constexpr float SEEDER_HIT_RADIUS = 3.0f;       // fat target — easy to hit
-// Deploy intervals reduced 30% (4.0 → 2.8) to compensate for the
-// global drone cap — slots open the moment a drone dies, so a slower
-// rate would underutilise the swarm.
-constexpr float SEEDER_DEPLOY_INTERVAL = 2.8f;  // sec between drone drops
-constexpr float SEEDER_DEPLOY_RANGE = 240.0f;   // only deploys if player closer
-constexpr float SEEDER_FIRST_DROP_DELAY = 2.0f; // grace period after spawn
-constexpr float SEEDER_DRIFT_RADIUS = 120.0f;   // orbit radius around player
+// Seeders no longer drop drones (R.8a: they infect settlements); drones
+// come from Carriers and Landers.
+constexpr float SEEDER_DRIFT_RADIUS = 120.0f;   // loiter radius round the player when idle
 constexpr float SEEDER_RETREAT_RANGE = 90.0f;   // closer than this = peel away
 
 // Carrier — boss-tier enemy. Hovers high overhead and continuously
@@ -620,7 +616,8 @@ constexpr float CARRIER_PREFERRED_ALT = 130.0f;  // above everything else
 constexpr float CARRIER_HIT_RADIUS = 6.0f;       // huge target
 constexpr float CARRIER_DRIFT_RADIUS = 160.0f;   // orbit radius around player
 constexpr float CARRIER_RETREAT_RANGE = 120.0f;  // peel away if closer
-// Deploy interval reduced 30% (1.8 → 1.26) — see SEEDER_DEPLOY_INTERVAL.
+// Deploy interval reduced 30% (1.8 → 1.26) to make full use of the
+// global drone cap.
 constexpr float CARRIER_DEPLOY_INTERVAL = 1.26f; // sec between drone drops
 constexpr float CARRIER_DEPLOY_RANGE = 320.0f;   // wide engagement
 constexpr float CARRIER_FIRST_DROP_DELAY = 3.0f; // grace after spawn
@@ -1114,6 +1111,33 @@ constexpr float TOWN_CAR_CHANCE = 0.3f;        // TUNE
 constexpr float FURNITURE_ROAD_CLEARANCE = 0.2f; // m, lamps, signs, poles
 constexpr float TELEGRAPH_POLE_SPACING = 45.0f;  // m along country lanes; TUNE
 constexpr float TELEGRAPH_POLE_OFFSET = 2.2f;    // m beyond the lane edge
+
+// Settlement infection (SettlementStatus, InfectionField, R.8a).
+// Infection lives on the ground. An infecting Seeder (within
+// SEEDER_INFECT_REACH of a settlement, down at SEEDER_INFECT_AGL) adds
+// SEEDER_SPORE_RATE per second in a disc of SEEDER_SPORE_RADIUS under it.
+// A settlement is lost when the mean over its footprint passes
+// SETTLEMENT_LOST_LEVEL, reclaimed below SETTLEMENT_RECLAIM_LEVEL. A
+// player below SETTLEMENT_CLEANSE_AGL with no Seeder within
+// CLEANSE_SAFE_RANGE removes CLEANSE_RATE per second in CLEANSE_RADIUS.
+constexpr float SEEDER_SPORE_RADIUS = 34.0f;     // m; TUNE
+constexpr float SEEDER_SPORE_RATE = 0.12f;       // per second at the centre; TUNE
+constexpr float SEEDER_INFECT_AGL = 22.0f;       // m above the ground while infecting; TUNE
+constexpr float SEEDER_INFECT_SPEED = 7.0f;      // m/s while infecting; TUNE
+constexpr float SEEDER_INFECT_REACH = 30.0f;     // m beyond the settlement edge
+constexpr float SETTLEMENT_LOST_LEVEL = 0.6f;    // TUNE
+constexpr float SETTLEMENT_RECLAIM_LEVEL = 0.05f;
+constexpr float SETTLEMENT_CLEANSE_AGL = 80.0f;  // m
+constexpr float CLEANSE_SAFE_RANGE = 200.0f;     // m
+constexpr float CLEANSE_RADIUS = 40.0f;          // m; TUNE
+constexpr float CLEANSE_RATE = 0.5f;             // per second at the centre; TUNE
+constexpr float SETTLEMENT_ALERT_REPEAT = 20.0f; // s before a repeat "under attack" alert
+constexpr float INFECTION_UPLOAD_HZ = 5.0f; // ground infection texture refresh rate
+constexpr float SEEDER_SPORE_EMIT_RATE = 40.0f;  // spore particles per second
+constexpr float SEEDER_SEEK_RANGE = 2500.0f;            // m; TUNE
+constexpr float SETTLEMENT_NAME_RANGE = 700.0f;         // m, HUD name labels
+constexpr int MAX_SETTLEMENT_TARGETS = 256;             // all settlement sites, fixed arrays
+constexpr float SETTLEMENT_MESSAGE_TIME = 4.0f;         // s an event line stays on the HUD
 
 // Bases and radar towers keep this far outside any settlement footprint.
 constexpr float SETTLEMENT_BASE_CLEARANCE = 60.0f; // m
