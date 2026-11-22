@@ -3,6 +3,8 @@
 #include "FieldMap.hpp"
 #include "Planet.hpp"
 #include "Roads.hpp"
+#include "Settlements.hpp"
+#include "SettlementLayout.hpp"
 #include "core/Config.hpp"
 #include "mesh/ObjLoader.hpp"
 #include "raymath.h"
@@ -152,6 +154,12 @@ void drawAntenna(const Decoration &d) {
              {180, 180, 195, 200});
 }
 
+// Box fallback for a building whose models failed to load.
+void drawBuilding(const Decoration &d) {
+  const auto f = SettlementLayout::footprintOf(d.building, d.pos.x, d.pos.z, d.yaw, d.stretch);
+  DrawCubeV({f.x, d.pos.y + 2.0f, f.z}, {2.0f * f.hw, 4.0f, 2.0f * f.hd}, {170, 160, 150, 255});
+}
+
 void drawCrashSite(const Decoration &d, const Planet &planet) {
   uint32_t rng = d.seed;
   Color hull{38, 36, 34, 255};
@@ -234,7 +242,18 @@ const char *const kModelFiles[] = {"tree_conifer.obj", "tree_broadleaf.obj",
                                    "fence_a.obj",           "fence_b.obj",
                                    "rock_a.obj",       "rock_b.obj",
                                    "rock_c.obj",       "antenna.obj",
-                                   "crash_site.obj",   "crash_debris.obj"};
+                                   "crash_site.obj",   "crash_debris.obj",
+                                   // Settlement buildings, in BuildingModel order.
+                                   "farmhouse_a.obj", "farmhouse_b.obj", "barn_a.obj", "barn_b.obj",
+                                   "dutch_barn.obj", "grain_silo.obj", "outbuilding_a.obj",
+                                   "outbuilding_b.obj", "greenhouse.obj", "windmill.obj",
+                                   "hay_bales_a.obj", "hay_bales_b.obj", "tractor.obj",
+                                   "cottage_a.obj", "cottage_b.obj", "cottage_c.obj", "house_a.obj",
+                                   "house_b.obj", "house_c.obj", "terrace_row_a.obj",
+                                   "terrace_row_b.obj", "church_a.obj", "church_b.obj", "chapel.obj",
+                                   "pub.obj", "village_shop.obj", "village_hall.obj",
+                                   "war_memorial.obj", "garden_wall_a.obj", "garden_wall_b.obj",
+                                   "picket_fence.obj"};
 
 // Scale, then yaw, then translate — the same order as DrawModelEx.
 Matrix placeMatrix(Vector3 pos, Vector3 scale, float yaw) {
@@ -287,6 +306,10 @@ void Decorations::clearSquare(const Planet &planet, float x, float z,
                : Decoration::isSegment(d.tree) ? 0.5f * Config::HEDGE_SEGMENT * d.stretch
                                              : Config::COPSE_RADIUS) *
               d.scale;
+    if (d.kind == Decoration::Kind::Building) {
+      const auto f = SettlementLayout::footprintOf(d.building, 0, 0, d.yaw, d.stretch);
+      reach = sqrtf(f.hw * f.hw + f.hd * f.hd);
+    }
     if (ax <= half + reach && az <= half + reach) continue;
     if (ax <= reseatHalf && az <= reseatHalf)
       d.pos.y = planet.heightAt(d.pos.x, d.pos.z);
@@ -303,6 +326,16 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
   float seaY = Config::SEA_LEVEL * Config::TERRAIN_HEIGHT_MAX;
 
   const FieldMap &fields = planet.fields();
+
+  // ---- Settlement buildings first (R.5) ----
+  // Every later kind keeps clear of their footprints, and forest stays
+  // out of settlement sites altogether.
+  SettlementLayout layout;
+  layout.build(planet, seed, m_items);
+  const Settlements &settlements = planet.settlements();
+  auto clearOfBuildings = [&](float x, float z, float margin) {
+    return !layout.blocked(x, z, margin + Config::SCENERY_BUILDING_CLEARANCE);
+  };
   const float cellSize = Config::TERRAIN_SCALE;
   const int cells = static_cast<int>(worldSize / cellSize);
   using TM = Decoration::TreeModel;
@@ -395,6 +428,8 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
       float x = (gx + 0.5f) * groveStep + frand(rng, -Config::GROVE_JITTER, Config::GROVE_JITTER);
       float z = (gz + 0.5f) * groveStep + frand(rng, -Config::GROVE_JITTER, Config::GROVE_JITTER);
       bool ok = deepForest(x, z) && inGrass(x, z) && slopeAt(planet, x, z) <= Config::GROVE_MAX_SLOPE &&
+                !settlements.occupied(x, z, Config::GROVE_RADIUS) &&
+                clearOfBuildings(x, z, Config::GROVE_RADIUS) &&
                 offRoad(x, z, Config::GROVE_RADIUS + Config::ROAD_TREE_CLEARANCE);
       for (int k = 0; k < 8 && ok; ++k) {
         float a = k * 0.785398f;
@@ -432,6 +467,8 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
       if (covered[coverIdx(x, z)]) continue;
       const float t = density(x, z);
       bool ok = t >= Config::COPSE_MIN_DENSITY && inGrass(x, z) &&
+                !settlements.occupied(x, z, Config::COPSE_RADIUS) &&
+                clearOfBuildings(x, z, Config::COPSE_RADIUS) &&
                 offRoad(x, z, Config::COPSE_RADIUS + Config::ROAD_TREE_CLEARANCE) &&
                 slopeAt(planet, x, z) <= Config::COPSE_MAX_SLOPE;
       for (int k = 0; k < 6 && ok; ++k) {
@@ -478,6 +515,7 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
                                                z0 + (k >> 1) * cellSize));
       const float m = fields.forestMask(xc, zc);
       if (m < Config::FOREST_NOISE_LOW && !anyWood) continue;
+      if (settlements.occupied(xc, zc, 0.0f)) continue; // villages and farmyards stay open
       if (slopeAt(planet, xc, zc) > 0.7f) continue;
       float t = (m - Config::FOREST_NOISE_LOW) /
                 (Config::FOREST_NOISE_HIGH - Config::FOREST_NOISE_LOW);
@@ -489,6 +527,7 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
         float x = x0 + frand(rng) * cellSize, z = z0 + frand(rng) * cellSize;
         if (covered[coverIdx(x, z)]) continue; // inside a grove or copse
         if (!offRoad(x, z, Config::ROAD_TREE_CLEARANCE)) continue;
+        if (!clearOfBuildings(x, z, 0.8f)) continue;
         {
           // A gap mostly ringed by stands is largely under their crowns.
           int ring = 0;
@@ -566,6 +605,7 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
         float x = p.x + frand(rng, -0.2f, 0.2f), z = p.z + frand(rng, -0.2f, 0.2f);
         if (!inGrass(x, z) || slopeAt(planet, x, z) > 0.7f) continue;
         if (!offRoad(x, z, Config::ROAD_TREE_CLEARANCE)) continue;
+        if (!clearOfBuildings(x, z, 0.5f)) continue;
         pushTree(frand(rng) < Config::DECOR_DEAD_TREE_CHANCE ? TM::Dead : TM::Poplar, x, z,
                  0.9f, 1.1f);
       }
@@ -582,7 +622,8 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
       const float x = 0.5f * (p0.x + p1.x), z = 0.5f * (p0.z + p1.z);
       if (!inGrass(x, z) || slopeAt(planet, x, z) > 0.7f) continue;
       // A boundary segment never reaches onto a road.
-      if (!offRoad(x, z, Config::ROAD_BOUNDARY_CLEARANCE) ||
+      if (!clearOfBuildings(x, z, 0.3f) || !clearOfBuildings(p0.x, p0.z, 0.3f) ||
+          !clearOfBuildings(p1.x, p1.z, 0.3f) || !offRoad(x, z, Config::ROAD_BOUNDARY_CLEARANCE) ||
           !offRoad(p0.x, p0.z, Config::ROAD_BOUNDARY_CLEARANCE) ||
           !offRoad(p1.x, p1.z, Config::ROAD_BOUNDARY_CLEARANCE))
         continue;
@@ -684,6 +725,7 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
           const float x = a.x + ex * t + nx, z = a.z + ez * t + nz;
           // Valid: farmland beside the road, clear of other roads.
           const bool ok = fields.isFarmland(fields.fieldAt(x, z)) && inGrass(x, z) &&
+                          clearOfBuildings(x, z, 0.5f) &&
                           offRoad(x, z, 0.6f * Config::ROADSIDE_OFFSET);
           if (ok) {
             run.push_back({x, z});
@@ -729,7 +771,7 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
     float b = landBiome(planet, p.x, p.z);
     if (b < 0.0f) continue;
     if (frand(rng) > rockProbability(b)) continue;
-    if (!offRoad(p.x, p.z, Config::ROAD_ROCK_CLEARANCE)) continue;
+    if (!offRoad(p.x, p.z, Config::ROAD_ROCK_CLEARANCE) || !clearOfBuildings(p.x, p.z, 6.0f)) continue;
     p.y = planet.heightAt(p.x, p.z);
     Decoration d;
     d.kind = Decoration::Kind::Rock;
@@ -750,6 +792,7 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
                   [&](Vector3 p) {
                     if (!isLand(planet, p.x, p.z)) return false;
                     if (!offRoad(p.x, p.z, Config::ROAD_ROCK_CLEARANCE)) return false;
+                    if (!clearOfBuildings(p.x, p.z, 4.0f)) return false;
                     if (slopeAt(planet, p.x, p.z) > 0.25f) return false;
                     if (p.y < seaY + 4.0f) return false;
                     return true;
@@ -764,6 +807,7 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
                   [&](Vector3 p) {
                     if (!isLand(planet, p.x, p.z)) return false;
                     if (!offRoad(p.x, p.z, Config::ROAD_CRASH_CLEARANCE)) return false;
+                    if (!clearOfBuildings(p.x, p.z, 9.0f)) return false;
                     if (slopeAt(planet, p.x, p.z) > 0.30f) return false;
                     return true;
                   },
@@ -777,7 +821,7 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
     for (int k = 0; k < 3; ++k) {
       float a = frand(rng) * 6.2832f, r = frand(rng, 7.0f, 14.0f);
       float x = c.x + cosf(a) * r, z = c.z + sinf(a) * r;
-      if (isLand(planet, x, z) && offRoad(x, z, Config::ROAD_TREE_CLEARANCE))
+      if (isLand(planet, x, z) && offRoad(x, z, Config::ROAD_TREE_CLEARANCE) && clearOfBuildings(x, z, 0.8f))
         pushTree(TM::Dead, x, z, 0.9f, 1.3f);
     }
   }
@@ -794,6 +838,7 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
                perTree[12] + perTree[13] + perTree[14] + perTree[15],
                perTree[16] + perTree[17] + perTree[18] + perTree[19],
                perTree[20] + perTree[21], perTree[22] + perTree[23], m_items.size());
+  std::fprintf(stderr, "[Decorations] settlement buildings: %d\n", layout.buildingCount());
 #endif
   buildInstances(planet);
 }
@@ -837,14 +882,14 @@ void Decorations::unloadModels() {
   }
 }
 
-static_assert(static_cast<int>(Decoration::Kind::CrashSite) + 1 == 4,
+static_assert(static_cast<int>(Decoration::Kind::Building) + 1 == 5,
               "Decorations::kKindCount must match Decoration::Kind");
 
 std::array<bool, Decorations::kKindCount> Decorations::instancedKinds() const {
   std::array<bool, kKindCount> ok;
   ok.fill(m_instReady);
   for (int m = 0; m < kModelCount; ++m)
-    if (!m_modelLoaded[m]) ok[static_cast<int>(kSlotKind[m])] = false;
+    if (!m_modelLoaded[m]) ok[static_cast<int>(slotKind(m))] = false;
   return ok;
 }
 
@@ -914,6 +959,10 @@ void Decorations::buildInstances(const Planet &planet) {
         p.y = planet.heightAt(p.x, p.z);
         add(kFirstRock + i % kRockVariants, p, {w, h, l}, yaw);
       }
+    } else if (d.kind == Decoration::Kind::Building) {
+      // Level (no shear); boundary segments stretch along their length.
+      add(kBuildingFirst + static_cast<int>(d.building), d.pos, {d.scale, d.scale, d.scale * d.stretch},
+          d.yaw);
     } else if (d.kind == Decoration::Kind::Antenna) {
       add(kAntenna, d.pos, {d.scale, d.scale, d.scale}, d.yaw);
     } else if (d.kind == Decoration::Kind::CrashSite) {
@@ -972,7 +1021,7 @@ void Decorations::render(const Planet &planet, Vector3 cameraPos) const {
     const int z0 = static_cast<int>(floorf((cameraPos.z - kRenderRadius) / cell));
     const int z1 = static_cast<int>(floorf((cameraPos.z + kRenderRadius) / cell));
     for (int m = 0; m < kModelCount; ++m) {
-      if (!inst[static_cast<int>(kSlotKind[m])]) continue;
+      if (!inst[static_cast<int>(slotKind(m))]) continue;
       if (m_xf[m].empty()) continue;
       m_visible.clear();
       for (int uz = z0; uz <= z1; ++uz) {
@@ -1015,6 +1064,7 @@ void Decorations::render(const Planet &planet, Vector3 cameraPos) const {
     case Decoration::Kind::Rock:      drawRock(d, planet);        break;
     case Decoration::Kind::Antenna:   drawAntenna(d);             break;
     case Decoration::Kind::CrashSite: drawCrashSite(d, planet);   break;
+    case Decoration::Kind::Building:  drawBuilding(d);            break;
     }
   }
 }

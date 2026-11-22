@@ -1,6 +1,6 @@
 # Roads, Villages and Towns — Roadmap
 
-**Status:** In progress. R.1–R.4 complete (2026-11-22); R.5 (villages and farmsteads placed) next. R.4–R.5 are tracked by [F-049](../FEATURES.md#f-049-villages-and-farmsteads). Phases are tracked by [F-048](../FEATURES.md#f-048-settlement-sites-and-road-network) for R.1–R.3; later phases get their own feature IDs when they start.
+**Status:** In progress. R.1–R.5 complete (2026-11-22); R.6 (bridges, optional) or R.7 (towns) next. R.4–R.5 are tracked by [F-049](../FEATURES.md#f-049-villages-and-farmsteads). Phases are tracked by [F-048](../FEATURES.md#f-048-settlement-sites-and-road-network) for R.1–R.3; later phases get their own feature IDs when they start.
 **Track:** New "Settlements" track, to sit beside the Engine, Features and Tooling tracks in [ROADMAP.md](../ROADMAP.md).
 **Builds on:** the farmland patchwork and forest mask ([D-035](../DECISIONS.md#d-035-farmland-patchwork-from-an-angled-bsp-shared-by-terrain-and-decorations)), instanced scenery and stand models ([D-034](../DECISIONS.md#d-034-trees-and-rocks-are-obj-models-drawn-with-gpu-instancing), [D-036](../DECISIONS.md#d-036-multi-plant-stand-models-cut-the-scenery-instance-count)), and the water surface ([D-038](../DECISIONS.md#d-038-water-is-not-ground-planetsurfaceat-for-anything-above-it)).
 
@@ -327,6 +327,7 @@ Each phase ends playable, and gets its docs (FEATURES, DECISIONS, CHANGELOG) in 
 - villages look like villages: buildings face their road and nothing overlaps
 - the frame rate is unchanged in playtesting
 **Assets:** 5.3, 5.4, plus `garden_wall` and `picket_fence`.
+**Status:** Complete (2026-11-22, [D-041](../DECISIONS.md#d-041-settlement-buildings-laid-out-first-level-on-foundations)). `world/SettlementLayout` runs first in the decoration pass. Villages get a church or chapel and war memorial at the core, frontage on both sides of every main road and lane (pub, shop and hall near the core), one front-garden boundary style, and a fringe of farm buildings. Farmsteads get a farmhouse, barn and outbuilding plus random extras. Buildings face the nearest road (`RoadNetwork::nearestPoint`) and stay level on 2 m foundations. Footprints are indexed so all other scenery keeps clear. Fields inside towns and villages become plain village land. Default world: 1,617 placed pieces (buildings plus garden boundaries); total scenery fell to about 174,000 as settlements displaced forest. Farm tracks already came from R.2.
 
 ### R.6 — Bridges (M, optional)
 

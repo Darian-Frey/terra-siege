@@ -6,6 +6,7 @@
 
 class Heightmap;
 class RoadNetwork;
+class Settlements;
 
 // ====================================================================
 // Farmland patchwork and forest mask, shared by terrain colouring and
@@ -44,7 +45,10 @@ public:
     std::vector<Point> poly;
   };
 
-  void generate(const Heightmap &hmap, uint32_t seed, const RoadNetwork *roads = nullptr);
+  // Fields inside a town or village footprint are village land: never
+  // farmland or wood (settlements, optional).
+  void generate(const Heightmap &hmap, uint32_t seed, const RoadNetwork *roads = nullptr,
+                const Settlements *settlements = nullptr);
 
   // Field containing a world position (wrapped into the world square).
   int fieldAt(float worldX, float worldZ) const;

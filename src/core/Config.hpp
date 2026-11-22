@@ -1056,6 +1056,26 @@ constexpr float ROAD_ROCK_CLEARANCE = 7.0f;    // m, rock clusters and antennas
 constexpr float ROAD_CRASH_CLEARANCE = 9.0f;   // m, crash sites and their debris
 constexpr float ROADSIDE_OFFSET = 1.6f;        // m from the road edge to a roadside hedge's centre; TUNE
 
+// Settlement buildings (SettlementLayout, R.5). A footprint must be dry,
+// BUILDING_ROAD_CLEARANCE off every road, BUILDING_GAP from other
+// buildings, and within BUILDING_MAX_RISE of level; the building then
+// sits BUILDING_SINK below its highest corner (2 m foundations).
+constexpr float BUILDING_ROAD_CLEARANCE = 1.0f; // m
+constexpr float SEGMENT_ROAD_CLEARANCE = 0.4f;  // m, garden walls and fences
+constexpr float BUILDING_GAP = 1.5f;            // m between buildings
+constexpr float SEGMENT_GAP = 0.1f;             // m for garden walls and fences
+constexpr float BUILDING_MAX_RISE = 1.8f;       // m across a footprint
+constexpr float BUILDING_SINK = 0.2f;           // m below the highest corner
+constexpr float BUILDING_INDEX_CELL = 32.0f;    // m, footprint index
+constexpr int VILLAGE_MAX_BUILDINGS = 40;       // frontage buildings per village; TUNE
+constexpr float FRONTAGE_SETBACK_MIN = 3.0f;    // m from road edge to house front; TUNE
+constexpr float FRONTAGE_SETBACK_MAX = 5.5f;    // TUNE
+constexpr float FRONTAGE_GAP_MIN = 1.5f;        // m between neighbouring houses; TUNE
+constexpr float FRONTAGE_GAP_MAX = 5.0f;        // TUNE
+constexpr float FRONTAGE_BOUNDARY_OFFSET = 1.0f; // m from road edge to a front-garden wall
+constexpr float FARM_WINDMILL_CHANCE = 0.05f;   // TUNE
+constexpr float SCENERY_BUILDING_CLEARANCE = 1.5f; // m trees, hedges and rocks keep from buildings
+
 // Bases and radar towers keep this far outside any settlement footprint.
 constexpr float SETTLEMENT_BASE_CLEARANCE = 60.0f; // m
 constexpr float SETTLEMENT_OVERLAY_RANGE = 3000.0f; // m, DEV F8 overlay draw range

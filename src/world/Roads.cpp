@@ -534,6 +534,44 @@ float RoadNetwork::edgeDistance(float x, float z, float maxDist) const {
   return best;
 }
 
+bool RoadNetwork::nearestPoint(float x, float z, float maxDist, Point &p, Point &dir,
+                               float &halfWidth) const {
+  if (m_indexN == 0) return false;
+  const float ws = Config::WORLD_SIZE;
+  const float cell = Config::ROAD_INDEX_CELL;
+  // Search in the world square, report in the caller's frame.
+  float qx = fmodf(x, ws), qz = fmodf(z, ws);
+  if (qx < 0.0f) qx += ws;
+  if (qz < 0.0f) qz += ws;
+  const float shiftX = x - qx, shiftZ = z - qz;
+  float best = maxDist * maxDist;
+  bool found = false;
+  for (int cz = static_cast<int>(floorf((qz - maxDist) / cell)); cz <= static_cast<int>(floorf((qz + maxDist) / cell)); ++cz)
+    for (int cx = static_cast<int>(floorf((qx - maxDist) / cell)); cx <= static_cast<int>(floorf((qx + maxDist) / cell)); ++cx) {
+      const int wx = ((cx % m_indexN) + m_indexN) % m_indexN;
+      const int wz = ((cz % m_indexN) + m_indexN) % m_indexN;
+      const float ox = (cx - wx) * cell, oz = (cz - wz) * cell;
+      for (int id : m_segIndex[static_cast<size_t>(wz) * m_indexN + wx]) {
+        const Segment &s = m_segments[id];
+        const float ax = s.a.x + ox, az = s.a.z + oz, bx = s.b.x + ox, bz = s.b.z + oz;
+        const float ex = bx - ax, ez = bz - az, l2 = ex * ex + ez * ez;
+        float t = l2 > 0.0f ? ((qx - ax) * ex + (qz - az) * ez) / l2 : 0.0f;
+        t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+        const float px = ax + ex * t, pz = az + ez * t;
+        const float d2 = (qx - px) * (qx - px) + (qz - pz) * (qz - pz);
+        if (d2 < best && l2 > 0.0f) {
+          best = d2;
+          found = true;
+          p = {px + shiftX, pz + shiftZ};
+          const float l = sqrtf(l2);
+          dir = {ex / l, ez / l};
+          halfWidth = s.halfWidth;
+        }
+      }
+    }
+  return found;
+}
+
 void RoadNetwork::buildShapes() {
   m_shapes.clear();
   m_segments.clear();

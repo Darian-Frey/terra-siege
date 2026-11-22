@@ -1203,3 +1203,36 @@ Undo is held at inspector level as full-mesh snapshots (32 deep) and is shared a
 
 **Reversal conditions.** Revisit if fields must be generated from the road layout (true road-bounded field shapes), or if regions need to change at run time.
 
+### D-041 Settlement buildings: laid out first, level on foundations
+
+**Decided:** 2026-11-22
+**Recorded:** 2026-11-22
+**Status:** Accepted
+**Authors:** Shane Hartley (with Claude Code)
+**Related:** D-012, D-034, D-036, D-039, D-040, F-049
+
+**Context.** The R.4 building models need placing as villages and farmsteads ([project-status/ROAD_VILLAGE_TOWN_ROADMAP.md](project-status/ROAD_VILLAGE_TOWN_ROADMAP.md) R.5). There are about 1,600 pieces per world. They must face roads, sit cleanly on uneven ground, and never have trees, hedges or rocks growing through them.
+
+**Options.**
+
+- **A. Buildings as entities.** Rejected: the pool holds 256 ([D-012](#d-012-flat-type-tagged-entity-pools-no-ecs-no-hot-path-allocation)), and nothing about a building needs per-tick updates yet.
+- **B. Shear buildings onto the slope like tree stands.** Rejected: sheared walls lean visibly.
+- **C. Level instanced decorations, laid out before all other scenery.** Chosen.
+
+**Decision.**
+
+- A new `Decoration::Kind::Building` (with `BuildingModel`) draws through the instancing path ([D-034](#d-034-trees-and-rocks-are-obj-models-drawn-with-gpu-instancing)), level, with the boundary segments stretched like hedges.
+- `world/SettlementLayout` runs first in `Decorations::generate`. Village core, street frontage and fringe, and farmsteads, are placed by trying candidate spots against a footprint test. The test requires dry ground, `BUILDING_ROAD_CLEARANCE` off roads, `BUILDING_GAP` from other footprints (a separating-axis test), and at most `BUILDING_MAX_RISE` across the footprint. A building then sits `BUILDING_SINK` below its highest corner, with the model's 2 m foundations covering the rest.
+- Buildings face the nearest road (`RoadNetwork::nearestPoint`).
+- Footprints go into an index, and every later scenery kind keeps `SCENERY_BUILDING_CLEARANCE` from them. Forest, groves and copses stay out of settlement sites altogether.
+- Fields inside towns and villages become village land, never farmland or wood (`FieldMap` takes the settlements).
+- Footprint half-sizes live in a table in `SettlementLayout.cpp`, matched to the meshgen geometry.
+
+**Consequences.**
+
+- About 1,600 pieces per world. Total scenery drops slightly, because settlements displace forest. Load time goes up about 1 s in a Debug build.
+- If a building model changes size in meshgen, its footprint table entry must change too. There is no automatic check yet; `checkBasePartSizes` is the pattern to follow if drift becomes a problem.
+- Buildings have no gameplay yet (R.8).
+
+**Reversal conditions.** Revisit if buildings need damage states or per-building gameplay (R.8: a lightweight store, still not entities), or if towns (R.7) need a different layout model, such as street grids rather than frontage walks.
+

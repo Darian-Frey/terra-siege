@@ -83,11 +83,11 @@ Players who want a modern take on the 1988 Argonaut game *Virus*: flat-shaded lo
 ### F-049 Villages and farmsteads
 
 **Priority:** Should
-**Status:** In progress (R.4 building models complete 2026-11-22; R.5 placement next)
+**Status:** Complete (R.4 building models and R.5 placement, 2026-11-22)
 **Acceptance:**
 
 - A farm set and a village set of building models from `scripts/meshgen/settlements.py`, in palette colours, within their triangle targets, with walls down to 2 m below ground and windows and doors standing off their walls (R.4, done)
-- Villages laid out along their roads (core, street frontage, fringe) and farmsteads at the end of their tracks, as instanced decorations facing the road, with footprints cleared of scenery (R.5)
+- Villages laid out along their roads (church and memorial at the core, street frontage with a pub, shop and hall, front-garden boundaries, a farm fringe) and farmsteads at the end of their tracks, as level instanced decorations facing the road. Other scenery keeps clear of every footprint, and fields inside villages are plain grass (R.5, done; [D-041](DECISIONS.md#d-041-settlement-buildings-laid-out-first-level-on-foundations))
 
 **Notes:** Plan in [project-status/ROAD_VILLAGE_TOWN_ROADMAP.md](project-status/ROAD_VILLAGE_TOWN_ROADMAP.md) (phases R.4–R.5). Palette slots 4 and 5 became red brick and thatch ([D-010](DECISIONS.md#d-010-32-colour-palette-via-obj-material-names), amended).
 

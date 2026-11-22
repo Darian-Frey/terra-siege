@@ -46,6 +46,15 @@ bool Settlements::occupied(float x, float z, float margin) const {
   return false;
 }
 
+bool Settlements::inTownOrVillage(float x, float z, float margin) const {
+  for (const SettlementSite &s : m_sites) {
+    if (s.kind == SettlementSite::Kind::Farm) continue;
+    const float r = s.radius + margin;
+    if (wrapDist2(x, z, s.x, s.z) < r * r) return true;
+  }
+  return false;
+}
+
 void Settlements::generate(const Heightmap &hmap, uint32_t seed) {
   m_sites.clear();
   const float ws = Config::WORLD_SIZE;

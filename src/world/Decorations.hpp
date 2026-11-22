@@ -47,6 +47,19 @@ struct Decoration {
     Rock,
     Antenna,
     CrashSite,
+    Building,  // Settlement buildings and garden boundaries (BuildingModel),
+               // laid out by SettlementLayout; level, never sheared.
+  };
+  // Settlement models, in the Decorations building-slot order (from
+  // scripts/meshgen/settlements.py). The last three are 4 m boundary
+  // segments, stretched along their length like hedges.
+  enum class BuildingModel : uint8_t {
+    FarmhouseA, FarmhouseB, BarnA, BarnB, DutchBarn, GrainSilo, OutbuildingA, OutbuildingB,
+    Greenhouse, Windmill, HayBalesA, HayBalesB, Tractor,
+    CottageA, CottageB, CottageC, HouseA, HouseB, HouseC, TerraceRowA, TerraceRowB,
+    ChurchA, ChurchB, Chapel, Pub, VillageShop, VillageHall, WarMemorial,
+    GardenWallA, GardenWallB, PicketFence,
+    Count
   };
 
   // Which model a Tree uses, in the Decorations model-slot order. From
@@ -69,6 +82,7 @@ struct Decoration {
 
   Kind kind = Kind::Rock;
   TreeModel tree = TreeModel::Broadleaf;
+  BuildingModel building = BuildingModel::CottageA;
   Vector3 pos{0, 0, 0}; // world-space, y = terrain height at pos
   float yaw = 0.0f;     // visual rotation (purely cosmetic)
   float scale = 1.0f;   // per-instance size variation
@@ -125,31 +139,23 @@ private:
     kRockA, kRockB, kRockC,
     kAntenna,
     kCrashHull, kCrashDebris,
-    kModelCount
+    kBuildingFirst,
+    kModelCount = kBuildingFirst + static_cast<int>(Decoration::BuildingModel::Count)
   };
   static constexpr int kFirstRock = kRockA;
   static_assert(kFenceB - kConifer == static_cast<int>(Decoration::TreeModel::FenceB),
                 "tree model slots follow Decoration::TreeModel");
   static constexpr int kRockVariants = kRockC - kRockA + 1;
-  static constexpr int kKindCount = 4;
+  static constexpr int kKindCount = 5;
   // The decoration kind each model slot belongs to. A kind is drawn
   // instanced only when every one of its slots loaded.
-  static constexpr Decoration::Kind kSlotKind[kModelCount] = {
-      Decoration::Kind::Tree,    Decoration::Kind::Tree,
-      Decoration::Kind::Tree,    Decoration::Kind::Tree,
-      Decoration::Kind::Tree,    Decoration::Kind::Tree,
-      Decoration::Kind::Tree,    Decoration::Kind::Tree,
-      Decoration::Kind::Tree,    Decoration::Kind::Tree,
-      Decoration::Kind::Tree,    Decoration::Kind::Tree,
-      Decoration::Kind::Tree,    Decoration::Kind::Tree,
-      Decoration::Kind::Tree,    Decoration::Kind::Tree,
-      Decoration::Kind::Tree,    Decoration::Kind::Tree,
-      Decoration::Kind::Tree,    Decoration::Kind::Tree,
-      Decoration::Kind::Tree,    Decoration::Kind::Tree,
-      Decoration::Kind::Tree,    Decoration::Kind::Tree,
-      Decoration::Kind::Rock,    Decoration::Kind::Rock,
-      Decoration::Kind::Rock,    Decoration::Kind::Antenna,
-      Decoration::Kind::CrashSite, Decoration::Kind::CrashSite};
+  static constexpr Decoration::Kind slotKind(int m) {
+    return m < kRockA                ? Decoration::Kind::Tree
+           : m < kAntenna            ? Decoration::Kind::Rock
+           : m == kAntenna           ? Decoration::Kind::Antenna
+           : m < kBuildingFirst      ? Decoration::Kind::CrashSite
+                                     : Decoration::Kind::Building;
+  }
 
   // Rebuild m_xf / m_cellStart from m_items. Called after every change
   // to the placement (generate, clearSquare).

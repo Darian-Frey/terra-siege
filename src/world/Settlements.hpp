@@ -39,6 +39,8 @@ public:
   // True when (x, z) lies within `margin` of any site's footprint
   // (wrap-aware). Bases and other placement use it to keep clear.
   bool occupied(float x, float z, float margin) const;
+  // As occupied(), but towns and villages only (farmsteads sit in fields).
+  bool inTownOrVillage(float x, float z, float margin) const;
 
   // Top-down map: biome colours with every site circled (red towns,
   // yellow villages, cyan farmsteads). Written with the F6 dump.

@@ -2,6 +2,7 @@
 
 #include "Heightmap.hpp"
 #include "Roads.hpp"
+#include "Settlements.hpp"
 #include "core/Config.hpp"
 
 #include <algorithm>
@@ -310,7 +311,8 @@ int FieldMap::tintAt(int field, float worldX, float worldZ) const {
   return (f.tint + 1 + static_cast<int>(h % (kTintCount - 1))) % kTintCount;
 }
 
-void FieldMap::generate(const Heightmap &hmap, uint32_t seed, const RoadNetwork *roads) {
+void FieldMap::generate(const Heightmap &hmap, uint32_t seed, const RoadNetwork *roads,
+                        const Settlements *settlements) {
   uint32_t rng = mix(seed ^ 0x6f1e1d5u) | 1u;
   m_forestSeed = mix(seed ^ 0xb5297a4du);
   m_nodes.clear();
@@ -447,6 +449,7 @@ void FieldMap::generate(const Heightmap &hmap, uint32_t seed, const RoadNetwork 
     fd.tint = static_cast<uint8_t>((fd.hash >> 16) % kTintCount);
     const Point c = centroid(fd.poly);
     fd.homeRegion = regionAt(c.x, c.z);
+    if (settlements && settlements->inTownOrVillage(c.x, c.z, 0.0f)) continue; // village land
     if (tiledNoise(c.x, c.z, Config::FARM_NOISE_PERIOD, farmSeed) <
         Config::FARM_NOISE_THRESHOLD)
       continue; // wild country

@@ -62,6 +62,10 @@ public:
   // road), looking no further than maxDist; returns maxDist when no road
   // is that close. Wrap-aware.
   float edgeDistance(float x, float z, float maxDist) const;
+  // Nearest point on any road centre line within maxDist of (x, z), in
+  // the same frame as the query, with the road's unit direction there
+  // and its half-width. False when no road is that close.
+  bool nearestPoint(float x, float z, float maxDist, Point &p, Point &dir, float &halfWidth) const;
 
 private:
   struct Shape {
