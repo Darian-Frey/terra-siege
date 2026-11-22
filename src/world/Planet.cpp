@@ -14,7 +14,7 @@ void Planet::generate(uint32_t seed, ProgressCb cb) {
   m_roads.generate(m_heightmap, m_settlements, seed, [&](const char *step, float p) {
     if (cb) cb(step, 0.4f + 0.1f * p);
   });
-  m_fields.generate(m_heightmap, seed);
+  m_fields.generate(m_heightmap, seed, &m_roads);
 
   // ---- Chunk phase (50% → 100%) ----
   const int chunksPerEdge = Config::CHUNK_COUNT;

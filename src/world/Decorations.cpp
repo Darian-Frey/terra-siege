@@ -2,6 +2,7 @@
 
 #include "FieldMap.hpp"
 #include "Planet.hpp"
+#include "Roads.hpp"
 #include "core/Config.hpp"
 #include "mesh/ObjLoader.hpp"
 #include "raymath.h"
@@ -305,6 +306,12 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
   const float cellSize = Config::TERRAIN_SCALE;
   const int cells = static_cast<int>(worldSize / cellSize);
   using TM = Decoration::TreeModel;
+  // Road clearance (R.3): scenery keeps at least `clear` from any road
+  // edge.
+  const RoadNetwork &roads = planet.roads();
+  auto offRoad = [&](float x, float z, float clear) {
+    return roads.edgeDistance(x, z, clear + 1.0f) >= clear;
+  };
   auto inGrass = [&](float x, float z) {
     float b = landBiome(planet, x, z);
     return b >= kSandMax && b < kGrassMax && !planet.isWater(x, z);
@@ -387,7 +394,8 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
     for (int gx = 0; gx < groveN; ++gx) {
       float x = (gx + 0.5f) * groveStep + frand(rng, -Config::GROVE_JITTER, Config::GROVE_JITTER);
       float z = (gz + 0.5f) * groveStep + frand(rng, -Config::GROVE_JITTER, Config::GROVE_JITTER);
-      bool ok = deepForest(x, z) && inGrass(x, z) && slopeAt(planet, x, z) <= Config::GROVE_MAX_SLOPE;
+      bool ok = deepForest(x, z) && inGrass(x, z) && slopeAt(planet, x, z) <= Config::GROVE_MAX_SLOPE &&
+                offRoad(x, z, Config::GROVE_RADIUS + Config::ROAD_TREE_CLEARANCE);
       for (int k = 0; k < 8 && ok; ++k) {
         float a = k * 0.785398f;
         const float rr = Config::GROVE_RING_FRAC * Config::GROVE_RADIUS;
@@ -424,6 +432,7 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
       if (covered[coverIdx(x, z)]) continue;
       const float t = density(x, z);
       bool ok = t >= Config::COPSE_MIN_DENSITY && inGrass(x, z) &&
+                offRoad(x, z, Config::COPSE_RADIUS + Config::ROAD_TREE_CLEARANCE) &&
                 slopeAt(planet, x, z) <= Config::COPSE_MAX_SLOPE;
       for (int k = 0; k < 6 && ok; ++k) {
         float a = k * 1.0471976f, rr = 0.75f * Config::COPSE_RADIUS;
@@ -479,6 +488,7 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
       for (int i = 0; i < n; ++i) {
         float x = x0 + frand(rng) * cellSize, z = z0 + frand(rng) * cellSize;
         if (covered[coverIdx(x, z)]) continue; // inside a grove or copse
+        if (!offRoad(x, z, Config::ROAD_TREE_CLEARANCE)) continue;
         {
           // A gap mostly ringed by stands is largely under their crowns.
           int ring = 0;
@@ -555,6 +565,7 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
         FieldMap::Point p = pointAt(arc);
         float x = p.x + frand(rng, -0.2f, 0.2f), z = p.z + frand(rng, -0.2f, 0.2f);
         if (!inGrass(x, z) || slopeAt(planet, x, z) > 0.7f) continue;
+        if (!offRoad(x, z, Config::ROAD_TREE_CLEARANCE)) continue;
         pushTree(frand(rng) < Config::DECOR_DEAD_TREE_CHANCE ? TM::Dead : TM::Poplar, x, z,
                  0.9f, 1.1f);
       }
@@ -570,6 +581,11 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
       if (chord < 0.3f) continue;
       const float x = 0.5f * (p0.x + p1.x), z = 0.5f * (p0.z + p1.z);
       if (!inGrass(x, z) || slopeAt(planet, x, z) > 0.7f) continue;
+      // A boundary segment never reaches onto a road.
+      if (!offRoad(x, z, Config::ROAD_BOUNDARY_CLEARANCE) ||
+          !offRoad(p0.x, p0.z, Config::ROAD_BOUNDARY_CLEARANCE) ||
+          !offRoad(p1.x, p1.z, Config::ROAD_BOUNDARY_CLEARANCE))
+        continue;
       TM model;
       if ((kind == Bushes || kind == TreeLine) && fencePatch == 0 &&
           frand(rng) < Config::HEDGE_FENCE_PATCH)
@@ -607,10 +623,11 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
     // Winding sign: outward is (ez, -ex) for a positive signed area. (A
     // curved edge can make the outline non-convex, so the centroid is no
     // guide.)
-    float area2 = 0.0f;
-    for (size_t k = 0; k < poly.size(); ++k) {
-      const auto a = poly[k], b = poly[(k + 1) % poly.size()];
-      area2 += a.x * b.z - b.x * a.z;
+    float area2 = 0.0f; // relative to the first vertex, for float precision
+    for (size_t k = 1; k + 1 < poly.size(); ++k) {
+      const float ux = poly[k].x - poly[0].x, uz = poly[k].z - poly[0].z;
+      const float vx = poly[k + 1].x - poly[0].x, vz = poly[k + 1].z - poly[0].z;
+      area2 += ux * vz - vx * uz;
     }
     const float wind = area2 >= 0.0f ? 1.0f : -1.0f;
     int runWith = -1;
@@ -626,6 +643,8 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
         const float mx = a.x + ex * (t0 + t1) * 0.5f, mz = a.z + ez * (t0 + t1) * 0.5f;
         int g = fields.fieldAt(mx + nx * 0.5f, mz + nz * 0.5f);
         if (g <= f || (!fields.isFarmland(f) && !fields.isFarmland(g))) g = -1;
+        // A field edge that meets a road stops at the verge (a gateway).
+        if (g >= 0 && !offRoad(mx, mz, Config::ROAD_HEDGE_GAP)) g = -1;
         if (g != runWith) {
           if (runWith >= 0) hedgeRun(pairKey(f, runWith));
           run.clear();
@@ -636,6 +655,46 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
       }
     }
     if (runWith >= 0) hedgeRun(pairKey(f, runWith));
+  }
+
+  // ---- Roadside boundaries (R.3) ----
+  // Through farmland both sides of a road get their own hedge, wall or
+  // fence runs, ROADSIDE_OFFSET out from the road edge, broken at
+  // junctions (where another road comes close) and where the side leaves
+  // farmland. Each side of each road has one style.
+  for (size_t ri = 0; ri < roads.roads().size(); ++ri) {
+    const RoadNetwork::Road &rd = roads.roads()[ri];
+    if (rd.pts.size() < 2) continue;
+    const float hw = 0.5f * (rd.cls == RoadNetwork::Class::Main   ? Config::ROAD_MAIN_WIDTH
+                             : rd.cls == RoadNetwork::Class::Lane ? Config::ROAD_LANE_WIDTH
+                                                                  : Config::ROAD_TRACK_WIDTH);
+    const float off = hw + Config::ROADSIDE_OFFSET;
+    for (int side = -1; side <= 1; side += 2) {
+      const uint32_t key = xorshift32(rng) ^ static_cast<uint32_t>(ri * 2654435761u + side);
+      run.clear();
+      for (size_t i = 0; i + 1 < rd.pts.size(); ++i) {
+        const auto a = rd.pts[i], b = rd.pts[i + 1];
+        const float ex = b.x - a.x, ez = b.z - a.z, len = sqrtf(ex * ex + ez * ez);
+        if (len < 0.01f) continue;
+        const float nx = -ez / len * side * off, nz = ex / len * side * off;
+        const int steps = std::max(1, static_cast<int>(ceilf(len / Config::HEDGE_SEGMENT)));
+        for (int k = 0; k <= steps; ++k) {
+          if (k == 0 && i > 0) continue; // shared with the previous segment
+          const float t = static_cast<float>(k) / steps;
+          const float x = a.x + ex * t + nx, z = a.z + ez * t + nz;
+          // Valid: farmland beside the road, clear of other roads.
+          const bool ok = fields.isFarmland(fields.fieldAt(x, z)) && inGrass(x, z) &&
+                          offRoad(x, z, 0.6f * Config::ROADSIDE_OFFSET);
+          if (ok) {
+            run.push_back({x, z});
+          } else {
+            if (run.size() >= 2) hedgeRun(key);
+            run.clear();
+          }
+        }
+      }
+      if (run.size() >= 2) hedgeRun(key);
+    }
   }
 
   // Density targets for the remaining kinds.
@@ -670,6 +729,7 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
     float b = landBiome(planet, p.x, p.z);
     if (b < 0.0f) continue;
     if (frand(rng) > rockProbability(b)) continue;
+    if (!offRoad(p.x, p.z, Config::ROAD_ROCK_CLEARANCE)) continue;
     p.y = planet.heightAt(p.x, p.z);
     Decoration d;
     d.kind = Decoration::Kind::Rock;
@@ -689,6 +749,7 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
                   Decoration::Kind::Antenna, 0.9f, 1.3f,
                   [&](Vector3 p) {
                     if (!isLand(planet, p.x, p.z)) return false;
+                    if (!offRoad(p.x, p.z, Config::ROAD_ROCK_CLEARANCE)) return false;
                     if (slopeAt(planet, p.x, p.z) > 0.25f) return false;
                     if (p.y < seaY + 4.0f) return false;
                     return true;
@@ -702,6 +763,7 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
                   Decoration::Kind::CrashSite, 1.2f, 1.7f,
                   [&](Vector3 p) {
                     if (!isLand(planet, p.x, p.z)) return false;
+                    if (!offRoad(p.x, p.z, Config::ROAD_CRASH_CLEARANCE)) return false;
                     if (slopeAt(planet, p.x, p.z) > 0.30f) return false;
                     return true;
                   },
@@ -715,7 +777,8 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
     for (int k = 0; k < 3; ++k) {
       float a = frand(rng) * 6.2832f, r = frand(rng, 7.0f, 14.0f);
       float x = c.x + cosf(a) * r, z = c.z + sinf(a) * r;
-      if (isLand(planet, x, z)) pushTree(TM::Dead, x, z, 0.9f, 1.3f);
+      if (isLand(planet, x, z) && offRoad(x, z, Config::ROAD_TREE_CLEARANCE))
+        pushTree(TM::Dead, x, z, 0.9f, 1.3f);
     }
   }
 #ifdef DEV_MODE

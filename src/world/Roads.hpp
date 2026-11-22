@@ -58,6 +58,11 @@ public:
   };
   void classify(const std::vector<Point> &poly, std::vector<Piece> &out) const;
 
+  // Distance from (x, z) to the nearest road edge (negative inside a
+  // road), looking no further than maxDist; returns maxDist when no road
+  // is that close. Wrap-aware.
+  float edgeDistance(float x, float z, float maxDist) const;
+
 private:
   struct Shape {
     int cls;
@@ -66,6 +71,11 @@ private:
   };
   void buildShapes();
   void addShape(int cls, std::vector<Point> poly);
+  struct Segment {
+    Point a, b;
+    float halfWidth;
+  };
+  void addSegment(Segment s);
 
   std::vector<Road> m_roads;
   int m_unconnected = 0;
@@ -74,6 +84,8 @@ private:
   // square (shapes past the edge are added again, shifted by WORLD_SIZE).
   int m_indexN = 0;
   std::vector<std::vector<int>> m_index;
+  std::vector<Segment> m_segments;           // folded into the world square
+  std::vector<std::vector<int>> m_segIndex;  // same cells as m_index
   mutable std::vector<uint32_t> m_stamp;
   mutable uint32_t m_stampGen = 0;
 };

@@ -1043,6 +1043,8 @@ Undo is held at inspector level as full-mesh snapshots (32 deep) and is shared a
 
 **Reversal conditions.** Revisit if fields must follow roads or rivers, or depend on terrain features beyond biome and slope; or if terrain chunks start being rebuilt at run time, where the clipping cost would matter.
 
+*Amended 2026-11-22:* the first reversal condition was met when roads arrived. Fields now follow roads through road-bounded regions layered on the BSP, not BSP cuts ([D-040](#d-040-fields-follow-roads-through-road-bounded-regions)).
+
 ### D-036 Multi-plant stand models cut the scenery instance count
 
 **Decided:** 2026-11-22
@@ -1168,4 +1170,34 @@ Undo is held at inspector level as full-mesh snapshots (32 deep) and is shared a
 - The field map doesn't follow roads yet. R.3 feeds road segments into the BSP as forced cuts, revising [D-035](#d-035-farmland-patchwork-from-an-angled-bsp-shared-by-terrain-and-decorations).
 
 **Reversal conditions.** Revisit if roads need grading or embankments, bridges (R.6) need routing across water, or chunks are rebuilt at run time often enough for the clipping cost to matter.
+
+### D-040 Fields follow roads through road-bounded regions
+
+**Decided:** 2026-11-22
+**Recorded:** 2026-11-22
+**Status:** Accepted
+**Authors:** Shane Hartley (with Claude Code)
+**Related:** D-035, D-036, D-039, F-048, BUG-034
+
+**Context.** With roads cut into the terrain ([D-039](#d-039-road-network-a-on-a-wrapped-grid-roads-cut-into-the-terrain)), field boundaries ignored them. Fields ran straight across roads in one colour, field-edge hedges crossed roads, and trees and rocks stood on them. This met D-035's reversal condition ("fields must follow roads").
+
+**Options.**
+
+- **A. Feed road segments to the field BSP as forced cuts** (the roadmap's first idea). Rejected: a BSP cut is an infinite line across its whole piece, while a road is a winding polyline. The cuts would carve lines far beyond the road.
+- **B. Keep the BSP, and add road-bounded regions on top of it.** Chosen.
+
+**Decision.**
+
+- `FieldMap` rasterises the roads (`FIELD_REGION_CELL`, each road widened by `FIELD_REGION_BARRIER` either side so tracks block the flood) and floods the rest into regions.
+- A field keeps its tint in the region holding its centre and takes another tint in any other region (`FieldMap::tintAt`). `TerrainChunk` tints each road-clipped piece by its own centre. Roads therefore read as field edges, and the field layout itself is unchanged.
+- `RoadNetwork::edgeDistance()` (a segment index) drives clearance. Groves, copses, trees, poplars, rocks, antennas and crash sites keep `ROAD_*_CLEARANCE` from road edges. Field-edge boundary runs break `ROAD_HEDGE_GAP` short of a road. No boundary segment reaches onto one.
+- Through farmland, each side of each road gets its own boundary run `ROADSIDE_OFFSET` from the edge, using the same styles as field edges and broken at junctions.
+
+**Consequences.**
+
+- Fields, boundaries and woods meet roads the way real ones do. About 10,000 roadside segments added; about 180,000 scenery objects in total.
+- The region raster (2048², 16-bit) stays in memory for chunk rebuilds, about 8 MB.
+- A field whose centre sits on a road's barrier band uses the nearest region off it.
+
+**Reversal conditions.** Revisit if fields must be generated from the road layout (true road-bounded field shapes), or if regions need to change at run time.
 

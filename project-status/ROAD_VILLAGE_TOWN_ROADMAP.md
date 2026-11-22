@@ -1,6 +1,6 @@
 # Roads, Villages and Towns — Roadmap
 
-**Status:** In progress. R.1 and R.2 complete (2026-11-22); R.3 next. Phases are tracked by [F-048](../FEATURES.md#f-048-settlement-sites-and-road-network) for R.1–R.3; later phases get their own feature IDs when they start.
+**Status:** In progress. R.1–R.3 complete (2026-11-22); R.4 (first buildings) next. Phases are tracked by [F-048](../FEATURES.md#f-048-settlement-sites-and-road-network) for R.1–R.3; later phases get their own feature IDs when they start.
 **Track:** New "Settlements" track, to sit beside the Engine, Features and Tooling tracks in [ROADMAP.md](../ROADMAP.md).
 **Builds on:** the farmland patchwork and forest mask ([D-035](../DECISIONS.md#d-035-farmland-patchwork-from-an-angled-bsp-shared-by-terrain-and-decorations)), instanced scenery and stand models ([D-034](../DECISIONS.md#d-034-trees-and-rocks-are-obj-models-drawn-with-gpu-instancing), [D-036](../DECISIONS.md#d-036-multi-plant-stand-models-cut-the-scenery-instance-count)), and the water surface ([D-038](../DECISIONS.md#d-038-water-is-not-ground-planetsurfaceat-for-anything-above-it)).
 
@@ -304,6 +304,7 @@ Each phase ends playable, and gets its docs (FEATURES, DECISIONS, CHANGELOG) in 
 - the D-035 revision recorded as a new decision
 **Acceptance:** no tree, hedge or wall stands on a road; roads read as field edges.
 **Assets:** reuses the hedge, wall and fence segments; optionally `telegraph_pole`.
+**Status:** Complete (2026-11-22, [D-040](../DECISIONS.md#d-040-fields-follow-roads-through-road-bounded-regions)). Forced BSP cuts were dropped, because a BSP cut is an infinite line, not a road. Instead the field map floods road-bounded regions on a 4 m raster, and a field crossed by a road takes another tint on the far side. Scenery keeps clear of roads via `RoadNetwork::edgeDistance()`. Field-edge boundaries stop at the verge, and farmland roads get roadside hedge, wall and fence runs (about 10,000 segments). Found and fixed [BUG-034](../BUGS.md#bug-034-terrain-pieces-near-roads-dropped-from-the-mesh): float precision dropped terrain pieces near roads.
 
 ### R.4 — First buildings: rural and village set (M)
 

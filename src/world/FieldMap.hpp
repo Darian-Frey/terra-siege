@@ -5,6 +5,7 @@
 #include <vector>
 
 class Heightmap;
+class RoadNetwork;
 
 // ====================================================================
 // Farmland patchwork and forest mask, shared by terrain colouring and
@@ -24,6 +25,11 @@ class Heightmap;
 // farmland (tinted and hedged) or, by chance, a wood that fills the
 // field to its hedges. Wild country keeps the forest mask's natural
 // woods and open meadow.
+//
+// Roads (R.3) split fields: the land between roads is flooded into
+// regions on a FIELD_REGION_CELL raster, and a field crossed by a road
+// takes a different tint on the far side (tintAt), so roads read as
+// field edges.
 // ====================================================================
 class FieldMap {
 public:
@@ -38,7 +44,7 @@ public:
     std::vector<Point> poly;
   };
 
-  void generate(const Heightmap &hmap, uint32_t seed);
+  void generate(const Heightmap &hmap, uint32_t seed, const RoadNetwork *roads = nullptr);
 
   // Field containing a world position (wrapped into the world square).
   int fieldAt(float worldX, float worldZ) const;
@@ -47,6 +53,12 @@ public:
   bool isWood(int field) const { return m_fields[field].wood; }
   // 0..kTintCount-1; TerrainChunk owns the colours.
   int tint(int field) const { return m_fields[field].tint; }
+  // Tint at a point of a field: the field's own tint on the side of any
+  // road its centre is on, another tint across the road.
+  int tintAt(int field, float worldX, float worldZ) const;
+  // Road-bounded region at a point (the nearest one off the road when
+  // the point is on a road's barrier band); -1 with no roads.
+  int regionAt(float worldX, float worldZ) const;
   // Stable per-field hash, for hedge styles and similar choices.
   uint32_t hash(int field) const { return m_fields[field].hash; }
 
@@ -93,12 +105,16 @@ private:
     bool wood = false;
     uint8_t tint = 0;
     uint32_t hash = 0;
+    int homeRegion = -1;
     std::vector<Point> poly;
   };
   void clipNode(int node, const std::vector<Point> &poly,
                 std::vector<Piece> &out) const;
 
   uint32_t m_forestSeed = 0;
+  int m_regionN = 0;                // raster cells per world edge
+  std::vector<uint16_t> m_region;   // 0xffff = road barrier
+  void buildRegions(const RoadNetwork &roads);
   std::vector<Node> m_nodes;
   std::vector<Field> m_fields;
 };

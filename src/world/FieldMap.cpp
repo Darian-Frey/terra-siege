@@ -1,9 +1,12 @@
 #include "FieldMap.hpp"
 
 #include "Heightmap.hpp"
+#include "Roads.hpp"
 #include "core/Config.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <utility>
 
 namespace {
@@ -216,11 +219,105 @@ void FieldMap::clipNode(int node, const std::vector<Point> &poly,
   if (!b.empty()) clipNode(k.back, b, out);
 }
 
-void FieldMap::generate(const Heightmap &hmap, uint32_t seed) {
+void FieldMap::buildRegions(const RoadNetwork &roads) {
+  // Mark every raster cell within a road's width plus the barrier band,
+  // then flood the rest (4-connected, wrapping) into regions.
+  const float cell = Config::FIELD_REGION_CELL;
+  const int N = static_cast<int>(Config::WORLD_SIZE / cell);
+  m_regionN = N;
+  constexpr uint16_t kRoad = 0xffff;
+  m_region.assign(static_cast<size_t>(N) * N, 0xfffe); // unvisited
+  auto at = [&](int x, int z) -> uint16_t & {
+    return m_region[static_cast<size_t>((z % N + N) % N) * N + ((x % N + N) % N)];
+  };
+  for (const RoadNetwork::Road &r : roads.roads()) {
+    const float w = (r.cls == RoadNetwork::Class::Main   ? Config::ROAD_MAIN_WIDTH
+                     : r.cls == RoadNetwork::Class::Lane ? Config::ROAD_LANE_WIDTH
+                                                         : Config::ROAD_TRACK_WIDTH) *
+                        0.5f +
+                    Config::FIELD_REGION_BARRIER;
+    for (size_t i = 0; i + 1 < r.pts.size(); ++i) {
+      const Point a = r.pts[i], b = r.pts[i + 1];
+      const int x0 = static_cast<int>(floorf((fminf(a.x, b.x) - w) / cell));
+      const int x1 = static_cast<int>(floorf((fmaxf(a.x, b.x) + w) / cell));
+      const int z0 = static_cast<int>(floorf((fminf(a.z, b.z) - w) / cell));
+      const int z1 = static_cast<int>(floorf((fmaxf(a.z, b.z) + w) / cell));
+      const float ex = b.x - a.x, ez = b.z - a.z, l2 = ex * ex + ez * ez;
+      for (int z = z0; z <= z1; ++z)
+        for (int x = x0; x <= x1; ++x) {
+          const float px = (x + 0.5f) * cell, pz = (z + 0.5f) * cell;
+          float t = l2 > 0.0f ? ((px - a.x) * ex + (pz - a.z) * ez) / l2 : 0.0f;
+          t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+          const float dx = px - (a.x + ex * t), dz = pz - (a.z + ez * t);
+          if (dx * dx + dz * dz <= w * w) at(x, z) = kRoad;
+        }
+    }
+  }
+  uint16_t next = 0;
+  std::vector<int> q;
+  for (int i = 0; i < N * N; ++i) {
+    if (m_region[i] != 0xfffe) continue;
+    const uint16_t id = next < 0xfffd ? next++ : next; // cap; regions past it merge
+    m_region[i] = id;
+    q.assign(1, i);
+    for (size_t k = 0; k < q.size(); ++k) {
+      const int x = q[k] % N, z = q[k] / N;
+      for (int d = 0; d < 4; ++d) {
+        const int nx = x + (d == 0) - (d == 1), nz = z + (d == 2) - (d == 3);
+        uint16_t &v = at(nx, nz);
+        if (v == 0xfffe) {
+          v = id;
+          q.push_back(((nz % N + N) % N) * N + ((nx % N + N) % N));
+        }
+      }
+    }
+  }
+}
+
+int FieldMap::regionAt(float worldX, float worldZ) const {
+  if (m_region.empty()) return -1;
+  const int N = m_regionN;
+  const float cell = Config::FIELD_REGION_CELL;
+  const int x0 = static_cast<int>(floorf(worldX / cell)), z0 = static_cast<int>(floorf(worldZ / cell));
+  auto get = [&](int x, int z) {
+    return m_region[static_cast<size_t>((z % N + N) % N) * N + ((x % N + N) % N)];
+  };
+  // On the barrier band: the nearest cell off it decides.
+  for (int r = 0; r <= 4; ++r) {
+    int best = -1;
+    float bestD = 1e30f;
+    for (int dz = -r; dz <= r; ++dz)
+      for (int dx = -r; dx <= r; ++dx) {
+        if (std::max(abs(dx), abs(dz)) != r) continue;
+        const uint16_t v = get(x0 + dx, z0 + dz);
+        if (v >= 0xfffe) continue;
+        const float cx = (x0 + dx + 0.5f) * cell - worldX, cz = (z0 + dz + 0.5f) * cell - worldZ;
+        if (cx * cx + cz * cz < bestD) {
+          bestD = cx * cx + cz * cz;
+          best = v;
+        }
+      }
+    if (best >= 0) return best;
+  }
+  return -1;
+}
+
+int FieldMap::tintAt(int field, float worldX, float worldZ) const {
+  const Field &f = m_fields[field];
+  const int region = regionAt(worldX, worldZ);
+  if (region < 0 || f.homeRegion < 0 || region == f.homeRegion) return f.tint;
+  const uint32_t h = mix(f.hash ^ (static_cast<uint32_t>(region) * 0x9e3779b9u));
+  return (f.tint + 1 + static_cast<int>(h % (kTintCount - 1))) % kTintCount;
+}
+
+void FieldMap::generate(const Heightmap &hmap, uint32_t seed, const RoadNetwork *roads) {
   uint32_t rng = mix(seed ^ 0x6f1e1d5u) | 1u;
   m_forestSeed = mix(seed ^ 0xb5297a4du);
   m_nodes.clear();
   m_fields.clear();
+  m_region.clear();
+  m_regionN = 0;
+  if (roads) buildRegions(*roads);
 
   // Binary space partition. Each piece too long for a field is cut across
   // its longer axis (measured along and across its longest edge), the cut
@@ -349,6 +446,7 @@ void FieldMap::generate(const Heightmap &hmap, uint32_t seed) {
     fd.hash = mix(static_cast<uint32_t>(i) * 0x9e3779b9u ^ seed);
     fd.tint = static_cast<uint8_t>((fd.hash >> 16) % kTintCount);
     const Point c = centroid(fd.poly);
+    fd.homeRegion = regionAt(c.x, c.z);
     if (tiledNoise(c.x, c.z, Config::FARM_NOISE_PERIOD, farmSeed) <
         Config::FARM_NOISE_THRESHOLD)
       continue; // wild country

@@ -363,6 +363,16 @@ The 5g commit says strafe runs "fire at the friendly", but the friendly-hit chec
 **Reproduction.** Fly out over the sea and descend. The craft passes under the surface and lands on the seabed floor.
 **Notes.** Fixed 2026-11-22 with `Planet::surfaceAt()` and hazardous water ([D-038](DECISIONS.md#d-038-water-is-not-ground-planetsurfaceat-for-anything-above-it), F-047).
 
+### BUG-034: Terrain pieces near roads dropped from the mesh
+
+**Status:** fixed (2026-11-22)
+**Found:** 2026-11-22 (offline check during R.3)
+**Location:** [src/world/Roads.cpp](src/world/Roads.cpp) `area2()`; also the field-outline winding in [src/world/Decorations.cpp](src/world/Decorations.cpp)
+**Severity:** medium
+**Description.** `area2()` summed `u.x·v.z − v.x·u.z` on raw world coordinates (up to about 8 km). In float, the terms (about 10⁷) cancel catastrophically for pieces a few metres across, so the computed area was noise. `splitByLine()` then discarded genuine pieces as degenerate, leaving holes in the terrain mesh along roads (shipped in R.2, `44051e6`). Road shape winding, also decided by `area2()`, could flip too.
+**Reproduction.** Classify a small square on a road's centre line: before the fix, no pieces came back at all.
+**Notes.** Fixed 2026-11-22: areas are measured relative to the polygon's first vertex. The field-outline winding in Decorations got the same treatment. See [AV-019](ATTACK_VECTORS.md#av-019-polygon-maths-on-raw-world-coordinates-in-float).
+
 ## Won't Fix
 
 _None._

@@ -10,6 +10,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 ## [Unreleased]
 
 ### Added
+- Fields follow roads (F-048, Settlements track R.3): fields change crop colour across roads, field-edge hedges, walls and fences stop at the verge, and roads through farmland get their own roadside hedge, wall or fence runs. Trees, groves, rocks, antennas and crash sites keep clear of roads ([D-040](DECISIONS.md#d-040-fields-follow-roads-through-road-bounded-regions))
 - Road network (F-048, Settlements track R.2): main roads join the towns, lanes the villages and gravel tracks the farmsteads, routed over the terrain round water and steep ground. Roads are cut into the terrain mesh, so they don't flicker ([D-039](DECISIONS.md#d-039-road-network-a-on-a-wrapped-grid-roads-cut-into-the-terrain))
 - Settlement sites (F-048, Settlements track R.1): each world picks up to 4 towns, 22 villages and 180 farmsteads on gentle, dry grassland, spaced apart, with towns near water. Bases and radar towers keep clear of them. DEV: F8 overlay, and F6 also writes a site map. Roads and buildings follow in later phases
 - The player's craft trails damage smoke below half hull, like the enemy ships, until it is repaired on a landing pad (F-017)
@@ -74,6 +75,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Stale duplicate of `game_modes_and_features.md` at the repo root
 
 ### Fixed
+- Float precision dropped terrain pieces near roads, leaving holes along them. Polygon areas are now measured from a local origin ([BUG-034](BUGS.md#bug-034-terrain-pieces-near-roads-dropped-from-the-mesh))
 - Ships flew below the sea surface and the player could land in water, because heights over the sea were measured from the seabed. Shots, the camera and altitude readouts now use the water surface too ([BUG-033](BUGS.md#bug-033-ships-fly-into-the-sea-and-the-player-can-land-in-water))
 - Pressing Launch froze the game for a couple of seconds: every base and radar tower placed rebuilt all the scenery instances. Sites are now cleared in one batch, so setup takes a fraction of a second, and it runs behind a loading bar with progress steps. World loading at startup also reports its forest and layout steps ([BUG-032](BUGS.md#bug-032-launch-freezes-for-a-couple-of-seconds-with-no-feedback))
 - The player started hovering beside the home base. The round now starts with the craft parked on the home base's landing pad, and the home base sits on the gentle grassland nearest the world centre ([BUG-031](BUGS.md#bug-031-the-player-starts-hovering-beside-the-home-base-instead-of-on-its-landing-pad))

@@ -1048,6 +1048,13 @@ constexpr float ROAD_MAIN_WIDTH = 7.0f;        // m
 constexpr float ROAD_LANE_WIDTH = 4.5f;        // m
 constexpr float ROAD_TRACK_WIDTH = 3.0f;       // m
 constexpr float ROAD_INDEX_CELL = 64.0f;       // m, spatial index for terrain clipping
+// Scenery clearance from road edges (R.3).
+constexpr float ROAD_TREE_CLEARANCE = 2.5f;    // m, trees (plus the stand radius for groves/copses)
+constexpr float ROAD_BOUNDARY_CLEARANCE = 1.0f; // m, hedge, wall and fence segments
+constexpr float ROAD_HEDGE_GAP = 2.0f;         // m, field-edge hedges stop this far short
+constexpr float ROAD_ROCK_CLEARANCE = 7.0f;    // m, rock clusters and antennas
+constexpr float ROAD_CRASH_CLEARANCE = 9.0f;   // m, crash sites and their debris
+constexpr float ROADSIDE_OFFSET = 1.6f;        // m from the road edge to a roadside hedge's centre; TUNE
 
 // Bases and radar towers keep this far outside any settlement footprint.
 constexpr float SETTLEMENT_BASE_CLEARANCE = 60.0f; // m
@@ -1067,6 +1074,11 @@ constexpr float FIELD_CURVE_CHANCE = 0.4f;     // TUNE
 constexpr float FIELD_CURVE_AMP = 0.12f;       // TUNE
 constexpr float FIELD_CURVE_AMP_MAX = 22.0f;   // m; TUNE
 constexpr float FIELD_CURVE_STEP = 5.0f;       // m
+// Roads split fields (R.3): the land between roads is flooded into
+// regions on a FIELD_REGION_CELL raster, with each road widened by
+// FIELD_REGION_BARRIER either side so even tracks block the flood.
+constexpr float FIELD_REGION_CELL = 4.0f;      // m
+constexpr float FIELD_REGION_BARRIER = 2.0f;   // m beyond each road edge
 constexpr float FIELD_MAX_SLOPE = 0.35f;       // rise/run, at 4/5 of sample points
 // Farming country vs wild country: tiling noise with FARM_NOISE_PERIOD
 // lattice cells per world edge (~400 m blobs); farming where it passes

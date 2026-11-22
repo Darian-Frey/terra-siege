@@ -71,12 +71,12 @@ Players who want a modern take on the 1988 Argonaut game *Virus*: flat-shaded lo
 ### F-048 Settlement sites and road network
 
 **Priority:** Should
-**Status:** In progress (R.1 sites and R.2 roads complete 2026-11-22; R.3 fields along roads next)
+**Status:** Complete (R.1 sites, R.2 roads and R.3 fields along roads, 2026-11-22)
 **Acceptance:**
 
 - Town, village and farmstead sites are chosen per seed on gentle, dry grassland, spaced apart (wrap-aware), with towns preferring a nearby coast or lake (`TOWN_*`, `VILLAGE_*`, `FARM_*`). Bases and radar towers keep clear of them. The DEV F8 overlay and the F6 map show them
 - A road network connects every settlement, and every road avoids water (R.2, done). Main roads join the towns, lanes the villages and tracks the farmsteads. Settlements on islands stay unconnected until bridges (R.6) ([D-039](DECISIONS.md#d-039-road-network-a-on-a-wrapped-grid-roads-cut-into-the-terrain))
-- Roads are cut into the terrain mesh without z-fighting (R.2, done), and fields, hedges and forest make way for them, with field boundaries meeting the roads (R.3)
+- Roads are cut into the terrain mesh without z-fighting (R.2, done). Fields change colour across roads, field-edge boundaries stop at the verge, farmland roads are lined with their own hedge, wall or fence runs, and no tree, rock or boundary stands on a road (R.3, done; [D-040](DECISIONS.md#d-040-fields-follow-roads-through-road-bounded-regions))
 
 **Notes:** Plan in [project-status/ROAD_VILLAGE_TOWN_ROADMAP.md](project-status/ROAD_VILLAGE_TOWN_ROADMAP.md) (Settlements track, phases R.1–R.3).
 

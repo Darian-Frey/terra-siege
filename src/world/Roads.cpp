@@ -17,11 +17,17 @@ float cross(Point a, Point b, Point p) {
   return (b.x - a.x) * (p.z - a.z) - (b.z - a.z) * (p.x - a.x);
 }
 
+// Twice the signed area. Measured from the first vertex: raw world
+// coordinates (up to ~8 km) would cancel catastrophically in float for
+// pieces a few metres across.
 float area2(const Poly &p) {
+  if (p.size() < 3) return 0.0f;
+  const Point o = p[0];
   float a = 0.0f;
-  for (size_t i = 0; i < p.size(); ++i) {
-    const Point u = p[i], v = p[(i + 1) % p.size()];
-    a += u.x * v.z - v.x * u.z;
+  for (size_t i = 1; i + 1 < p.size(); ++i) {
+    const float ux = p[i].x - o.x, uz = p[i].z - o.z;
+    const float vx = p[i + 1].x - o.x, vz = p[i + 1].z - o.z;
+    a += ux * vz - vx * uz;
   }
   return a;
 }
@@ -475,10 +481,65 @@ void RoadNetwork::addShape(int cls, std::vector<Point> poly) {
     }
 }
 
+void RoadNetwork::addSegment(Segment s) {
+  const float ws = Config::WORLD_SIZE;
+  const float cell = Config::ROAD_INDEX_CELL;
+  const float x0 = fminf(s.a.x, s.b.x) - s.halfWidth, x1 = fmaxf(s.a.x, s.b.x) + s.halfWidth;
+  const float z0 = fminf(s.a.z, s.b.z) - s.halfWidth, z1 = fmaxf(s.a.z, s.b.z) + s.halfWidth;
+  const float bx = floorf(x0 / ws) * ws, bz = floorf(z0 / ws) * ws;
+  for (float sx : {-bx, -bx - ws})
+    for (float sz : {-bz, -bz - ws}) {
+      if (x1 + sx < 0.0f || x0 + sx > ws || z1 + sz < 0.0f || z0 + sz > ws) continue;
+      const int id = static_cast<int>(m_segments.size());
+      m_segments.push_back({{s.a.x + sx, s.a.z + sz}, {s.b.x + sx, s.b.z + sz}, s.halfWidth});
+      const int cx0 = std::max(0, static_cast<int>((x0 + sx) / cell));
+      const int cz0 = std::max(0, static_cast<int>((z0 + sz) / cell));
+      const int cx1 = std::min(m_indexN - 1, static_cast<int>((x1 + sx) / cell));
+      const int cz1 = std::min(m_indexN - 1, static_cast<int>((z1 + sz) / cell));
+      for (int cz = cz0; cz <= cz1; ++cz)
+        for (int cx = cx0; cx <= cx1; ++cx)
+          m_segIndex[static_cast<size_t>(cz) * m_indexN + cx].push_back(id);
+    }
+}
+
+float RoadNetwork::edgeDistance(float x, float z, float maxDist) const {
+  if (m_indexN == 0) return maxDist;
+  const float ws = Config::WORLD_SIZE;
+  const float cell = Config::ROAD_INDEX_CELL;
+  x = fmodf(x, ws);
+  z = fmodf(z, ws);
+  if (x < 0.0f) x += ws;
+  if (z < 0.0f) z += ws;
+  float best = maxDist;
+  const int cx0 = static_cast<int>(floorf((x - maxDist) / cell));
+  const int cx1 = static_cast<int>(floorf((x + maxDist) / cell));
+  const int cz0 = static_cast<int>(floorf((z - maxDist) / cell));
+  const int cz1 = static_cast<int>(floorf((z + maxDist) / cell));
+  for (int cz = cz0; cz <= cz1; ++cz)
+    for (int cx = cx0; cx <= cx1; ++cx) {
+      // Cells past the world edge hold segments shifted by a world width.
+      const int wx = ((cx % m_indexN) + m_indexN) % m_indexN;
+      const int wz = ((cz % m_indexN) + m_indexN) % m_indexN;
+      const float ox = (cx - wx) * cell, oz = (cz - wz) * cell;
+      for (int id : m_segIndex[static_cast<size_t>(wz) * m_indexN + wx]) {
+        const Segment &s = m_segments[id];
+        const float ax = s.a.x + ox, az = s.a.z + oz, bx = s.b.x + ox, bz = s.b.z + oz;
+        const float ex = bx - ax, ez = bz - az, l2 = ex * ex + ez * ez;
+        float t = l2 > 0.0f ? ((x - ax) * ex + (z - az) * ez) / l2 : 0.0f;
+        t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+        const float dx = x - (ax + ex * t), dz = z - (az + ez * t);
+        best = fminf(best, sqrtf(dx * dx + dz * dz) - s.halfWidth);
+      }
+    }
+  return best;
+}
+
 void RoadNetwork::buildShapes() {
   m_shapes.clear();
+  m_segments.clear();
   m_indexN = static_cast<int>(Config::WORLD_SIZE / Config::ROAD_INDEX_CELL);
   m_index.assign(static_cast<size_t>(m_indexN) * m_indexN, {});
+  m_segIndex.assign(static_cast<size_t>(m_indexN) * m_indexN, {});
   for (const Road &r : m_roads) {
     const float w = halfWidth(r.cls);
     const int cls = static_cast<int>(r.cls);
@@ -489,6 +550,7 @@ void RoadNetwork::buildShapes() {
       const float ux = (b.x - a.x) / len, uz = (b.z - a.z) / len;
       const float nx = -uz * w, nz = ux * w;
       addShape(cls, {{a.x + nx, a.z + nz}, {b.x + nx, b.z + nz}, {b.x - nx, b.z - nz}, {a.x - nx, a.z - nz}});
+      addSegment({a, b, w});
     }
     // Octagons at every vertex fill the wedge at bends and round the ends.
     for (const Point &p : r.pts) {

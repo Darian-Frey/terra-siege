@@ -197,17 +197,30 @@ void TerrainChunk::build(const Heightmap &hmap, const FieldMap *fields,
             writeVert(onPlane(poly[k + 1]), n, col);
           }
         };
+        // Farmland tint at a piece's centre: the field's own tint, or
+        // another one across a road from the field's centre.
+        auto landAt = [&](int field, const std::vector<FieldMap::Point> &poly) {
+          int tint = -1;
+          if (field >= 0 && fields->isFarmland(field)) {
+            float px = 0.0f, pz = 0.0f;
+            for (const FieldMap::Point &q : poly) {
+              px += q.x;
+              pz += q.z;
+            }
+            tint = fields->tintAt(field, px / poly.size(), pz / poly.size());
+          }
+          return applyLight(landColor(avg, tint), n, false);
+        };
         for (const FieldMap::Piece &pc : pieces) {
-          const int tint = pc.field >= 0 && fields->isFarmland(pc.field) ? fields->tint(pc.field) : -1;
-          const Color land = applyLight(landColor(avg, tint), n, false);
           if (!roads) {
-            emitPoly(pc.poly, land);
+            emitPoly(pc.poly, landAt(pc.field, pc.poly));
             continue;
           }
           roadPieces.clear();
           roads->classify(pc.poly, roadPieces);
           for (const RoadNetwork::Piece &rp : roadPieces)
-            emitPoly(rp.poly, rp.cls >= 0 ? applyLight(kRoadColours[rp.cls], n, false) : land);
+            emitPoly(rp.poly, rp.cls >= 0 ? applyLight(kRoadColours[rp.cls], n, false)
+                                          : landAt(pc.field, rp.poly));
         }
       };
       emitTri(v00, v01, v10, dominantWater(hx, hz, hx, hz + 1, hx + 1, hz));

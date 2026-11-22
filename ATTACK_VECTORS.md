@@ -114,6 +114,13 @@ Breaking any of them causes faction ping-pong, missiles chasing allies, or a bro
 
 ## Engine and performance
 
+### AV-019 Polygon maths on raw world coordinates in float
+
+**Severity:** Major
+**Description.** World coordinates reach about 8,192 m. Products of raw coordinates (shoelace areas, cross products of absolute positions) are about 10⁷, beyond float's precision for metre-scale results, so small polygons get garbage areas or flipped winding ([BUG-034](BUGS.md#bug-034-terrain-pieces-near-roads-dropped-from-the-mesh)). Measure from a local origin, such as the polygon's first vertex, or use differences (`cross(a, b, p)` on `b − a` and `p − a` is safe).
+**Detection.** Manual: classify or clip a small polygon far from the origin and check pieces survive.
+**Related decisions.** D-035, D-039, D-040
+
 ### AV-018 Seabed height used for something above the water
 
 **Severity:** Major
