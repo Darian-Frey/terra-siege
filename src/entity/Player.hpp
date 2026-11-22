@@ -68,6 +68,8 @@ public:
   bool isAlive() const { return m_health > 0.0f; }
   bool isThrusting() const { return m_thrusting; }
   bool isLanded() const { return m_landed; }
+  // Touching water this tick (taking water damage).
+  bool isInWater() const { return m_inWater; }
 
   // Directional shield accessors — sector index uses the ShieldSector
   // enum (Front=0, Rear=1, Right=2, Left=3). HUD reads these to draw
@@ -259,6 +261,7 @@ private:
   bool m_landed = false;
   float m_deckY = NAN;   // platform top under the craft (NAN = none)
   bool m_wasOverDeck = false; // over a deck last tick
+  bool m_inWater = false;
   bool m_godMode = false;
   bool m_invertYaw = true;   // user reports left/right reads backwards
   bool m_invertPitch = false;

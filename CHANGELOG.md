@@ -10,6 +10,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 ## [Unreleased]
 
 ### Added
+- Hazardous water (F-047): touching sea or lake water damages the hull and drags the craft, and it can't be landed on. The HUD flashes IN WATER. AI flyers stay above the water, tanks and Collectors steer away from it, and any ship that ends up in it takes damage ([D-038](DECISIONS.md#d-038-water-is-not-ground-planetsurfaceat-for-anything-above-it))
 - Countryside: grassland now splits into farming country and wild country ([D-035](DECISIONS.md#d-035-farmland-patchwork-from-an-angled-bsp-shared-by-terrain-and-decorations)).
   - Farming country is a patchwork of irregular fields, cut at random angles, some with bowed or S-bent edges. They are tinted meadow, two greens, young crop, wheat or ploughed earth, and terrain triangles are split along field edges so the colours meet cleanly.
   - Field borders carry bush hedges, broadleaf tree lines or poplar rows, with gateways. About one field in eight is a wood planted to its hedges.
@@ -70,6 +71,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Stale duplicate of `game_modes_and_features.md` at the repo root
 
 ### Fixed
+- Ships flew below the sea surface and the player could land in water, because heights over the sea were measured from the seabed. Shots, the camera and altitude readouts now use the water surface too ([BUG-033](BUGS.md#bug-033-ships-fly-into-the-sea-and-the-player-can-land-in-water))
 - Pressing Launch froze the game for a couple of seconds: every base and radar tower placed rebuilt all the scenery instances. Sites are now cleared in one batch, so setup takes a fraction of a second, and it runs behind a loading bar with progress steps. World loading at startup also reports its forest and layout steps ([BUG-032](BUGS.md#bug-032-launch-freezes-for-a-couple-of-seconds-with-no-feedback))
 - The player started hovering beside the home base. The round now starts with the craft parked on the home base's landing pad, and the home base sits on the gentle grassland nearest the world centre ([BUG-031](BUGS.md#bug-031-the-player-starts-hovering-beside-the-home-base-instead-of-on-its-landing-pad))
 - Waves didn't clear while an infected enemy (or a base defender) was still alive, because allied ships counted as enemies. The game appeared to stop progressing until the infected ship bled out. Allied ships no longer count towards clearing a wave or the HUD enemy count ([BUG-030](BUGS.md#bug-030-allied-ships-infected-enemies-base-defenders-hold-up-wave-clear))

@@ -55,6 +55,19 @@ Players who want a modern take on the 1988 Argonaut game *Virus*: flat-shaded lo
 - Distance-culled at `DECOR_RENDER_RADIUS` and drawn at the toroidal copy nearest the camera
 - Trees (conifer, broadleaf, poplar, birch, dead, and bushes; more conifers higher up the grass band), rock boulders, antennas and crash sites (a wreck plus scattered debris) are OBJ models drawn with GPU instancing ([D-034](DECISIONS.md#d-034-trees-and-rocks-are-obj-models-drawn-with-gpu-instancing))
 
+### F-047 Hazardous water
+
+**Priority:** Should
+**Status:** Complete (2026-11-22)
+**Acceptance:**
+
+- Sea and lake water is not ground. The player can come down to the surface, and touching it damages the hull (`WATER_DAMAGE_FRAC_PS`) and drags the craft (`WATER_DRAG`). It never counts as landed. A fast drop onto it still takes landing or crash damage. The HUD flashes IN WATER
+- AI flyers hold their altitude above the water surface. Tanks and Collectors steer away from water ahead of them, and Collectors pick dry pickup sites. Landers never start in water
+- Any moving ship that ends up in the water takes the same damage
+- Shots splash on the sea surface. The camera clamp, altitude readouts and the player's shadow use the water surface, not the seabed
+
+**Notes:** [D-038](DECISIONS.md#d-038-water-is-not-ground-planetsurfaceat-for-anything-above-it). `Planet::surfaceAt()` is the terrain or the sea surface, whichever is higher; `heightAt()` stays the seabed.
+
 ### F-003 Rivers
 
 **Priority:** Could

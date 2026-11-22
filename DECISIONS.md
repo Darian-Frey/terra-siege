@@ -1106,3 +1106,33 @@ Undo is held at inspector level as full-mesh snapshots (32 deep) and is shared a
 
 **Reversal conditions.** Revisit if base structures need real collision (towers, hatches), or if platforms gain uneven decks.
 
+### D-038 Water is not ground: `Planet::surfaceAt()` for anything above it
+
+**Decided:** 2026-11-22
+**Recorded:** 2026-11-22
+**Status:** Accepted
+**Authors:** Shane Hartley (with Claude Code)
+**Related:** D-005, D-006, D-037, F-047, BUG-033
+
+**Context.** The sea is drawn flat at sea level, but `Planet::heightAt()` returns the seabed. Everything measured from it was relative to a seabed below the visible surface: the player's floor, AI altitude holds, shot impacts and the camera clamp. So ships flew into the sea, and the player could "land" in it ([BUG-033](BUGS.md#bug-033-ships-fly-into-the-sea-and-the-player-can-land-in-water)).
+
+**Options.**
+
+- **A. Make `heightAt()` return the sea surface.** Rejected: placement code (relay plinths, lander and base sites, decorations) needs the real terrain and the below-sea test.
+- **B. A separate surface query, used by everything that flies or floats.** Chosen.
+
+**Decision.**
+
+- `Planet::surfaceAt(x, z)` = max(terrain, sea surface). Lake water lies on the terrain, so lakes need no special case.
+- The player, AI flyer floors and altitude holds, projectile impacts, the camera clamp, the HUD altitude and the player's shadow use `surfaceAt()`.
+- Over water (`Planet::isWater`) the player's floor is the surface plus `PLAYER_DECK_REST` minus `WATER_SINK`, not the 5 m terrain floor. Touching water costs `WATER_DAMAGE_FRAC_PS` of full hull per second and applies `WATER_DRAG`. It is never a landing.
+- Ground units look `WATER_AVOID_LOOKAHEAD` ahead and turn towards dry ground (`steerClearOfWater`). Any moving ship in the water takes the same hull-fraction damage.
+
+**Consequences.**
+
+- Low flying over the sea is a risk, not a free floor.
+- `heightAt()` keeps meaning "terrain". New code for anything that flies, floats or is drawn above water must use `surfaceAt()` ([AV-018](ATTACK_VECTORS.md#av-018-seabed-height-used-for-something-above-the-water)).
+- Ground units may hesitate at shorelines when their target lies across water; there is no path-finding round lakes.
+
+**Reversal conditions.** Revisit if water becomes navigable (boats, amphibious units), or if lakes gain their own surface level separate from the terrain.
+

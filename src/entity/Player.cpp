@@ -26,6 +26,7 @@ void Player::init(Vector3 startPos, int flightAssistLevel) {
   m_landed = false;
   m_deckY = NAN;
   m_wasOverDeck = false;
+  m_inWater = false;
   m_assistLevel = flightAssistLevel < 0   ? 0
                   : flightAssistLevel > 3 ? 3
                                           : flightAssistLevel;
@@ -405,7 +406,7 @@ void Player::applyFlightAssist(float dt, const Planet &planet) {
   if (m_assistLevel >= 3) {
     Vector3 ahead = Vector3Add(
         m_pos, Vector3Scale(m_vel, Config::ASSIST_PULLUP_LOOKAHEAD));
-    float aheadGround = planet.heightAt(ahead.x, ahead.z);
+    float aheadGround = planet.surfaceAt(ahead.x, ahead.z);
     float dangerAGL = aheadGround + Config::PLAYER_MIN_ALTITUDE * 4.0f;
     if (m_pos.y < dangerAGL) {
       float depth = (dangerAGL - m_pos.y) /
@@ -421,7 +422,7 @@ void Player::applyFlightAssist(float dt, const Planet &planet) {
 // ====================================================================
 void Player::applyPhysics(float dt, const Planet &planet) {
   // ---- Flight ceiling: thrust cuts above NEWTON_FLIGHT_CEILING AGL ----
-  float groundH = planet.heightAt(m_pos.x, m_pos.z);
+  float groundH = planet.surfaceAt(m_pos.x, m_pos.z);
   float agl = m_pos.y - groundH;
   bool ceilingCut = (agl > Config::NEWTON_FLIGHT_CEILING);
 
@@ -477,14 +478,35 @@ void Player::applyPhysics(float dt, const Planet &planet) {
   // ---- Ground interaction ----
   // Over a base platform the deck is the floor (the craft sits on it);
   // elsewhere the floor is PLAYER_MIN_ALTITUDE above the terrain.
-  groundH = planet.heightAt(m_pos.x, m_pos.z);
+  // Over water the craft can come down to the surface, but water is
+  // not ground: touching it damages the hull and drags the craft, and
+  // it never counts as landed.
+  groundH = planet.surfaceAt(m_pos.x, m_pos.z);
   const bool overDeck = !std::isnan(m_deckY);
-  float minH = overDeck ? m_deckY + Config::PLAYER_DECK_REST
-                        : groundH + Config::PLAYER_MIN_ALTITUDE;
+  const bool overWater = !overDeck && planet.isWater(m_pos.x, m_pos.z);
+  float minH = overDeck    ? m_deckY + Config::PLAYER_DECK_REST
+               : overWater ? groundH + Config::PLAYER_DECK_REST - Config::WATER_SINK
+                           : groundH + Config::PLAYER_MIN_ALTITUDE;
   const bool wasOverDeck = m_wasOverDeck;
   m_wasOverDeck = overDeck;
   m_landed = false;
-  if (!overDeck && wasOverDeck && m_pos.y < minH) {
+  m_inWater = overWater && m_pos.y < groundH + Config::PLAYER_DECK_REST;
+  if (m_inWater) {
+    applyDamage(Config::WATER_DAMAGE_FRAC_PS * Config::PLAYER_HULL_HP * dt);
+    const float k = fmaxf(0.0f, 1.0f - Config::WATER_DRAG * dt);
+    m_vel.x *= k;
+    m_vel.z *= k;
+  }
+  if (overWater && m_pos.y < minH) {
+    // Settle on the surface without landing; a fast drop still hurts.
+    float impact = -m_vel.y;
+    if (impact > Config::NEWTON_CRASH_SPEED)
+      applyDamage(m_health);
+    else if (impact > Config::NEWTON_LAND_SPEED)
+      applyDamage((impact - Config::NEWTON_LAND_SPEED) * 6.0f);
+    m_pos.y = minH;
+    if (m_vel.y < 0.0f) m_vel.y = 0.0f;
+  } else if (!overDeck && wasOverDeck && m_pos.y < minH) {
     // Flew off the deck edge below the terrain floor: lift to it and keep
     // moving, rather than treating the step as a landing.
     m_pos.y = minH;
@@ -1132,9 +1154,9 @@ void Player::render(const tsmesh::MeshRegistry *registry) const {
 void Player::renderGroundShadow(const Planet &planet) const {
   if (!m_built) return;
 
-  // Over a deck the shadow lies on it (the terrain is under the platform).
+  // The shadow lies on the deck or the water surface where there is one.
   auto ground = [&](float x, float z) {
-    float h = planet.heightAt(x, z);
+    float h = planet.surfaceAt(x, z);
     return std::isnan(m_deckY) ? h : fmaxf(h, m_deckY);
   };
   float centreGround = ground(m_pos.x, m_pos.z);

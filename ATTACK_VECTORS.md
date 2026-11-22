@@ -114,6 +114,13 @@ Breaking any of them causes faction ping-pong, missiles chasing allies, or a bro
 
 ## Engine and performance
 
+### AV-018 Seabed height used for something above the water
+
+**Severity:** Major
+**Description.** `Planet::heightAt()` returns the terrain, which under the sea is the seabed, below the drawn sea surface. Anything that flies, floats, is drawn above water or measures altitude must use `Planet::surfaceAt()`. Using `heightAt()` puts it under the sea ([BUG-033](BUGS.md#bug-033-ships-fly-into-the-sea-and-the-player-can-land-in-water)). Placement code that needs the real ground or a below-sea test keeps `heightAt()`.
+**Detection.** Manual: fly low over the sea. Nothing should pass below the surface, and the camera should never see under it.
+**Related decisions.** D-038
+
 ### AV-017 Per-call full rebuild of scenery instances
 
 **Severity:** Minor

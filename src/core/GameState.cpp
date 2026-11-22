@@ -137,7 +137,7 @@ static void recordSample(const Camera3D &cam, const Player &player,
   Vector3 p = player.position();
   Vector3 v = player.velocity();
   Vector3 f = player.forward();
-  float agl = p.y - planet.heightAt(p.x, p.z);
+  float agl = p.y - planet.surfaceAt(p.x, p.z);
   const float rad2deg = 180.0f / 3.14159265f;
   Vector2 md = GetMouseDelta();
 
@@ -670,8 +670,9 @@ void GameState::spawnFriendliesForRound(
         }
         if (!ok) continue;
         float y = m_planet.heightAt(x, z);
-        // Skip if it'd land underwater.
-        if (y < Config::SEA_LEVEL * Config::TERRAIN_HEIGHT_MAX + 2.0f)
+        // Skip if it'd land in the sea or a lake.
+        if (y < Config::SEA_LEVEL * Config::TERRAIN_HEIGHT_MAX + 2.0f ||
+            m_planet.isWater(x, z))
           continue;
         lpos = {x, y + 0.6f, z};
         break;
@@ -927,7 +928,7 @@ void GameState::handleDevKeys() {
 // Five-view camera system — see terra_rebuild/camera_system.md
 //
 // Shared properties:
-//  - All views terrain-clamp the camera (heightAt + 3.5) before lerping.
+//  - All views terrain-clamp the camera (surfaceAt + 3.5) before lerping.
 //  - All views position-lerp at CAM_LERP for the position-only smoothing
 //    that prevents pop on view switch; orientation updates instantly.
 //  - The dispatcher updateCamera() decrements the view-label timer once
@@ -964,7 +965,7 @@ inline float headingDegrees(float yaw) {
 // player. Used by every view that follows the player from above.
 inline void applyTerrainClamp(Vector3 &pos, const Planet &planet,
                               const Vector3 &playerPos, float groundMargin) {
-  float groundH = planet.heightAt(pos.x, pos.z);
+  float groundH = planet.surfaceAt(pos.x, pos.z); // never under the sea surface
   if (pos.y < groundH + groundMargin) pos.y = groundH + groundMargin;
   if (pos.y < playerPos.y + 2.0f) pos.y = playerPos.y + 2.0f;
 }
@@ -1946,7 +1947,7 @@ void GameState::drawHUD() const {
 
   // ---- Debug info panel (top right) ----
   const Vector3 &pos = m_player.position();
-  float terrainH = m_planet.heightAt(pos.x, pos.z);
+  float terrainH = m_planet.surfaceAt(pos.x, pos.z);
   float agl = pos.y - terrainH;
   char buf[64];
   float spd = m_player.speed();
@@ -2057,7 +2058,13 @@ void GameState::drawHUD() const {
                      : Color{80, 180, 255, 255};
     DrawRectangle(bx, by, chgW, bh, cCol);
     drawHudText("THRUST", bx, by - 14, 12, col);
-    if (m_player.isLanded()) {
+    if (m_player.isInWater()) {
+      // Flashing warning: the hull is taking water damage.
+      const char *tag = "IN WATER";
+      int lw = measureHudText(tag, 12);
+      if (fmod(GetTime(), 0.5) < 0.3)
+        drawHudText(tag, bx + bw - lw, by - 14, 12, {255, 90, 70, 255});
+    } else if (m_player.isLanded()) {
       const char *tag = m_em.playerOnPad() ? "ON PAD" : "LANDED";
       int lw = measureHudText(tag, 12);
       drawHudText(tag, bx + bw - lw, by - 14, 12, {120, 220, 140, 255});
@@ -2287,7 +2294,7 @@ void GameState::drawHUD() const {
   // to show the over-ceiling state.
   {
     Vector3 ppos = m_player.position();
-    float ground = m_planet.heightAt(ppos.x, ppos.z);
+    float ground = m_planet.surfaceAt(ppos.x, ppos.z);
     float agl = ppos.y - ground;
     if (agl < 0.0f) agl = 0.0f;
 

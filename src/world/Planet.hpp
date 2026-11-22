@@ -55,6 +55,13 @@ public:
   // Farmland patchwork and forest mask, fixed at generate().
   const FieldMap &fields() const { return m_fields; }
 
+  // Top of whatever is underfoot: the terrain, or the sea surface where
+  // the terrain is below sea level (lake water lies on the terrain).
+  // Use it for anything that flies or floats; heightAt() is the seabed.
+  float surfaceAt(float worldX, float worldZ) const {
+    return fmaxf(heightAt(worldX, worldZ), Config::SEA_LEVEL * Config::TERRAIN_HEIGHT_MAX);
+  }
+
   // True when (x, z) is open water: ocean below sea level, or a lake.
   bool isWater(float worldX, float worldZ) const;
 

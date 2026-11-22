@@ -109,8 +109,9 @@ The game binary has the repo path built in (`TERRA_SIEGE_PROJECT_ROOT`) for asse
 ## Pitfalls
 
 - See [ATTACK_VECTORS.md](ATTACK_VECTORS.md) for the canonical list. The ones that bite most often:
+  - **Water** ([AV-018](ATTACK_VECTORS.md#av-018-seabed-height-used-for-something-above-the-water)): `Planet::heightAt()` is the seabed under the sea. Use `surfaceAt()` for anything that flies, floats or measures altitude.
   - **Wrap** ([AV-005](ATTACK_VECTORS.md#av-005-world-fixed-objects-drawn-or-measured-without-the-toroidal-wrap)): anything new that draws or measures world-fixed objects must use the nearest toroidal copy.
-  - **Camera terrain clamp** ([AV-004](ATTACK_VECTORS.md#av-004-camera-clips-below-terrain)): every view queries `heightAt` before lerping. Don't remove it.
+  - **Camera terrain clamp** ([AV-004](ATTACK_VECTORS.md#av-004-camera-clips-below-terrain)): every view queries `surfaceAt` before lerping. Don't remove it.
   - **raylib traps** ([AV-013](ATTACK_VECTORS.md#av-013-raylib-name-and-default-collisions)):
     - the `rlFrustum` clip planes: `CAM_FAR_PLANE` must cover the world, and `CAM_NEAR_PLANE` must stay large for depth precision (z-fighting)
     - Tactical view `camera.up = {0, 0, 1}`

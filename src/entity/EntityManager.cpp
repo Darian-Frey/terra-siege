@@ -79,6 +79,43 @@ inline RampPoints rampPoints(const Entity &b, int r) {
           {b.pos.x + dx * (h + L), ground, b.pos.z + dz * (h + L)},
           {b.pos.x + dx * (h + L + 6.0f), ground, b.pos.z + dz * (h + L + 6.0f)}};
 }
+// Ships that water can damage: everything that moves. Structures stand
+// where they were placed (relay towers on plinths).
+inline bool isWaterVulnerable(EntityType t) {
+  switch (t) {
+  case EntityType::Fighter:
+  case EntityType::Drone:
+  case EntityType::Bomber:
+  case EntityType::Seeder:
+  case EntityType::Carrier:
+  case EntityType::Lander:
+  case EntityType::GroundTurret:
+  case EntityType::Collector:
+    return true;
+  default:
+    return false;
+  }
+}
+// Ground units: if the point WATER_AVOID_LOOKAHEAD ahead along yaw is
+// water, turn (by at most maxTurn) towards the nearest dry heading,
+// trying ±30° steps out to 180°. Returns false when every heading in
+// reach is wet, so the caller should not advance this tick.
+inline bool steerClearOfWater(const Planet &planet, Vector3 pos, float &yaw, float maxTurn) {
+  auto dryAt = [&](float y) {
+    return !planet.isWater(pos.x + sinf(y) * Config::WATER_AVOID_LOOKAHEAD,
+                           pos.z + cosf(y) * Config::WATER_AVOID_LOOKAHEAD);
+  };
+  if (dryAt(yaw)) return true;
+  for (int k = 1; k <= 6; ++k) {
+    for (float sgn : {1.0f, -1.0f}) {
+      const float off = sgn * k * 0.5236f;
+      if (!dryAt(yaw + off)) continue;
+      yaw += fmaxf(-maxTurn, fminf(maxTurn, off));
+      return dryAt(yaw); // only advance once the new heading is dry
+    }
+  }
+  return false;
+}
 inline bool onPlatform(const Entity &b, Vector3 p) {
   return fabsf(p.x - b.pos.x) <= Config::BASE_PAD_HALF_SIZE &&
          fabsf(p.z - b.pos.z) <= Config::BASE_PAD_HALF_SIZE;
@@ -981,7 +1018,7 @@ bool EntityManager::tickRetreat(Entity &e, float dt, const Planet &planet,
   e.pos = Vector3Add(e.pos, Vector3Scale(e.vel, dt));
 
   // Don't sink into terrain (still possible at low altitude).
-  float floor = planet.heightAt(e.pos.x, e.pos.z) + 5.0f;
+  float floor = planet.surfaceAt(e.pos.x, e.pos.z) + 5.0f;
   if (e.pos.y < floor) {
     e.pos.y = floor;
     if (e.vel.y < 0.0f) e.vel.y = 0.0f;
@@ -1006,6 +1043,16 @@ void EntityManager::update(float dt, const Planet &planet, Player &player,
 
   for (auto &e : m_entities) {
     if (!e.alive) continue;
+
+    // Any ship in the water takes hull damage (AI keeps clear of it, so
+    // this mostly catches wrecks and anything pushed in).
+    if (isWaterVulnerable(e.type) && planet.isWater(e.pos.x, e.pos.z) &&
+        e.pos.y < planet.surfaceAt(e.pos.x, e.pos.z) + Config::PLAYER_DECK_REST &&
+        e.hullMax > 0.0f) {
+      applyDamage(e, Config::WATER_DAMAGE_FRAC_PS * e.hullMax * dt,
+                  {e.pos.x, e.pos.y - 1.0f, e.pos.z}, particles, DamageType::Neutral);
+      if (!e.alive) continue;
+    }
 
     // Shield-impact ring buffer — age every active slot.
     shieldfx::tickImpacts(e.shieldImpactTimer, Config::SHIELD_IMPACT_SLOTS, dt);
@@ -1282,7 +1329,7 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
   e.vel.z += fwd.z * Config::FIGHTER_THRUST * thrustScale * dt;
 
   // Altitude hold — try to stay at FIGHTER_PREFERRED_ALT above terrain
-  float ground = planet.heightAt(e.pos.x, e.pos.z);
+  float ground = planet.surfaceAt(e.pos.x, e.pos.z);
   float targetY = ground + Config::FIGHTER_PREFERRED_ALT;
   float altErr = targetY - e.pos.y;
   e.vel.y += altErr * 0.5f * dt; // gentle restoring force
@@ -1306,7 +1353,7 @@ void EntityManager::updateFighter(Entity &e, float dt, const Planet &planet,
   e.pos = Vector3Add(e.pos, Vector3Scale(e.vel, dt));
 
   // Don't sink into terrain
-  float floor = planet.heightAt(e.pos.x, e.pos.z) + 5.0f;
+  float floor = planet.surfaceAt(e.pos.x, e.pos.z) + 5.0f;
   if (e.pos.y < floor) {
     e.pos.y = floor;
     if (e.vel.y < 0.0f) e.vel.y = 0.0f;
@@ -1484,7 +1531,7 @@ void EntityManager::updateBomber(Entity &e, float dt, const Planet &planet,
   e.vel.z += fwd.z * Config::BOMBER_THRUST * thrustScale * dt;
 
   // Altitude hold (lower than Fighter — bomber lumbers near the deck).
-  float ground = planet.heightAt(e.pos.x, e.pos.z);
+  float ground = planet.surfaceAt(e.pos.x, e.pos.z);
   float targetY = ground + Config::BOMBER_PREFERRED_ALT;
   float altErr = targetY - e.pos.y;
   e.vel.y += altErr * 0.4f * dt;
@@ -1507,7 +1554,7 @@ void EntityManager::updateBomber(Entity &e, float dt, const Planet &planet,
   e.pos = Vector3Add(e.pos, Vector3Scale(e.vel, dt));
 
   // Don't sink.
-  float floor = planet.heightAt(e.pos.x, e.pos.z) + 6.0f;
+  float floor = planet.surfaceAt(e.pos.x, e.pos.z) + 6.0f;
   if (e.pos.y < floor) {
     e.pos.y = floor;
     if (e.vel.y < 0.0f) e.vel.y = 0.0f;
@@ -1705,7 +1752,7 @@ void EntityManager::updateDrone(Entity &e, float dt, const Planet &planet,
   e.pos = Vector3Add(e.pos, Vector3Scale(e.vel, dt));
 
   // Keep above terrain by a small margin
-  float floor = planet.heightAt(e.pos.x, e.pos.z) + 3.0f;
+  float floor = planet.surfaceAt(e.pos.x, e.pos.z) + 3.0f;
   if (e.pos.y < floor) {
     e.pos.y = floor;
     if (e.vel.y < 0.0f) e.vel.y = 0.0f;
@@ -1808,7 +1855,7 @@ void EntityManager::updateSeeder(Entity &e, float dt, const Planet &planet,
   }
 
   // Altitude hold — sit high.
-  float ground = planet.heightAt(e.pos.x, e.pos.z);
+  float ground = planet.surfaceAt(e.pos.x, e.pos.z);
   float targetY = ground + Config::SEEDER_PREFERRED_ALT;
   float altErr = targetY - e.pos.y;
   e.vel.y += altErr * 0.3f * dt;
@@ -1832,7 +1879,7 @@ void EntityManager::updateSeeder(Entity &e, float dt, const Planet &planet,
   e.pos = Vector3Add(e.pos, Vector3Scale(e.vel, dt));
 
   // Don't sink (shouldn't happen at this altitude, but defensively).
-  float floor = planet.heightAt(e.pos.x, e.pos.z) +
+  float floor = planet.surfaceAt(e.pos.x, e.pos.z) +
                 Config::SEEDER_PREFERRED_ALT * 0.5f;
   if (e.pos.y < floor) {
     e.pos.y = floor;
@@ -1895,7 +1942,7 @@ void EntityManager::updateCarrier(Entity &e, float dt, const Planet &planet,
   }
 
   // Altitude hold — sits very high.
-  float ground = planet.heightAt(e.pos.x, e.pos.z);
+  float ground = planet.surfaceAt(e.pos.x, e.pos.z);
   float targetY = ground + Config::CARRIER_PREFERRED_ALT;
   float altErr = targetY - e.pos.y;
   e.vel.y += altErr * 0.25f * dt;
@@ -1917,7 +1964,7 @@ void EntityManager::updateCarrier(Entity &e, float dt, const Planet &planet,
 
   e.pos = Vector3Add(e.pos, Vector3Scale(e.vel, dt));
 
-  float floor = planet.heightAt(e.pos.x, e.pos.z) +
+  float floor = planet.surfaceAt(e.pos.x, e.pos.z) +
                 Config::CARRIER_PREFERRED_ALT * 0.5f;
   if (e.pos.y < floor) {
     e.pos.y = floor;
@@ -2031,10 +2078,13 @@ void EntityManager::updateGroundTurret(Entity &e, float dt,
     e.yaw += yawErr;
   }
 
-  // Drive forward along chassis direction.
+  // Drive forward along chassis direction, turning away from water.
+  const bool canDrive = steerClearOfWater(planet, e.pos, e.yaw, Config::TANK_TURN_RATE * dt);
   Vector3 fwd = {sinf(e.yaw), 0.0f, cosf(e.yaw)};
-  e.pos.x += fwd.x * Config::TANK_DRIVE_SPEED * dt;
-  e.pos.z += fwd.z * Config::TANK_DRIVE_SPEED * dt;
+  if (canDrive) {
+    e.pos.x += fwd.x * Config::TANK_DRIVE_SPEED * dt;
+    e.pos.z += fwd.z * Config::TANK_DRIVE_SPEED * dt;
+  }
   // Resnap to terrain.
   float ground = planet.heightAt(e.pos.x, e.pos.z);
   e.pos.y = ground + Config::TURRET_MOUNT_HEIGHT;
@@ -2113,6 +2163,12 @@ void EntityManager::updateCollector(Entity &e, float dt, const Planet &planet) {
       return true;
     }
     e.yaw = atan2f(to.x, to.z);
+    // Detour round water rather than drive into it (instant turn, like
+    // the straight-line steering above).
+    if (!steerClearOfWater(planet, e.pos, e.yaw, 3.14159265f)) {
+      e.vel = {0, 0, 0};
+      return false;
+    }
     float spd = Config::COLLECTOR_SPEED;
     e.vel.x = sinf(e.yaw) * spd;
     e.vel.z = cosf(e.yaw) * spd;
@@ -2154,6 +2210,12 @@ void EntityManager::updateCollector(Entity &e, float dt, const Planet &planet) {
                    Config::COLLECTOR_PICKUP_MIN_DIST);
     float x = basePos.x + sinf(a) * r;
     float z = basePos.z + cosf(a) * r;
+    // Not in the water: swing round the base until the spot is dry.
+    for (int k = 0; k < 12 && planet.isWater(x, z); ++k) {
+      a += 0.5236f;
+      x = basePos.x + sinf(a) * r;
+      z = basePos.z + cosf(a) * r;
+    }
     e.targetPos = {x, planet.heightAt(x, z) + 0.8f, z};
   };
 
@@ -3148,7 +3210,9 @@ void EntityManager::updateProjectile(Entity &p, float dt, const Planet &planet,
   // Terrain hit — emit a small spark burst at impact, then kill it.
   // Reuses the same hit-burst helper as enemy contacts so the player
   // gets consistent feedback whether they're shooting craft or dirt.
-  float ground = planet.heightAt(p.pos.x, p.pos.z);
+  // The sea surface stops shots too (surfaceAt), so they splash on it
+  // rather than flying on to the seabed.
+  float ground = planet.surfaceAt(p.pos.x, p.pos.z);
   if (p.pos.y < ground) {
     Vector3 impact = {p.pos.x, ground + 0.2f, p.pos.z};
     emitHitBurst(impact, particles);

@@ -30,6 +30,16 @@ constexpr float PLAYER_MIN_ALTITUDE = 5.0f;   // hard floor AGL
 // Over a base platform the deck is solid: the craft rests on it at this
 // origin height (hovercraft.obj bottom is y = -0.4).
 constexpr float PLAYER_DECK_REST = 0.45f;
+// Water is not ground. Over water (sea or lake) the craft can come down
+// to the surface; touching it (origin below surface + PLAYER_DECK_REST)
+// is "in the water": hull damage at WATER_DAMAGE_FRAC_PS of full hull
+// per second, heavy drag, and never landed. AI ships hold their
+// altitude above the water surface and ground units steer clear of it;
+// any ship that still ends up in the water takes the same damage.
+constexpr float WATER_DAMAGE_FRAC_PS = 0.2f;   // TUNE — 5 s from full hull
+constexpr float WATER_DRAG = 2.5f;             // TUNE — per second, horizontal, in water
+constexpr float WATER_SINK = 0.35f;            // how far the hull settles below the surface
+constexpr float WATER_AVOID_LOOKAHEAD = 10.0f; // m ahead ground units test for water
 constexpr float PLAYER_MAX_ALTITUDE = 500.0f; // hard ceiling AGL
 
 constexpr float NEWTON_GRAVITY = 9.8f;    // m/s² world-down

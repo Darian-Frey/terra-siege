@@ -353,6 +353,16 @@ The 5g commit says strafe runs "fire at the friendly", but the friendly-hit chec
 **Reproduction.** Press Launch on the loadout screen. The menu freezes before play starts.
 **Notes.** Fixed 2026-11-22. `clearSquare()` takes `rebuild = false` for batches, and the layout calls `rebuildInstances()` once at the end. Setup at Launch dropped to about 0.4 s (Debug build). It now runs behind the loading screen (`drawLoadingScreen()`, shared with world load), with per-step progress. See [AV-017](ATTACK_VECTORS.md#av-017-per-call-full-rebuild-of-scenery-instances).
 
+### BUG-033: Ships fly into the sea, and the player can land in water
+
+**Status:** fixed (2026-11-22)
+**Found:** 2026-11-22 (playtest)
+**Location:** [src/entity/Player.cpp](src/entity/Player.cpp) `applyPhysics()`; flyer updates in [src/entity/EntityManager.cpp](src/entity/EntityManager.cpp); camera clamp in [src/core/GameState.cpp](src/core/GameState.cpp)
+**Severity:** medium
+**Description.** `Planet::heightAt()` is the seabed, but the sea is drawn at sea level. The player's floor (5 m above `heightAt`), AI altitude holds and floors, shot impacts and the camera clamp were all measured from the seabed. Over the sea everything could go below the visible surface, and the player could set down "in" the water as if on land, taking no damage.
+**Reproduction.** Fly out over the sea and descend. The craft passes under the surface and lands on the seabed floor.
+**Notes.** Fixed 2026-11-22 with `Planet::surfaceAt()` and hazardous water ([D-038](DECISIONS.md#d-038-water-is-not-ground-planetsurfaceat-for-anything-above-it), F-047).
+
 ## Won't Fix
 
 _None._
