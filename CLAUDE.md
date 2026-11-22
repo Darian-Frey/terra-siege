@@ -18,7 +18,7 @@ A C++17 / raylib 5.0 remake of *Virus* (Argonaut, 1988) for Linux: Newtonian hov
 - `src/core/Config.hpp`: working. Every constant. Difficulty preset tables exist but are unused (F-027).
 - `src/entity/Player.*`: working. Flight, assist, shields, weapon selection. Base decks are solid ground for it ([D-037](DECISIONS.md#d-037-base-platform-decks-are-solid-ground-for-the-player)). Has [BUG-005](BUGS.md#bug-005-holding-q-or-e-to-select-a-laser-colour-suppresses-auto-level-roll).
 - `src/entity/EntityManager.*`: working. Pools, all AI, projectiles, damage, infection v1, Lander (first cut), C.2 base defenders, landing pads and radar stations (procedural render; no OBJ yet). `rebaseAround()` re-centres entities and projectiles on the player each tick, so the world wrap is handled ([BUG-007](BUGS.md#bug-007-ai-collision-and-radar-distances-ignore-the-toroidal-wrap)).
-- `src/world/*`: working. Perlin terrain, lakes, `FieldMap` farmland patchwork (angled BSP with curved cuts, shared by terrain tints and decorations; [D-035](DECISIONS.md#d-035-farmland-patchwork-from-an-angled-bsp-shared-by-terrain-and-decorations)), decorations (forests of grove and copse stand models, hedge, wall and fence segments, and the rest, all instanced OBJ models; [D-036](DECISIONS.md#d-036-multi-plant-stand-models-cut-the-scenery-instance-count)), wrap-aware rendering. Rivers disabled (F-003). `SkyDome` is empty.
+- `src/world/*`: working. Perlin terrain, lakes, `Settlements` sites (R.1 of the Settlements track, F-048; roads next), `FieldMap` farmland patchwork (angled BSP with curved cuts, shared by terrain tints and decorations; [D-035](DECISIONS.md#d-035-farmland-patchwork-from-an-angled-bsp-shared-by-terrain-and-decorations)), decorations (forests of grove and copse stand models, hedge, wall and fence segments, and the rest, all instanced OBJ models; [D-036](DECISIONS.md#d-036-multi-plant-stand-models-cut-the-scenery-instance-count)), wrap-aware rendering. Rivers disabled (F-003). `SkyDome` is empty.
 - `src/hud/Radar.*`: working pulse radar, coverage-gated by the C.4 network (personal 300 m plus online towers). Tower pulses paint contacts beyond 300 m as rim markers.
 - `src/audio/AudioManager.*`: working. No engine loop yet.
 - `src/mesh/*`: working. OBJ, palette, sidecars and registries are all tested.
@@ -94,8 +94,9 @@ The game binary has the repo path built in (`TERRA_SIEGE_PROJECT_ROOT`) for asse
 | F3 | God mode (infinite thrust, invincible, infinite weapons) |
 | F4 | Flight recorder, 120 Hz CSV to `tests/logs/` |
 | F5 | Reseed terrain |
-| F6 | Dump heightmap to `tests/logs/heightmap-<unixtime>.{png,txt}` |
+| F6 | Dump heightmap to `tests/logs/heightmap-<unixtime>.{png,txt}`, plus a `-settlements.png` site map |
 | F7 | Skip wave |
+| F8 | Settlement-site overlay (rings and beacons; F-048) |
 | `[` / `]` / `\` | Debug stepper: in / out / reset |
 
 ## Conventions

@@ -8,6 +8,8 @@ void Planet::generate(uint32_t seed, ProgressCb cb) {
   // ---- Heightmap phase (0% → 40%) ----
   if (cb) cb("Generating heightmap", 0.0f);
   m_heightmap.generate(Config::HEIGHTMAP_SIZE, seed);
+  if (cb) cb("Choosing settlement sites", 0.4f);
+  m_settlements.generate(m_heightmap, seed);
   m_fields.generate(m_heightmap, seed);
   if (cb) cb("Heightmap complete, meshing terrain", 0.4f);
 
@@ -117,6 +119,7 @@ void Planet::exportHeightmap(const std::string &pathStem) const {
   if (!m_ready) return;
   m_heightmap.exportPng(pathStem + ".png");
   m_heightmap.exportStats(pathStem + ".txt");
+  m_settlements.exportMap(m_heightmap, pathStem + "-settlements.png");
 }
 
 float Planet::heightAt(float worldX, float worldZ) const {

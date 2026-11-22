@@ -1,6 +1,7 @@
 #pragma once
 
 #include "FieldMap.hpp"
+#include "Settlements.hpp"
 #include "Heightmap.hpp"
 #include "TerrainChunk.hpp"
 #include "core/Config.hpp"
@@ -54,6 +55,8 @@ public:
 
   // Farmland patchwork and forest mask, fixed at generate().
   const FieldMap &fields() const { return m_fields; }
+  // Town, village and farmstead sites, fixed at generate().
+  const Settlements &settlements() const { return m_settlements; }
 
   // Top of whatever is underfoot: the terrain, or the sea surface where
   // the terrain is below sea level (lake water lies on the terrain).
@@ -76,6 +79,7 @@ public:
 private:
   Heightmap m_heightmap;
   FieldMap m_fields;
+  Settlements m_settlements;
   std::vector<TerrainChunk> m_chunks;
   bool m_ready = false;
 };

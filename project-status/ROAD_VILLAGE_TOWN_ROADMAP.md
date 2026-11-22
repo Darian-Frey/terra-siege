@@ -1,6 +1,6 @@
 # Roads, Villages and Towns — Roadmap
 
-**Status:** Proposed, 2026-11-22. Not started. Nothing here is committed to FEATURES or ROADMAP yet. Feature IDs, decisions and phases are proposals until accepted.
+**Status:** In progress. R.1 complete (2026-11-22); R.2 next. Phases are tracked by [F-048](../FEATURES.md#f-048-settlement-sites-and-road-network) for R.1–R.3; later phases get their own feature IDs when they start.
 **Track:** New "Settlements" track, to sit beside the Engine, Features and Tooling tracks in [ROADMAP.md](../ROADMAP.md).
 **Builds on:** the farmland patchwork and forest mask ([D-035](../DECISIONS.md#d-035-farmland-patchwork-from-an-angled-bsp-shared-by-terrain-and-decorations)), instanced scenery and stand models ([D-034](../DECISIONS.md#d-034-trees-and-rocks-are-obj-models-drawn-with-gpu-instancing), [D-036](../DECISIONS.md#d-036-multi-plant-stand-models-cut-the-scenery-instance-count)), and the water surface ([D-038](../DECISIONS.md#d-038-water-is-not-ground-planetsurfaceat-for-anything-above-it)).
 
@@ -275,6 +275,7 @@ Each phase ends playable, and gets its docs (FEATURES, DECISIONS, CHANGELOG) in 
 **Deliverables:** a `world/Settlements` module with site selection and Config constants. A DEV overlay or a top-down debug map (like the field preview tool) marks the sites.
 **Acceptance:** sites are deterministic per seed, sensibly spaced, and on gentle dry grassland clear of bases.
 **Assets:** none.
+**Status:** Complete (2026-11-22). `world/Settlements`, owned by `Planet`, runs after the heightmap: grid candidates are scored on buildable footprint and flatness, then taken best-first with wrap-aware spacing (towns with a water bonus, then villages preferring the land between towns, then farmsteads). Default world: 4 towns, 22 villages, 180 farmsteads in about 50 ms. Bases and radar towers keep `SETTLEMENT_BASE_CLEARANCE` outside footprints. Shown by the DEV F8 overlay and the F6 `-settlements.png` map. Relay-chain towers still run straight between bases and can cross a settlement; revisit in R.2 or R.5. Playtest note for R.2: every settlement must be connected, and roads must avoid water.
 
 ### R.2 — Road network and surfaces (L)
 

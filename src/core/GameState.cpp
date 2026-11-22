@@ -319,6 +319,10 @@ void GameState::loadWorld(uint32_t seed) {
   m_planet.generate(seed, progressCb);
   // Engine Phase 3.5 — populate the world with trees/rocks/antennas/
   // crash sites. Deterministic on `seed` so reroll reproduces.
+  TraceLog(LOG_INFO, "Settlement sites: %d towns, %d villages, %d farmsteads",
+           m_planet.settlements().count(SettlementSite::Kind::Town),
+           m_planet.settlements().count(SettlementSite::Kind::Village),
+           m_planet.settlements().count(SettlementSite::Kind::Farm));
   drawLoadingScreen("Planting forests", 0.76f);
   m_decorations.generate(m_planet, seed);
   m_particles.clear();
@@ -354,6 +358,9 @@ Vector3 GameState::pickHomeSite() const {
       const float a = 6.2831853f * i / n;
       const float x = mid + r * sinf(a), z = mid + r * cosf(a);
       if (!m_planet.isGrassland(x, z) || m_planet.isWater(x, z)) continue;
+      if (m_planet.settlements().occupied(x, z, Config::BASE_PAD_HALF_SIZE +
+                                                    Config::SETTLEMENT_BASE_CLEARANCE))
+        continue;
       const float h = m_planet.heightAt(x, z);
       const float span = Config::BASE_PAD_HALF_SIZE;
       if (fabsf(m_planet.heightAt(x + span, z) - h) > Config::HOME_SITE_MAX_RISE ||
@@ -371,6 +378,29 @@ Vector3 GameState::pickHomeSite() const {
 // SMOKE_HP_THRESHOLD of hull the craft trails dark smoke from its tail,
 // thicker and darker as it nears death. Pad repair lifts the hull back
 // over the threshold and the trail stops.
+#ifdef DEV_MODE
+// DEV overlay (F8): a ground ring at each settlement site's footprint
+// and a beacon over its centre, at the toroidal copy nearest the camera.
+// Red towns, yellow villages, cyan farmsteads.
+void GameState::drawSettlementOverlay() const {
+  if (!m_showSettlements) return;
+  for (const SettlementSite &s : m_planet.settlements().sites()) {
+    const Vector3 c = m_planet.nearestCopy({s.x, s.y, s.z}, m_camera.position);
+    const float dx = c.x - m_camera.position.x, dz = c.z - m_camera.position.z;
+    if (dx * dx + dz * dz > Config::SETTLEMENT_OVERLAY_RANGE * Config::SETTLEMENT_OVERLAY_RANGE)
+      continue;
+    const Color col = s.kind == SettlementSite::Kind::Town      ? Color{230, 40, 40, 255}
+                      : s.kind == SettlementSite::Kind::Village ? Color{250, 220, 40, 255}
+                                                                : Color{40, 230, 230, 255};
+    const float beacon = s.kind == SettlementSite::Kind::Farm ? 30.0f : 90.0f;
+    for (float up : {1.5f, 4.0f})
+      DrawCircle3D({c.x, c.y + up, c.z}, s.radius, {1.0f, 0.0f, 0.0f}, 90.0f, col);
+    DrawLine3D({c.x, c.y, c.z}, {c.x, c.y + beacon, c.z}, col);
+    DrawCube({c.x, c.y + beacon, c.z}, 2.0f, 2.0f, 2.0f, col);
+  }
+}
+#endif
+
 void GameState::tickPlayerDamageSmoke(float dt) {
   if (!m_player.isAlive()) return;
   const float hpFrac = m_player.health() / Config::PLAYER_HULL_HP;
@@ -494,6 +524,9 @@ void GameState::spawnFriendliesForRound(
         float x = randF(0.0f, worldSize);
         float z = randF(0.0f, worldSize);
         if (!m_planet.isGrassland(x, z)) continue;
+        if (m_planet.settlements().occupied(x, z, Config::BASE_PAD_HALF_SIZE +
+                                                      Config::SETTLEMENT_BASE_CLEARANCE))
+          continue;
         float h = m_planet.heightAt(x, z);
         float slope = fabsf(m_planet.heightAt(x + 1.0f, z) - h) +
                       fabsf(m_planet.heightAt(x, z + 1.0f) - h);
@@ -918,6 +951,13 @@ void GameState::handleDevKeys() {
              m_waves.currentWave());
   }
 
+  // F8 — settlement-site overlay (Settlements R.1): rings and beacons
+  // over every town, village and farmstead site near the camera.
+  if (keyPressedEdge(KEY_F8)) {
+    m_showSettlements = !m_showSettlements;
+    TraceLog(LOG_INFO, "[dev] Settlement overlay %s", m_showSettlements ? "on" : "off");
+  }
+
   // F6 — dump current heightmap to disk for offline inspection.
   // Writes a greyscale PNG and a text dump (stats + ASCII preview) to
   // tests/logs/heightmap-<unixtime>.{png,txt}. The ASCII preview is
@@ -931,7 +971,8 @@ void GameState::handleDevKeys() {
                   static_cast<long long>(std::time(nullptr)));
     std::string stem = buf;
     m_planet.exportHeightmap(stem);
-    TraceLog(LOG_INFO, "Heightmap dumped: %s.{png,txt}", stem.c_str());
+    TraceLog(LOG_INFO, "Heightmap dumped: %s.{png,txt} and %s-settlements.png", stem.c_str(),
+             stem.c_str());
   }
 
   // F5 — reroll terrain seed (regenerate world). Useful for confirming
@@ -1745,6 +1786,9 @@ void GameState::render(float alpha) {
     }
     m_planet.draw(m_camera.position);
     m_decorations.render(m_planet, m_camera.position);
+#ifdef DEV_MODE
+    drawSettlementOverlay();
+#endif
     m_player.renderGroundShadow(m_planet);
     m_player.render(&m_meshRegistry);
     m_em.render(m_camera, m_planet, &m_meshRegistry);
@@ -1793,6 +1837,9 @@ void GameState::render(float alpha) {
     }
     m_planet.draw(m_camera.position);
     m_decorations.render(m_planet, m_camera.position);
+#ifdef DEV_MODE
+    drawSettlementOverlay();
+#endif
     m_player.renderGroundShadow(m_planet);
     m_player.render(&m_meshRegistry);
     m_em.render(m_camera, m_planet, &m_meshRegistry);
@@ -1846,6 +1893,9 @@ void GameState::drawSessionResult() {
   }
   m_planet.draw(m_camera.position);
   m_decorations.render(m_planet, m_camera.position);
+#ifdef DEV_MODE
+  drawSettlementOverlay();
+#endif
   m_player.renderGroundShadow(m_planet);
   m_player.render(&m_meshRegistry);
   m_em.render(m_camera, m_planet, &m_meshRegistry);

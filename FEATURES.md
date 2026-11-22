@@ -68,6 +68,18 @@ Players who want a modern take on the 1988 Argonaut game *Virus*: flat-shaded lo
 
 **Notes:** [D-038](DECISIONS.md#d-038-water-is-not-ground-planetsurfaceat-for-anything-above-it). `Planet::surfaceAt()` is the terrain or the sea surface, whichever is higher; `heightAt()` stays the seabed.
 
+### F-048 Settlement sites and road network
+
+**Priority:** Should
+**Status:** In progress (R.1 sites complete 2026-11-22; R.2 roads and R.3 fields along roads to come)
+**Acceptance:**
+
+- Town, village and farmstead sites are chosen per seed on gentle, dry grassland, spaced apart (wrap-aware), with towns preferring a nearby coast or lake (`TOWN_*`, `VILLAGE_*`, `FARM_*`). Bases and radar towers keep clear of them. The DEV F8 overlay and the F6 map show them
+- A road network connects every settlement, and every road avoids water (R.2)
+- Roads are drawn into the terrain without z-fighting, and fields, hedges and forest make way for them (R.2–R.3)
+
+**Notes:** Plan in [project-status/ROAD_VILLAGE_TOWN_ROADMAP.md](project-status/ROAD_VILLAGE_TOWN_ROADMAP.md) (Settlements track, phases R.1–R.3).
+
 ### F-003 Rivers
 
 **Priority:** Could

@@ -106,6 +106,8 @@ set(GAME_SOURCES
     src/world/SkyDome.hpp
     src/world/Decorations.cpp
     src/world/FieldMap.cpp
+    src/world/Settlements.cpp
+    src/world/Settlements.hpp
     src/world/FieldMap.hpp
     src/world/Decorations.hpp
 

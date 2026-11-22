@@ -998,6 +998,38 @@ constexpr int FOREST_STAND_PERIOD = 80;
 constexpr float FOREST_MIXED_BAND = 0.06f;     // noise band of mixed stands; TUNE
 constexpr float FOREST_BIRCH_STANDS = 0.12f;   // top of the noise range; TUNE
 
+// Settlement sites (Settlements, R.1 of the Settlements track). A site
+// needs its centre and most of its footprint on dry grassland with
+// slope under SETTLEMENT_MAX_SLOPE, and the ground within *_MAX_RISE
+// across it. Counts are maxima: a world short of flat grass gets fewer.
+constexpr float SETTLEMENT_MAX_SLOPE = 0.2f;   // rise/run at each sample; TUNE
+constexpr int TOWN_COUNT = 4;                  // TUNE
+constexpr float TOWN_RADIUS = 200.0f;          // m
+constexpr float TOWN_BUILDABLE_FRAC = 0.85f;   // of footprint samples; TUNE
+constexpr float TOWN_MAX_RISE = 30.0f;         // m across the footprint; TUNE
+constexpr float TOWN_MIN_SPACING = 1800.0f;    // m between towns; TUNE
+constexpr float TOWN_WATER_BONUS = 0.25f;      // score for a coast or lake nearby
+constexpr float TOWN_CANDIDATE_STEP = 64.0f;   // m
+constexpr int VILLAGE_COUNT = 22;              // TUNE
+constexpr float VILLAGE_RADIUS = 80.0f;        // m
+constexpr float VILLAGE_BUILDABLE_FRAC = 0.9f; // TUNE
+constexpr float VILLAGE_MAX_RISE = 14.0f;      // m; TUNE
+constexpr float VILLAGE_MIN_SPACING = 550.0f;  // m between villages; TUNE
+constexpr float VILLAGE_TOWN_GAP = 400.0f;     // m of open land between a village and a town
+constexpr float VILLAGE_TOWN_BAND_MIN = 700.0f;   // villages prefer this far
+constexpr float VILLAGE_TOWN_BAND_MAX = 2200.0f;  // from the nearest town
+constexpr float VILLAGE_TOWN_BAND_BONUS = 0.2f;
+constexpr float VILLAGE_CANDIDATE_STEP = 48.0f; // m
+constexpr int FARM_COUNT = 180;                // TUNE
+constexpr float FARM_RADIUS = 25.0f;           // m
+constexpr float FARM_MAX_RISE = 5.0f;          // m; TUNE
+constexpr float FARM_MIN_SPACING = 230.0f;     // m between farmsteads; TUNE
+constexpr float FARM_GAP = 120.0f;             // m from a town or village edge
+constexpr float FARM_CANDIDATE_STEP = 32.0f;   // m
+// Bases and radar towers keep this far outside any settlement footprint.
+constexpr float SETTLEMENT_BASE_CLEARANCE = 60.0f; // m
+constexpr float SETTLEMENT_OVERLAY_RANGE = 3000.0f; // m, DEV F8 overlay draw range
+
 // Farmland patchwork (FieldMap). The world is cut with straight lines
 // at random angles until no field is longer than FIELD_MAX_SIZE; no cut
 // leaves a field narrower than FIELD_MIN_SIZE.

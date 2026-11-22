@@ -212,6 +212,10 @@ private:
   // to GameOver. Reset on every transition into Playing.
   bool m_playerDeathHandled = false;
   float m_playerSmokeTimer = 0.0f; // next damage-smoke puff
+#ifdef DEV_MODE
+  bool m_showSettlements = false; // F8 overlay
+  void drawSettlementOverlay() const;
+#endif
   void tickPlayerDamageSmoke(float dt);
 
   // Slice C C.7 — session-result tracking. Set when we transition
