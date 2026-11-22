@@ -27,6 +27,9 @@ constexpr float MAX_FRAME_TIME = 0.05f;   // spiral-of-death guard
 // vector — "tilt and burn".
 // ----------------------------------------------------------------
 constexpr float PLAYER_MIN_ALTITUDE = 5.0f;   // hard floor AGL
+// Over a base platform the deck is solid: the craft rests on it at this
+// origin height (hovercraft.obj bottom is y = -0.4).
+constexpr float PLAYER_DECK_REST = 0.45f;
 constexpr float PLAYER_MAX_ALTITUDE = 500.0f; // hard ceiling AGL
 
 constexpr float NEWTON_GRAVITY = 9.8f;    // m/s² world-down
@@ -775,6 +778,13 @@ constexpr float BASE_RAMP_WIDTH = 8.0f;           // TUNE
 constexpr float BASE_RAMP_MIN_RISE = 0.3f;
 constexpr float BASE_RAMP_DRAW_SINK = 0.3f;       // drawn ramp continues this far below the ground (no flush z-fight)
 constexpr float COLLECTOR_ROUTE_RADIUS = 2.5f;    // arrival radius for ramp route waypoints
+// Home base (the player starts on its pad): the gentle grassland nearest
+// the world centre, searched in rings HOME_SITE_SEARCH_STEP apart. A site
+// qualifies when the ground BASE_PAD_HALF_SIZE out each way stays within
+// HOME_SITE_MAX_RISE of the centre.
+constexpr float HOME_SITE_SEARCH_RADIUS = 2500.0f; // m
+constexpr float HOME_SITE_SEARCH_STEP = 40.0f;     // m
+constexpr float HOME_SITE_MAX_RISE = 6.0f;         // m
 constexpr float BASE_PAD_HOVER_AGL = 8.0f;        // low hover counts as docked below this height…
 constexpr float BASE_PAD_HOVER_SPEED = 5.0f;      // …when also slower than this (m/s)
 constexpr float BASE_PAD_REPAIR_RATE = 12.0f;     // TUNE — hull HP / sec while on the pad

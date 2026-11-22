@@ -50,6 +50,8 @@ public:
   void setAudio(AudioManager *a) { m_audio = a; }
   // True while the player is docked on a friendly base's pad (HUD cue).
   bool playerOnPad() const { return m_playerOnPad; }
+  // Top of the base platform under p (entity frame), or NAN if none.
+  float deckHeightAt(Vector3 p) const;
 
   // Dev-only — kill every alive enemy without triggering kill bursts
   // or scoring. Used by the F7 skip-wave hotkey to advance through the

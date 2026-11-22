@@ -322,17 +322,12 @@ void GameState::loadWorld(uint32_t seed) {
   m_particles.clear();
   m_em.clear();
 
-  // Spawn above world centre facing +Z (north).
-  float mid = m_planet.worldSize() * 0.5f;
-  float ground = m_planet.heightAt(mid, mid);
-  Vector3 startPos = {mid, ground + 12.0f, mid};
-  m_player.init(startPos, Config::FLIGHT_ASSIST_DEFAULT);
-
-  // Spawn friendlies on the terrain around the player's start. Uses a
-  // deterministic-per-seed RNG so the same world keeps placing the
-  // same friendly layout — repeatable for debugging. Spacing is
-  // enforced by rejection sampling against placed positions.
-  spawnFriendliesForRound(startPos);
+  // Friendlies first, home base on the site nearest the world centre;
+  // the player then starts at rest on its landing pad, facing north.
+  // Deterministic per seed.
+  const Vector3 home = pickHomeSite();
+  spawnFriendliesForRound(home);
+  placePlayerOnHomePad(home);
 
   // Snapshot the total for the "alive vs total" HUD readout and
   // game-over detection (need a known baseline since friendlies
@@ -345,9 +340,49 @@ void GameState::loadWorld(uint32_t seed) {
   m_waves.reset();
 }
 
+Vector3 GameState::pickHomeSite() const {
+  // Rings outward from the world centre; the first gentle, dry grass
+  // spot wins. Falls back to the centre on a world with no grassland.
+  const float mid = m_planet.worldSize() * 0.5f;
+  for (float r = 0.0f; r <= Config::HOME_SITE_SEARCH_RADIUS; r += Config::HOME_SITE_SEARCH_STEP) {
+    const int n = r == 0.0f ? 1 : std::max(8, static_cast<int>(r / Config::HOME_SITE_SEARCH_STEP) * 6);
+    for (int i = 0; i < n; ++i) {
+      const float a = 6.2831853f * i / n;
+      const float x = mid + r * sinf(a), z = mid + r * cosf(a);
+      if (!m_planet.isGrassland(x, z) || m_planet.isWater(x, z)) continue;
+      const float h = m_planet.heightAt(x, z);
+      const float span = Config::BASE_PAD_HALF_SIZE;
+      if (fabsf(m_planet.heightAt(x + span, z) - h) > Config::HOME_SITE_MAX_RISE ||
+          fabsf(m_planet.heightAt(x - span, z) - h) > Config::HOME_SITE_MAX_RISE ||
+          fabsf(m_planet.heightAt(x, z + span) - h) > Config::HOME_SITE_MAX_RISE ||
+          fabsf(m_planet.heightAt(x, z - span) - h) > Config::HOME_SITE_MAX_RISE)
+        continue;
+      return {x, h, z};
+    }
+  }
+  return {mid, m_planet.heightAt(mid, mid), mid};
+}
+
+void GameState::placePlayerOnHomePad(Vector3 homeSite) {
+  // The pad centre is kept clear (towers NE/NW, deck lifts off-centre).
+  // The deck is solid to the player, so the craft rests on it; the first
+  // physics tick registers it as landed and the pad starts repairing.
+  const float deck = m_planet.heightAt(homeSite.x, homeSite.z) + Config::BASE_PAD_HEIGHT;
+  const Vector3 startPos = {homeSite.x, deck + Config::PLAYER_DECK_REST, homeSite.z};
+  m_player.init(startPos, Config::FLIGHT_ASSIST_DEFAULT);
+  m_player.setDeckHeight(deck);
+  // Re-anchor the camera so it doesn't lerp in from the old position.
+  const Vector3 fwd = m_player.forward();
+  m_camera.position = Vector3Add(
+      startPos, Vector3Add(Vector3Scale(fwd, -Config::CAM_DISTANCE),
+                           {0, Config::CAM_HEIGHT, 0}));
+  m_camera.target = Vector3Add(startPos, {0, 1.5f, 0});
+}
+
 // ====================================================================
 // spawnFriendliesForRound — places the round's friendly roster on
-// terrain inside FRIENDLY_SPAWN_RING of the player. Rejection-samples
+// terrain, the home base on homeSite and the rest around it or across
+// the world. Rejection-samples
 // candidate positions until each one meets the minimum-separation
 // constraint or we exhaust the retry budget. xorshift32 keyed off the
 // world seed so placement is reproducible per seed.
@@ -360,7 +395,8 @@ int GameState::liveDefendedCount() const {
              : m_em.liveFriendlyCount() - m_em.liveEnemyOfType(EntityType::RadarStation);
 }
 
-void GameState::spawnFriendliesForRound(Vector3 playerStart) {
+void GameState::spawnFriendliesForRound(Vector3 homeSite) {
+  const Vector3 playerStart = homeSite; // the player starts on the home pad
   uint32_t rng = m_seed ? m_seed : 0xACE1u;
   auto randF = [&rng](float lo, float hi) {
     rng ^= rng << 13;
@@ -570,15 +606,8 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
   // (lander-side collectors handle resource gathering once landers
   // ship in C.3; friendly side is "infrastructure under attack").
   if (m_gameMode == GameMode::Base) {
-    // Anchor base — same as Wave mode: visible from spawn.
-    Vector3 anchorPos;
-    {
-      float a = randF(0.0f, 6.28318f);
-      float r = 40.0f;
-      float x = playerStart.x + r * sinf(a);
-      float z = playerStart.z + r * cosf(a);
-      anchorPos = spawnBase({x, 0.0f, z});
-    }
+    // Home base — the player starts on its pad.
+    spawnBase({homeSite.x, 0.0f, homeSite.z});
     // Remaining bases. Difficulty-driven counts come in C.8.
     for (int i = 1; i < Config::BASE_MODE_BASE_COUNT; ++i) {
       spawnBase(pickGrassSpot());
@@ -639,18 +668,9 @@ void GameState::spawnFriendliesForRound(Vector3 playerStart) {
 
   // ---- Wave mode (original layout) ----
   // Base first — collectors look for it on their first update tick,
-  // so it has to exist by the time they spawn. Anchor it close to
-  // the player start so the player has a clear "home" reference.
-  Vector3 basePos;
-  {
-    // Place on terrain, ~30-60m from the player so it's visible
-    // immediately but not on top of the spawn point.
-    float a = randF(0.0f, 6.28318f);
-    float r = 40.0f;
-    float x = playerStart.x + r * sinf(a);
-    float z = playerStart.z + r * cosf(a);
-    basePos = spawnBase({x, 0.0f, z});
-  }
+  // so it has to exist by the time they spawn. It is the home base: the
+  // player starts on its pad.
+  Vector3 basePos = spawnBase({homeSite.x, 0.0f, homeSite.z});
 
   for (int i = 0; i < Config::FRIENDLY_COLLECTOR_COUNT; ++i) {
     // Collectors spawn near the Base (not in the wide friendly ring)
@@ -1224,6 +1244,7 @@ void GameState::update(float dt) {
     if (m_camMode == CamMode::Follow) {
       handleCameraViewKeys();
       handleCameraZoom();
+      m_player.setDeckHeight(m_em.deckHeightAt(m_player.position()));
       m_player.update(dt, m_planet);
       updateCamera(dt);
 
@@ -2932,27 +2953,17 @@ void GameState::resetCombat() {
   m_em.clear();
   m_particles.clear();
 
-  // Respawn player above world centre
-  float mid = m_planet.worldSize() * 0.5f;
-  float ground = m_planet.heightAt(mid, mid);
-  Vector3 startPos = {mid, ground + 12.0f, mid};
-  m_player.init(startPos, Config::FLIGHT_ASSIST_DEFAULT);
-
-  // Re-anchor camera so it doesn't lerp through the old position
-  Vector3 fwd = m_player.forward();
-  m_camera.position = Vector3Add(
-      startPos, Vector3Add(Vector3Scale(fwd, -Config::CAM_DISTANCE),
-                           {0, Config::CAM_HEIGHT, 0}));
-  m_camera.target = Vector3Add(startPos, {0, 1.5f, 0});
-
   // Reset the wave manager — wave 1 begins after WAVE_FIRST_DELAY.
   m_waves.reset();
 
   // Respawn the friendly roster. resetCombat() runs on every
   // Start Game / Restart, so without this the wave-after-game-over
   // path would leave the friendly pool empty and the
-  // all-friendlies-dead game over would fire on tick 1.
-  spawnFriendliesForRound(startPos);
+  // all-friendlies-dead game over would fire on tick 1. The player
+  // then starts at rest on the home base's pad (camera re-anchored).
+  const Vector3 home = pickHomeSite();
+  spawnFriendliesForRound(home);
+  placePlayerOnHomePad(home);
   m_friendlyTotalAtStart = liveDefendedCount();
   // Slice C C.7 — snapshot lander total for the result-screen stat
   // line + the Base-mode victory gate. Zero in Wave mode (no landers

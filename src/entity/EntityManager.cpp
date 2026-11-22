@@ -189,6 +189,13 @@ void EntityManager::clear() {
   m_padDwell = 0.0f;
 }
 
+float EntityManager::deckHeightAt(Vector3 p) const {
+  // Entities are rebased around the player each tick, so no wrap here.
+  for (const Entity &e : m_entities)
+    if (e.alive && e.type == EntityType::Base && onPlatform(e, p)) return e.pos.y;
+  return NAN;
+}
+
 // Dev hotkey support — silent enemy clear. No explosions, no scoring,
 // no particle bursts; just flips the alive flag so wave-clear detection
 // fires on the next tick. Projectiles are intentionally left alone.

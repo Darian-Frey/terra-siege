@@ -260,9 +260,15 @@ private:
   };
   Loadout m_loadout{};
 
-  // Spawn the round's friendly roster on terrain. Called from
-  // loadWorld(); deterministic per-seed.
-  void spawnFriendliesForRound(Vector3 playerStart);
+  // Spawn the round's friendly roster on terrain, with the home base on
+  // `homeSite`. Called from loadWorld() and resetCombat(); deterministic
+  // per-seed.
+  void spawnFriendliesForRound(Vector3 homeSite);
+  // Home-base site: the gentle grassland nearest the world centre.
+  Vector3 pickHomeSite() const;
+  // Place the player at rest on the home base's centre landing spot and
+  // snap the follow camera behind it.
+  void placePlayerOnHomePad(Vector3 homeSite);
 
   // HUD font handle. Loaded in init() via initHudFont(); falls back
   // to the raylib default when no system TTF is found.

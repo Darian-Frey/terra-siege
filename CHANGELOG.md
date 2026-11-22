@@ -35,6 +35,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Project documentation to the development documentation standard: README status header, FEATURES, DECISIONS, ARCHITECTURE, ATTACK_VECTORS, BUGS, IMPROVEMENTS, CHANGELOG, MIT LICENSE ([D-001](DECISIONS.md#d-001-adopt-the-development-documentation-standard))
 
 ### Changed
+- Base platform decks are solid for the player: a landed craft sits on the deck instead of floating at the 5 m terrain floor, and its shadow lies on the deck ([D-037](DECISIONS.md#d-037-base-platform-decks-are-solid-ground-for-the-player))
 - Scenery object count cut from about 422,000 to 164,000 ([D-036](DECISIONS.md#d-036-multi-plant-stand-models-cut-the-scenery-instance-count)):
   - Forests are now built from stand models: six 16 m groves (conifer, broadleaf, birch, mixed) and four 9 m copses, sheared onto the slope. They grow in single-species stands, with loose trees filling the gaps.
   - Field edges are laid as 4 m segments. Some fields are bounded by new dry-stone walls (about 1.1 m high, two variants) or post-and-rail fences (about 1.25 m, timber or painted) instead of hedges, and hedges have fenced patches.
@@ -69,6 +70,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Stale duplicate of `game_modes_and_features.md` at the repo root
 
 ### Fixed
+- The player started hovering beside the home base. The round now starts with the craft parked on the home base's landing pad, and the home base sits on the gentle grassland nearest the world centre ([BUG-031](BUGS.md#bug-031-the-player-starts-hovering-beside-the-home-base-instead-of-on-its-landing-pad))
 - Waves didn't clear while an infected enemy (or a base defender) was still alive, because allied ships counted as enemies. The game appeared to stop progressing until the infected ship bled out. Allied ships no longer count towards clearing a wave or the HUD enemy count ([BUG-030](BUGS.md#bug-030-allied-ships-infected-enemies-base-defenders-hold-up-wave-clear))
 - Base deck hatches and the feet of base ramps z-fought (flickered) from a distance. The camera near plane moves from 0.05 m to `CAM_NEAR_PLANE`, the hatches are thicker plates, and the drawn ramps run on into the ground instead of meeting it flush ([AV-013](ATTACK_VECTORS.md#av-013-raylib-name-and-default-collisions))
 - Base defenders appeared in mid-air above the pad and vanished in the sky when idle. They now rise out of a deck-lift hatch on the platform and climb out vertically. When done, they slow over their hatch, descend, touch down and sink back into the deck ([BUG-029](BUGS.md#bug-029-base-defenders-pop-in-above-the-pad-and-vanish-instead-of-taking-off-and-landing))

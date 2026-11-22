@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+
 #include "core/Config.hpp"
 #include "entity/Entity.hpp"
 #include "raylib.h"
@@ -28,6 +30,10 @@ public:
   void init(Vector3 startPos,
             int flightAssistLevel = Config::FLIGHT_ASSIST_DEFAULT);
   void update(float dt, const Planet &planet);
+  // Top of the base platform under the craft, or NAN when there is none.
+  // Set each tick before update(); over a deck the craft rests on it
+  // (PLAYER_DECK_REST) instead of the terrain floor (PLAYER_MIN_ALTITUDE).
+  void setDeckHeight(float y) { m_deckY = y; }
   // Renders the hovercraft. If `registry` has a player mesh loaded
   // (assets/meshes/hovercraft.obj), it's drawn with the full
   // roll/pitch/yaw matrix. Otherwise falls back to the procedural
@@ -251,6 +257,8 @@ private:
   float m_shieldImpactTimer[4] = {-1.0f, -1.0f, -1.0f, -1.0f};
   bool m_thrusting = false;
   bool m_landed = false;
+  float m_deckY = NAN;   // platform top under the craft (NAN = none)
+  bool m_wasOverDeck = false; // over a deck last tick
   bool m_godMode = false;
   bool m_invertYaw = true;   // user reports left/right reads backwards
   bool m_invertPitch = false;

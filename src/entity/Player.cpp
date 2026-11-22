@@ -24,6 +24,8 @@ void Player::init(Vector3 startPos, int flightAssistLevel) {
   m_health = Config::PLAYER_HULL_HP;
   m_thrusting = false;
   m_landed = false;
+  m_deckY = NAN;
+  m_wasOverDeck = false;
   m_assistLevel = flightAssistLevel < 0   ? 0
                   : flightAssistLevel > 3 ? 3
                                           : flightAssistLevel;
@@ -473,10 +475,21 @@ void Player::applyPhysics(float dt, const Planet &planet) {
   m_pos = Vector3Add(m_pos, Vector3Scale(m_vel, dt));
 
   // ---- Ground interaction ----
+  // Over a base platform the deck is the floor (the craft sits on it);
+  // elsewhere the floor is PLAYER_MIN_ALTITUDE above the terrain.
   groundH = planet.heightAt(m_pos.x, m_pos.z);
-  float minH = groundH + Config::PLAYER_MIN_ALTITUDE;
+  const bool overDeck = !std::isnan(m_deckY);
+  float minH = overDeck ? m_deckY + Config::PLAYER_DECK_REST
+                        : groundH + Config::PLAYER_MIN_ALTITUDE;
+  const bool wasOverDeck = m_wasOverDeck;
+  m_wasOverDeck = overDeck;
   m_landed = false;
-  if (m_pos.y < minH) {
+  if (!overDeck && wasOverDeck && m_pos.y < minH) {
+    // Flew off the deck edge below the terrain floor: lift to it and keep
+    // moving, rather than treating the step as a landing.
+    m_pos.y = minH;
+    if (m_vel.y < 0.0f) m_vel.y = 0.0f;
+  } else if (m_pos.y < minH) {
     float impact = -m_vel.y; // positive when descending
     bool levelEnough = (fabsf(m_pitch) < Config::NEWTON_LAND_ATTITUDE) &&
                        (fabsf(m_roll) < Config::NEWTON_LAND_ATTITUDE);
@@ -1119,7 +1132,12 @@ void Player::render(const tsmesh::MeshRegistry *registry) const {
 void Player::renderGroundShadow(const Planet &planet) const {
   if (!m_built) return;
 
-  float centreGround = planet.heightAt(m_pos.x, m_pos.z);
+  // Over a deck the shadow lies on it (the terrain is under the platform).
+  auto ground = [&](float x, float z) {
+    float h = planet.heightAt(x, z);
+    return std::isnan(m_deckY) ? h : fmaxf(h, m_deckY);
+  };
+  float centreGround = ground(m_pos.x, m_pos.z);
   float agl = m_pos.y - centreGround;
   if (agl < 0.0f) agl = 0.0f;
   if (agl >= Config::SHADOW_FADE_MAX_AGL) return;
@@ -1153,13 +1171,13 @@ void Player::renderGroundShadow(const Planet &planet) const {
   {
     float px = m_pos.x + r;
     float pz = m_pos.z;
-    prev = {px, planet.heightAt(px, pz) + MARGIN, pz};
+    prev = {px, ground(px, pz) + MARGIN, pz};
   }
   for (int i = 1; i <= SEGS; ++i) {
     float a = 6.28318530f * static_cast<float>(i) / static_cast<float>(SEGS);
     float vx = m_pos.x + r * cosf(a);
     float vz = m_pos.z + r * sinf(a);
-    float vy = planet.heightAt(vx, vz) + MARGIN;
+    float vy = ground(vx, vz) + MARGIN;
     Vector3 v = {vx, vy, vz};
     DrawTriangle3D(centre, v, prev, shadowCol);
     prev = v;

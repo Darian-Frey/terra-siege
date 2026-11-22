@@ -333,6 +333,16 @@ The 5g commit says strafe runs "fire at the friendly", but the friendly-hit chec
 **Notes.** Fixed 2026-11-19: `aliveEnemyCount()` skips `Infecting` / `Infected` ships and base defenders, so the wave clears when the last hostile dies, and the HUD count follows. Surviving infected ships carry into the next wave as allies until they bleed out. The bleed was shortened at the same time to `INFECT_BLEED_LIFETIME`. Originally: Base mode is unaffected: its victory gate counts only Landers. Fix: exclude allied ships from `aliveEnemyCount()`, using the same test as `isAutoAimTarget()`.
 
 
+### BUG-031: The player starts hovering beside the home base instead of on its landing pad
+
+**Status:** fixed (2026-11-22)
+**Found:** 2026-11-22 (playtest)
+**Location:** [src/core/GameState.cpp](src/core/GameState.cpp) `loadWorld()`, `resetCombat()`, `spawnFriendliesForRound()`
+**Severity:** low
+**Description.** The player spawned 12 m above the exact world centre, and the home base was then placed 40 m away at a random angle. So the round began with the craft hovering low beside a base, not parked on it ready to launch. The home base also went wherever the world centre fell, water and steep ground included.
+**Reproduction.** Start any game, or Restart. The craft hovers next to the base.
+**Notes.** Fixed 2026-11-22. `pickHomeSite()` finds the gentle grassland nearest the world centre, the home base is built there in both modes, and `placePlayerOnHomePad()` puts the craft at rest on the pad's centre landing spot. Base decks were made solid for the player at the same time, so it sits on the deck ([D-037](DECISIONS.md#d-037-base-platform-decks-are-solid-ground-for-the-player)).
+
 ## Won't Fix
 
 _None._

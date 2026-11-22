@@ -1075,3 +1075,34 @@ Undo is held at inspector level as full-mesh snapshots (32 deep) and is shared a
 
 **Reversal conditions.** Revisit if individual trees must react to gameplay (felling, burning), or if repetition becomes noticeable at low altitude, where more grove variants would be the first fix.
 
+### D-037 Base platform decks are solid ground for the player
+
+**Decided:** 2026-11-22
+**Recorded:** 2026-11-22
+**Status:** Accepted
+**Authors:** Shane Hartley (with Claude Code)
+**Related:** D-005, D-030, BUG-031, F-021
+
+**Context.** The flight model's floor is `PLAYER_MIN_ALTITUDE` (5 m) above the terrain, and the raised base platforms weren't solid to the player. A craft "landed" on a pad therefore floated about 3 m above the deck. Once the round started on the home pad ([BUG-031](BUGS.md#bug-031-the-player-starts-hovering-beside-the-home-base-instead-of-on-its-landing-pad)) this looked wrong. The flight model is out of scope without the owner's approval, which was given for this change.
+
+**Options.**
+
+- **A. Leave the 5 m floor everywhere.** Rejected: the craft visibly hovers over its own pad.
+- **B. Lower the floor everywhere.** Rejected: it changes how the whole game flies over terrain.
+- **C. Make only the platform decks solid.** Chosen.
+
+**Decision.**
+
+- Each tick `GameState` passes `EntityManager::deckHeightAt(player position)` to `Player::setDeckHeight()`. It returns the platform top under the craft, or NAN.
+- Over a deck, the floor in `Player::applyPhysics()` is the deck plus `PLAYER_DECK_REST` (the hull bottom just touching). Everywhere else it stays `PLAYER_MIN_ALTITUDE` above the terrain. Landing rules (crash speed, hard landing, level attitude) are unchanged.
+- Flying off a deck edge below the terrain floor lifts the craft to it without counting a landing, so it keeps its speed.
+- The player's ground shadow lies on the deck when over one.
+
+**Consequences.**
+
+- The round starts with the craft parked on the home deck, and every pad landing sits on the deck.
+- The single flight model ([D-005](#d-005-single-newtonian-flight-model-one-craft)) is unchanged apart from the floor height over decks.
+- Ramps, towers and hatches aren't solid; the whole platform square is one flat deck for the player.
+
+**Reversal conditions.** Revisit if base structures need real collision (towers, hatches), or if platforms gain uneven decks.
+
