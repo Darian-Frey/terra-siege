@@ -73,6 +73,7 @@ Status vocabulary: Proposed | Accepted | Superseded by D-NNN | Deprecated.
   - `terra_siege_inspect_roadmap.md` (inspector phases)
   - `3d_assets.md` (asset pipeline spec)
   - `game_modes_and_features.md` (v1 game-mode design; §§4–9 still apply)
+  - `ROAD_VILLAGE_TOWN_ROADMAP.md` (Settlements track: roads, villages, towns; added 2026-11-22)
 - Superseded documents stay in `project-status/archive/`.
 
 **Consequences.** The repo root holds only standard documents. Design references keep their own status headers, and are cited from FEATURES, ROADMAP and DECISIONS by path.
