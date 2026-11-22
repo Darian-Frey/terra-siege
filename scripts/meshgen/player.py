@@ -1,4 +1,4 @@
-"""Player ship definition. The builder returns (Ship, preview ortho size)."""
+"""Human craft: the player ship and the friendly base defender. Builders return (Ship, preview ortho size)."""
 from shiplib import Ship, P
 
 def hovercraft():
@@ -60,7 +60,42 @@ def hovercraft():
         s.face([a, b, d], c, ref=(sx * 1.7, -1.2, -1.0))
     return s, 6.5
 
-SHIPS = {"hovercraft": hovercraft}
+def defender():
+    """Friendly base interceptor (the old enemy-fighter jet) in the player's
+    livery, so defenders read as human next to the alien enemies."""
+    s = Ship("defender"); s.ref = (0, 0, 0)
+    s.loft([
+        (3.2, [(0, 0.0)]),
+        (2.0, [(0, 0.35), (0.3, 0.15), (0.3, -0.15), (0, -0.3)]),
+        (0.3, [(0, 0.55), (0.45, 0.25), (0.45, -0.25), (0, -0.45)]),
+        (-1.6, [(0, 0.45), (0.4, 0.2), (0.4, -0.25), (0, -0.4)]),
+        (-2.0, [(0, 0.35), (0.32, 0.15), (0.32, -0.2), (0, -0.3)]),
+    ], [[16, 16, 30], [15, 15, 30], [15, 15, 30], [22, 22, 22]], back=11)
+    # canopy
+    cf = P(s.vert(0, 1.7, 0.28)); ct = P(s.vert(0, 0.7, 0.78))
+    cs = s.sym(0.27, 0.8, 0.42); cb = P(s.vert(0, -0.3, 0.5))
+    s.tri_sym(cf, cs, ct, 10); s.tri_sym(cs, cb, ct, 0)
+    # swept anhedral wings
+    rf_t = s.sym(0.42, 0.5, 0.08); rb_t = s.sym(0.42, -1.4, 0.08)
+    tf_t = s.sym(1.5, -0.9, -0.42); tb_t = s.sym(1.5, -1.6, -0.45)
+    rf_b = s.sym(0.42, 0.5, -0.1); rb_b = s.sym(0.42, -1.4, -0.1)
+    tf_b = s.sym(1.5, -0.9, -0.52); tb_b = s.sym(1.5, -1.6, -0.55)
+    wref = lambda sx: (sx * 0.95, -0.8, -0.2)
+    for i, sx in ((0, 1), (1, -1)):
+        q = lambda *v: [x[i] for x in v]
+        s.face(q(rf_t, tf_t, tb_t, rb_t), 15, wref(sx))
+        s.face(q(rf_b, tf_b, tb_b, rb_b), 30, wref(sx))
+        s.face(q(rf_t, rf_b, tf_b, tf_t), 16, wref(sx))   # leading edge
+        s.face(q(rb_t, rb_b, tb_b, tb_t), 22, wref(sx))   # trailing edge
+        s.face(q(tf_t, tf_b, tb_b, tb_t), 16, wref(sx))   # tip
+    # canted tail fins
+    for sx in (1, -1):
+        a = s.vert(sx * 0.25, -0.9, 0.45); b = s.vert(sx * 0.25, -1.95, 0.32)
+        c = s.vert(sx * 0.65, -2.05, 1.05); d = s.vert(sx * 0.6, -1.65, 1.05)
+        s.twoside([a, b, c, d], 16)
+    return s, 7.0
+
+SHIPS = {"hovercraft": hovercraft, "defender": defender}
 
 HEADERS = {
 "hovercraft": """terra-siege hovercraft — player ship.
@@ -80,4 +115,11 @@ Materials:
   c11  orange          — engine plates
   c08/c00  grey/black  — cannon barrels / muzzles
   c02/c03  red/green   — nav lights""",
+"defender": """terra-siege defender — friendly base interceptor (Base mode).
+Launched from base deck lifts; the human jet that the enemy fighter used
+to be. Fuselage loft, blue canopy, swept anhedral wings, canted twin tail
+fins, orange exhaust. {verts} verts, {tris} tris.
+Local frame: +X right, +Y up, +Z forward. Player livery: c15 body and
+wing tops, c16 nose/leading edges/fins, c30 belly, c22 trailing edges,
+c10 canopy, c00 canopy rear, c11 exhaust.""",
 }

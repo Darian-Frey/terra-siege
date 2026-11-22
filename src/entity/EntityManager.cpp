@@ -3463,7 +3463,12 @@ void EntityManager::renderEnemy(const Entity &e, Camera3D camera,
   switch (e.type) {
   case EntityType::Fighter: {
     Color modelTint = infectionTint(WHITE, e.aiState, e.infectionTimer);
-    if (registry && registry->has(EntityType::Fighter)) {
+    constexpr auto kDefender = tsmesh::MeshRegistry::Prop::Defender;
+    if (e.homeBaseId != 0 && registry && registry->hasProp(kDefender)) {
+      // Base defenders are human jets in the player's livery, untinted.
+      registry->drawProp(kDefender, e.pos, {sinf(e.yaw), 0.0f, cosf(e.yaw)},
+                         {1.0f, 1.0f, 1.0f}, WHITE);
+    } else if (registry && registry->has(EntityType::Fighter)) {
       registry->draw(EntityType::Fighter, e.pos, e.yaw, 1.0f, modelTint);
     } else {
       // Procedural fallback — kept for when the OBJ fails to load.

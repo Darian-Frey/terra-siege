@@ -81,7 +81,8 @@ public:
   // are white/light grey, tinted per shot (and drawn again larger with a
   // translucent tint as the glow); the depth charge carries its own
   // colours. Base parts: the platform and one ramp (turned per side).
-  enum class Prop : uint8_t { Bolt, Orb, DepthCharge, BasePlatform, BaseRamp, Count };
+  // Defender: the friendly base interceptor, a Fighter with a home base.
+  enum class Prop : uint8_t { Bolt, Orb, DepthCharge, BasePlatform, BaseRamp, Defender, Count };
   bool hasProp(Prop p) const { return m_propLoaded[static_cast<int>(p)]; }
   // Model-space bounds, for checking baked-in sizes against Config.
   BoundingBox propBounds(Prop p) const;

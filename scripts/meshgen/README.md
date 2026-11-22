@@ -5,7 +5,7 @@ Python definitions for the ship, structure and scenery meshes in `assets/meshes/
 | File | Contents |
 | --- | --- |
 | `shiplib.py` | `Ship` builder and part helpers (`loft`, `block`, `stack`, `strut`, `spike`), the OBJ writer and the preview renderer |
-| `player.py` | `hovercraft` |
+| `player.py` | `hovercraft`, `defender` |
 | `enemies.py` | `fighter`, `drone`, `bomber`, `seeder`, `carrier`, `tank` |
 | `structures.py` | `base` (control tower), `base_platform` and `base_ramp` (bake Config pad and ramp sizes: change both and regenerate), `base_turret` (housing) and `base_turret_guns` (elevating guns), `collector` with `collector_cab_empty` / `collector_cab_loaded`, `radar_booster` with its spinning `radar_booster_dish`, `lander` |
 | `scenery.py` | `tree_conifer`, `tree_broadleaf`, `rock_a`, `rock_b`, `rock_c`, `antenna`, `crash_site`, `crash_debris`. Drawn instanced by `Decorations`, so keep them small |

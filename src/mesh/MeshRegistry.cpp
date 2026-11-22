@@ -96,7 +96,7 @@ void MeshRegistry::loadAll(const std::filesystem::path &meshesDir) {
   m_dishLoaded = loadInto("radar_booster_dish.obj", m_dishModel);
   static const char *const kPropFiles[kPropCount] = {
       "bolt.obj", "orb.obj", "depth_charge.obj", "base_platform.obj",
-      "base_ramp.obj"};
+      "base_ramp.obj", "defender.obj"};
   for (int i = 0; i < kPropCount; ++i)
     m_propLoaded[i] = loadInto(kPropFiles[i], m_propModel[i]);
   m_cabLoaded[0] = loadInto("collector_cab_empty.obj", m_cabModel[0]);
