@@ -41,13 +41,14 @@ Players who want a modern take on the 1988 Argonaut game *Virus*: flat-shaded lo
 ### F-002 Atmospheric terrain decorations
 
 **Priority:** Should
-**Status:** Complete (2026-06-08, `bdc63e5`; wrap-aware rendering 2026-10-15, `7e846c3`; instanced OBJ models for every kind 2026-11-19; fields, dense forests and hedgerows 2026-11-22)
+**Status:** Complete (2026-06-08, `bdc63e5`; wrap-aware rendering 2026-10-15, `7e846c3`; instanced OBJ models for every kind 2026-11-19; fields, dense forests and hedgerows 2026-11-22; stand models, walls and fences 2026-11-22)
 **Acceptance:**
 
 - Grassland splits into farming country and wild country ([D-035](DECISIONS.md#d-035-farmland-patchwork-from-an-angled-bsp-shared-by-terrain-and-decorations)):
   - Farming country is a patchwork of irregular fields, some with curved edges, tinted in six crop colours, with crisp edges at any angle. Some fields are woods planted to their edges.
-  - Field borders carry hedgerows, broadleaf tree lines or poplar rows, with gateways.
+  - Field borders carry hedgerows, broadleaf tree lines, poplar rows, dry-stone walls or post-and-rail fences, with gateways and fenced patches in hedges.
   - Wild country has dense noise-mask forests that thin into bushes and birches at their edges, and open meadow.
+  - Forests are built from multi-tree stand models (groves and copses) in single-species stands, with loose trees filling the gaps ([D-036](DECISIONS.md#d-036-multi-plant-stand-models-cut-the-scenery-instance-count)).
 - Biome-weighted rocks, antennas and crash sites (ringed by dead trees)
 - Placement is deterministic for a given terrain seed
 - Visual only: no collision, AI or entity-pool slots

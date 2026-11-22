@@ -171,6 +171,10 @@ float FieldMap::forestMask(float worldX, float worldZ) const {
   return a * 0.75f + b * 0.25f;
 }
 
+float FieldMap::standNoise(float worldX, float worldZ) const {
+  return tiledNoise(worldX, worldZ, Config::FOREST_STAND_PERIOD, m_forestSeed ^ 0x2545f491u);
+}
+
 int FieldMap::fieldAt(float worldX, float worldZ) const {
   const float ws = Config::WORLD_SIZE;
   worldX = fmodf(worldX, ws);

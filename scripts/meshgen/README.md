@@ -8,7 +8,7 @@ Python definitions for the ship, structure and scenery meshes in `assets/meshes/
 | `player.py` | `hovercraft`, `defender` |
 | `enemies.py` | `fighter`, `drone`, `bomber`, `seeder`, `carrier`, `tank` |
 | `structures.py` | `base` (control tower), `base_platform` and `base_ramp` (bake Config pad and ramp sizes: change both and regenerate), `base_turret` (housing) and `base_turret_guns` (elevating guns), `collector` with `collector_cab_empty` / `collector_cab_loaded`, `radar_booster` with its spinning `radar_booster_dish`, `lander` |
-| `scenery.py` | `tree_conifer`, `tree_broadleaf`, `tree_poplar`, `tree_birch`, `bush`, `tree_dead`, `rock_a`, `rock_b`, `rock_c`, `antenna`, `crash_site`, `crash_debris`. Drawn instanced by `Decorations`, so keep them small |
+| `scenery.py` | `tree_conifer`, `tree_broadleaf`, `tree_poplar`, `tree_birch`, `bush`, `tree_dead`, `grove_conifer_a`/`_b`, `grove_broadleaf_a`/`_b`, `grove_birch`, `grove_mixed`, `copse_conifer`, `copse_broadleaf`, `copse_birch`, `copse_mixed`, `hedge_a`, `hedge_b`, `hedge_tree`, `hedge_birch`, `wall_a`, `wall_b`, `fence_a`, `fence_b`, `rock_a`, `rock_b`, `rock_c`, `antenna`, `crash_site`, `crash_debris`. Drawn instanced by `Decorations`, so keep them small |
 | `projectiles.py` | `bolt` (lasers, cannon tracers), `orb` (plasma), `depth_charge`. Bolt and orb are white/light grey because the game tints them per shot |
 | `build.py` | Entry point |
 

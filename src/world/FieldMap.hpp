@@ -62,6 +62,9 @@ public:
   // Smooth forest-density noise in [0, 1) at a world position. Forest
   // where it exceeds Config::FOREST_NOISE_LOW.
   float forestMask(float worldX, float worldZ) const;
+  // Slow noise in [0, 1) that picks the species of a forest stand, so
+  // neighbouring trees and groves share it (~FOREST_STAND_PERIOD blobs).
+  float standNoise(float worldX, float worldZ) const;
 
 private:
   struct Node {

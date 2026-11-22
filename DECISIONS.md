@@ -1042,3 +1042,36 @@ Undo is held at inspector level as full-mesh snapshots (32 deep) and is shared a
 
 **Reversal conditions.** Revisit if fields must follow roads or rivers, or depend on terrain features beyond biome and slope; or if terrain chunks start being rebuilt at run time, where the clipping cost would matter.
 
+### D-036 Multi-plant stand models cut the scenery instance count
+
+**Decided:** 2026-11-22
+**Recorded:** 2026-11-22
+**Status:** Accepted
+**Authors:** Shane Hartley (with Claude Code)
+**Related:** D-034, D-035, F-002
+
+**Context.** Dense forests and hedgerows ([D-035](#d-035-farmland-patchwork-from-an-angled-bsp-shared-by-terrain-and-decorations)) put about 422,000 single-plant instances on the map. It ran smoothly, but the goal was to cut the object count. In real forests similar trees grow together in stands.
+
+**Options.**
+
+- **A. Lower density.** Rejected: the forests would lose the look that was the point.
+- **B. Bake forests into per-chunk meshes.** Rejected for the same reason as D-034 option B: too much vertex data.
+- **C. Stand models: several plants in one instanced model.** Chosen.
+
+**Decision.**
+
+- `scripts/meshgen/scenery.py` merges the single-plant models into stand models. These are six 16 m groves (two conifer, two broadleaf, birch, mixed) and four 9 m copses. Boundary models are 4 m segments: four hedge (two with a tree in), two dry-stone wall and two post-and-rail fence.
+- They are more `Decoration::TreeModel` values on the same instanced path. Every stand is sheared onto the local ground plane, so its trees stay upright with their feet on the slope (trunk feet reach 2.5 m below ground). Boundary segments are also stretched along their length (`Decoration::stretch`) to fit the edge.
+- Placement order: groves on a jittered `GROVE_SPACING` grid over deep forest, then copses on a `COPSE_SPACING` grid over thinner forest, each marking a coverage grid. Loose trees then fill only the uncovered ground, at `FOREST_GAP_KEEP` density in gaps ringed by stands.
+- A slow stand-noise picks species, so neighbouring groves, copses and loose trees agree.
+- Field edges are walked as runs between the same two fields. Each run takes one style: hedge, tree line, poplar row, wall, fence or open. Hedges get fenced patches.
+
+**Consequences.**
+
+- About 164,000 instances, down from 422,000 (−61%), with denser-looking forest edges, plus walls and fences.
+- Each stand model has 250–960 triangles, so triangles drawn barely change. The saving is in instance count and placement and transform memory.
+- A grove is rigid: on uneven ground a few feet can float or sink slightly. Groves are kept off ground steeper than `GROVE_MAX_SLOPE`.
+- Repetition: six grove layouts, randomly turned. Not noticeable in playtesting.
+
+**Reversal conditions.** Revisit if individual trees must react to gameplay (felling, burning), or if repetition becomes noticeable at low altitude, where more grove variants would be the first fix.
+

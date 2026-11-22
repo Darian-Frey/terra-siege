@@ -20,8 +20,11 @@ class Planet;
 // Per CLAUDE.md §3.5 — tree clusters, rock formations, antennas,
 // crash sites. All four placed by the same procedural pass at world-
 // generation time, then static for the session. Trees follow the
-// planet's FieldMap: dense forests inside the forest mask, hedgerows
-// and tree lines along farmland field edges.
+// planet's FieldMap: dense forests inside the forest mask (their
+// interiors filled with grove models, whole stands of one species, and
+// their thinner edges with copses), and hedgerows, tree lines, poplar
+// rows, dry-stone walls and fences along farmland field edges (4 m
+// segments laid end to end).
 //
 // Render path does a radial distance check against the camera and
 // skips anything past DECOR_RENDER_RADIUS — fog hides the rest anyway.
@@ -46,14 +49,30 @@ struct Decoration {
     CrashSite,
   };
 
-  // Which model a Tree uses, in the Decorations model-slot order.
-  enum class TreeModel : uint8_t { Conifer, Broadleaf, Poplar, Birch, Bush, Dead };
+  // Which model a Tree uses, in the Decorations model-slot order. From
+  // GroveConiferA on, each model is several plants in one ("stands"):
+  // groves fill dense forest, copses its thinner edges, and boundary
+  // segments (hedges, dry-stone walls, fences; 4 m, stretched to fit)
+  // line field edges. Stands are sheared onto the ground slope.
+  enum class TreeModel : uint8_t {
+    Conifer, Broadleaf, Poplar, Birch, Bush, Dead,
+    GroveConiferA, GroveConiferB, GroveBroadleafA, GroveBroadleafB, GroveBirch, GroveMixed,
+    CopseConifer, CopseBroadleaf, CopseBirch, CopseMixed,
+    HedgeA, HedgeB, HedgeTree, HedgeBirch,
+    WallA, WallB, FenceA, FenceB
+  };
+  static constexpr bool isStand(TreeModel m) { return m >= TreeModel::GroveConiferA; }
+  static constexpr bool isGrove(TreeModel m) {
+    return m >= TreeModel::GroveConiferA && m <= TreeModel::GroveMixed;
+  }
+  static constexpr bool isSegment(TreeModel m) { return m >= TreeModel::HedgeA; }
 
   Kind kind = Kind::Rock;
   TreeModel tree = TreeModel::Broadleaf;
   Vector3 pos{0, 0, 0}; // world-space, y = terrain height at pos
   float yaw = 0.0f;     // visual rotation (purely cosmetic)
   float scale = 1.0f;   // per-instance size variation
+  float stretch = 1.0f; // extra scale along local Z (boundary segments fit their edge)
   uint32_t seed = 0;    // per-instance RNG (cluster count, debris jitter, ...)
 };
 
@@ -95,19 +114,33 @@ private:
   // Instanced scenery models, in kModelFiles order.
   enum ModelSlot {
     kConifer, kBroadleaf, kPoplar, kBirch, kBush, kDeadTree,
+    kGroveConiferA, kGroveConiferB, kGroveBroadleafA, kGroveBroadleafB, kGroveBirch,
+    kGroveMixed,
+    kCopseConifer, kCopseBroadleaf, kCopseBirch, kCopseMixed,
+    kHedgeA, kHedgeB, kHedgeTree, kHedgeBirch,
+    kWallA, kWallB, kFenceA, kFenceB,
     kRockA, kRockB, kRockC,
     kAntenna,
     kCrashHull, kCrashDebris,
     kModelCount
   };
   static constexpr int kFirstRock = kRockA;
-  static_assert(kDeadTree - kConifer == static_cast<int>(Decoration::TreeModel::Dead),
+  static_assert(kFenceB - kConifer == static_cast<int>(Decoration::TreeModel::FenceB),
                 "tree model slots follow Decoration::TreeModel");
   static constexpr int kRockVariants = kRockC - kRockA + 1;
   static constexpr int kKindCount = 4;
   // The decoration kind each model slot belongs to. A kind is drawn
   // instanced only when every one of its slots loaded.
   static constexpr Decoration::Kind kSlotKind[kModelCount] = {
+      Decoration::Kind::Tree,    Decoration::Kind::Tree,
+      Decoration::Kind::Tree,    Decoration::Kind::Tree,
+      Decoration::Kind::Tree,    Decoration::Kind::Tree,
+      Decoration::Kind::Tree,    Decoration::Kind::Tree,
+      Decoration::Kind::Tree,    Decoration::Kind::Tree,
+      Decoration::Kind::Tree,    Decoration::Kind::Tree,
+      Decoration::Kind::Tree,    Decoration::Kind::Tree,
+      Decoration::Kind::Tree,    Decoration::Kind::Tree,
+      Decoration::Kind::Tree,    Decoration::Kind::Tree,
       Decoration::Kind::Tree,    Decoration::Kind::Tree,
       Decoration::Kind::Tree,    Decoration::Kind::Tree,
       Decoration::Kind::Tree,    Decoration::Kind::Tree,

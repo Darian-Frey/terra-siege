@@ -948,6 +948,35 @@ constexpr float FOREST_FRINGE_BIRCH = 0.25f;   // TUNE
 constexpr float FOREST_BIRCH_FRAC = 0.08f;     // birches inside the forest; TUNE
 constexpr float DECOR_DEAD_TREE_CHANCE = 0.01f; // any forest or hedge tree; TUNE
 
+// Groves: whole stands of trees as one model (~16 m across), filling the
+// forest interior (forest density at least GROVE_MIN_DENSITY, or a wood
+// field, at the centre and on a ring at GROVE_RING_FRAC of the radius)
+// on a jittered grid. Loose trees fill the gaps between them and the fringe.
+// Stands share a species over FOREST_STAND_PERIOD-lattice noise blobs
+// (~100 m); conifers still favoured higher up.
+constexpr float GROVE_SPACING = 11.0f;         // m between grid points; TUNE
+constexpr float GROVE_JITTER = 3.0f;           // m, each way
+constexpr float GROVE_RADIUS = 8.0f;           // m, outer edge of a grove
+constexpr float GROVE_MIN_DENSITY = 0.7f;      // of full forest density; TUNE
+constexpr float GROVE_RING_FRAC = 0.75f;       // TUNE
+constexpr float GROVE_COVER_RADIUS = 6.8f;     // m kept clear of loose trees
+constexpr float GROVE_MAX_SLOPE = 0.35f;       // rise/run; steeper gets loose trees
+// Copses: clumps of a few trees (~9 m across) in the thinner forest
+// (density COPSE_MIN_DENSITY up to the groves), on their own jittered grid.
+constexpr float COPSE_SPACING = 7.0f;          // m; TUNE
+constexpr float COPSE_JITTER = 2.0f;           // m, each way
+constexpr float COPSE_RADIUS = 4.5f;           // m, outer edge of a copse
+constexpr float COPSE_COVER_RADIUS = 3.8f;     // m kept clear of loose trees
+// Loose trees in a gap mostly ringed by groves and copses (5+ of the 8
+// neighbouring 4 m cells covered) are largely hidden under their crowns;
+// only this share is planted.
+constexpr float FOREST_GAP_KEEP = 0.35f;       // TUNE
+constexpr float COPSE_MIN_DENSITY = 0.1f;      // of full forest density; TUNE
+constexpr float COPSE_MAX_SLOPE = 0.5f;        // rise/run
+constexpr int FOREST_STAND_PERIOD = 80;
+constexpr float FOREST_MIXED_BAND = 0.06f;     // noise band of mixed stands; TUNE
+constexpr float FOREST_BIRCH_STANDS = 0.12f;   // top of the noise range; TUNE
+
 // Farmland patchwork (FieldMap). The world is cut with straight lines
 // at random angles until no field is longer than FIELD_MAX_SIZE; no cut
 // leaves a field narrower than FIELD_MIN_SIZE.
@@ -971,13 +1000,24 @@ constexpr float FARM_NOISE_THRESHOLD = 0.45f;  // TUNE
 constexpr float FIELD_WOOD_CHANCE = 0.12f;     // farming-country fields that are woods; TUNE
 
 // Hedgerows along farmland edges. Each boundary picks one style by hash
-// (shares sum to 1). HEDGE_SPACING is the bush pitch along a hedge.
-constexpr float HEDGE_OPEN_SHARE = 0.15f;      // no hedge; TUNE
-constexpr float HEDGE_BUSH_SHARE = 0.45f;      // bushes, the odd tree; TUNE
-constexpr float HEDGE_TREELINE_SHARE = 0.25f;  // broadleaf line over bushes; TUNE
-constexpr float HEDGE_POPLAR_SHARE = 0.15f;    // evenly spaced poplars; TUNE
-constexpr float HEDGE_SPACING = 2.2f;          // m; TUNE
-constexpr float HEDGE_GAP_CHANCE = 0.08f;      // per 8 m stretch, a gateway; TUNE
+// (shares sum to 1). Hedges, tree lines, walls and fences are
+// HEDGE_SEGMENT models laid end to end; poplars stay single trees.
+constexpr float HEDGE_OPEN_SHARE = 0.10f;      // no boundary; TUNE
+constexpr float HEDGE_BUSH_SHARE = 0.30f;      // bushes, the odd tree; TUNE
+constexpr float HEDGE_TREELINE_SHARE = 0.20f;  // broadleaf line over bushes; TUNE
+constexpr float HEDGE_POPLAR_SHARE = 0.10f;    // evenly spaced poplars; TUNE
+constexpr float HEDGE_WALL_SHARE = 0.15f;      // dry-stone wall; TUNE
+constexpr float HEDGE_FENCE_SHARE = 0.15f;     // post-and-rail fence; TUNE
+static_assert(HEDGE_OPEN_SHARE + HEDGE_BUSH_SHARE + HEDGE_TREELINE_SHARE +
+                      HEDGE_POPLAR_SHARE + HEDGE_WALL_SHARE + HEDGE_FENCE_SHARE >
+                  0.999f,
+              "hedge style shares must sum to 1");
+// In a bush hedge or tree line, the chance per segment that a fenced
+// patch (1-3 segments) fills a gap in it.
+constexpr float HEDGE_FENCE_PATCH = 0.08f;     // TUNE
+constexpr float HEDGE_SEGMENT = 4.0f;          // m, length of one hedge model
+constexpr float HEDGE_TREE_SHARE = 0.15f;      // bush-hedge segments with a tree; TUNE
+constexpr float HEDGE_GAP_CHANCE = 0.08f;      // per boundary segment, a gateway; TUNE
 
 constexpr int FBM_OCTAVES = 7; // octaves accumulated for each cell
 constexpr int FBM_LARGEST_CELL =

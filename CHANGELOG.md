@@ -35,6 +35,9 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Project documentation to the development documentation standard: README status header, FEATURES, DECISIONS, ARCHITECTURE, ATTACK_VECTORS, BUGS, IMPROVEMENTS, CHANGELOG, MIT LICENSE ([D-001](DECISIONS.md#d-001-adopt-the-development-documentation-standard))
 
 ### Changed
+- Scenery object count cut from about 422,000 to 164,000 ([D-036](DECISIONS.md#d-036-multi-plant-stand-models-cut-the-scenery-instance-count)):
+  - Forests are now built from stand models: six 16 m groves (conifer, broadleaf, birch, mixed) and four 9 m copses, sheared onto the slope. They grow in single-species stands, with loose trees filling the gaps.
+  - Field edges are laid as 4 m segments. Some fields are bounded by new dry-stone walls (about 1.1 m high, two variants) or post-and-rail fences (about 1.25 m, timber or painted) instead of hedges, and hedges have fenced patches.
 - The Fighter, Bomber, Carrier and Tank models are redesigned as alien craft in one shared palette with the Drone and Seeder (purple and violet hulls, cyan glow, magenta drives), so no enemy reads as a human aircraft. The Fighter is a claw interceptor with crescent blades, the Bomber a ribbed brood pod with egg sacs, the Carrier a horned manta hull with drone-bay tubes, and the Tank a hover crawler on glowing pads with twin crystal prongs. Sizes are unchanged, so sidecars and hit radii still fit
 - Base defenders now use their own model (`defender.obj`): the old Fighter jet repainted in the player's livery and drawn untinted, so friendly interceptors look human next to the alien enemies
 - Infected ships now bleed out in `INFECT_BLEED_LIFETIME` (45 s) instead of about 100 s

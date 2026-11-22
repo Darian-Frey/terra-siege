@@ -7,6 +7,7 @@
 #include "raymath.h"
 #include "rlgl.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -221,6 +222,15 @@ void main() { finalColor = fragColor; }
 const char *const kModelFiles[] = {"tree_conifer.obj", "tree_broadleaf.obj",
                                    "tree_poplar.obj",  "tree_birch.obj",
                                    "bush.obj",         "tree_dead.obj",
+                                   "grove_conifer_a.obj",   "grove_conifer_b.obj",
+                                   "grove_broadleaf_a.obj", "grove_broadleaf_b.obj",
+                                   "grove_birch.obj",       "grove_mixed.obj",
+                                   "copse_conifer.obj",     "copse_broadleaf.obj",
+                                   "copse_birch.obj",       "copse_mixed.obj",
+                                   "hedge_a.obj",           "hedge_b.obj",
+                                   "hedge_tree.obj",        "hedge_birch.obj",
+                                   "wall_a.obj",            "wall_b.obj",
+                                   "fence_a.obj",           "fence_b.obj",
                                    "rock_a.obj",       "rock_b.obj",
                                    "rock_c.obj",       "antenna.obj",
                                    "crash_site.obj",   "crash_debris.obj"};
@@ -245,13 +255,18 @@ int wrapIndex(int i, int n) { return ((i % n) + n) % n; }
 // Procedural placement
 //
 // Trees follow the planet's FieldMap (farmland patchwork + forest mask):
-//   * Forests     — every terrain cell inside the forest mask (or a wood
-//                   field) gets up to FOREST_TREES_PER_CELL trees; the
-//                   fringe thins into bushes and birches. Farmland cells
-//                   stay clear, so woods stop at the hedges.
-//   * Hedgerows   — every edge between two fields with farmland on
-//                   either side: bush hedges, tree lines or poplar rows,
-//                   with gateways.
+//   * Groves      — whole stands (one model each) on a jittered grid
+//                   over deep forest and wood fields, species by stand.
+//   * Copses      — small clumps on a finer grid over thinner forest.
+//   * Forests     — loose trees fill the ground groves and copses leave,
+//                   up to FOREST_TREES_PER_CELL per cell, thinning into
+//                   bushes and birches at the fringe and in gaps ringed
+//                   by stands. Farmland stays clear, so woods stop at
+//                   the field edge.
+//   * Boundaries  — every run of edge between two fields with farmland
+//                   on either side: hedge, tree-line, wall or fence
+//                   segments laid end to end, poplar rows, or open, with
+//                   gateways and fenced patches in hedges.
 //   * Rocks       — biome-weighted acceptance, mountain-heavy.
 //   * Antennas    — flat ground, dense enough to encounter.
 //   * Crash sites — anywhere on land, gentle slope, ringed by dead trees.
@@ -264,7 +279,14 @@ void Decorations::clearSquare(const Planet &planet, float x, float z,
     Decoration &d = m_items[i];
     Vector3 p = planet.nearestCopy(d.pos, c);
     float ax = fabsf(p.x - x), az = fabsf(p.z - z);
-    if (ax <= half && az <= half) continue;
+    // Stands reach out from their centre.
+    float reach = 0.0f;
+    if (d.kind == Decoration::Kind::Tree && Decoration::isStand(d.tree))
+      reach = (Decoration::isGrove(d.tree)   ? Config::GROVE_RADIUS
+               : Decoration::isSegment(d.tree) ? 0.5f * Config::HEDGE_SEGMENT * d.stretch
+                                             : Config::COPSE_RADIUS) *
+              d.scale;
+    if (ax <= half + reach && az <= half + reach) continue;
     if (ax <= reseatHalf && az <= reseatHalf)
       d.pos.y = planet.heightAt(d.pos.x, d.pos.z);
     m_items[w++] = d;
@@ -297,17 +319,137 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
     d.seed = xorshift32(rng);
     m_items.push_back(d);
   };
-  // Woodland species: conifers commoner towards the top of the grass band.
-  auto woodlandTree = [&](float x, float z) -> TM {
-    float r = frand(rng);
-    if (r < Config::DECOR_DEAD_TREE_CHANCE) return TM::Dead;
-    if (r < Config::DECOR_DEAD_TREE_CHANCE + Config::FOREST_BIRCH_FRAC) return TM::Birch;
+  // Stand species from the slow stand noise, so neighbouring trees and
+  // groves agree; conifers commoner towards the top of the grass band.
+  enum class Stand { Conifer, Mixed, Broadleaf, Birch };
+  auto standAt = [&](float x, float z) {
     float t = (landBiome(planet, x, z) - kSandMax) / (kGrassMax - kSandMax);
     t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
     float conifer = Config::DECOR_CONIFER_FRAC_LOW +
                     (Config::DECOR_CONIFER_FRAC_HIGH - Config::DECOR_CONIFER_FRAC_LOW) * t;
-    return frand(rng) < conifer ? TM::Conifer : TM::Broadleaf;
+    float v = fields.standNoise(x, z);
+    if (v > 1.0f - Config::FOREST_BIRCH_STANDS) return Stand::Birch;
+    if (v < conifer - Config::FOREST_MIXED_BAND) return Stand::Conifer;
+    if (v < conifer + Config::FOREST_MIXED_BAND) return Stand::Mixed;
+    return Stand::Broadleaf;
   };
+  auto woodlandTree = [&](float x, float z) -> TM {
+    float r = frand(rng);
+    if (r < Config::DECOR_DEAD_TREE_CHANCE) return TM::Dead;
+    if (r < Config::DECOR_DEAD_TREE_CHANCE + Config::FOREST_BIRCH_FRAC) return TM::Birch;
+    switch (standAt(x, z)) {
+    case Stand::Conifer: return TM::Conifer;
+    case Stand::Broadleaf: return TM::Broadleaf;
+    case Stand::Birch: return frand(rng) < 0.7f ? TM::Birch : TM::Broadleaf;
+    case Stand::Mixed: break;
+    }
+    return frand(rng) < 0.5f ? TM::Conifer : TM::Broadleaf;
+  };
+  auto groveFor = [&](float x, float z) -> TM {
+    const bool b = frand(rng) < 0.5f;
+    switch (standAt(x, z)) {
+    case Stand::Conifer: return b ? TM::GroveConiferA : TM::GroveConiferB;
+    case Stand::Broadleaf: return b ? TM::GroveBroadleafA : TM::GroveBroadleafB;
+    case Stand::Birch: return TM::GroveBirch;
+    case Stand::Mixed: break;
+    }
+    return TM::GroveMixed;
+  };
+  // Deep enough forest for a grove: GROVE_MIN_DENSITY of the way up the
+  // mask's density ramp, or in a wood field.
+  const float groveMask =
+      Config::FOREST_NOISE_LOW +
+      Config::GROVE_MIN_DENSITY * (Config::FOREST_NOISE_HIGH - Config::FOREST_NOISE_LOW);
+  auto deepForest = [&](float x, float z) {
+    const int f = fields.fieldAt(x, z);
+    if (fields.isFarmland(f)) return false;
+    return fields.isWood(f) || fields.forestMask(x, z) >= groveMask;
+  };
+
+  // ---- Groves: whole stands filling the deep forest ----
+  // A jittered grid of grove spots; a spot is used when its centre and a
+  // ring most of the way to the grove's edge are all deep forest on grass, and the ground
+  // is gentle enough to shear the stand onto. Covered ground is marked
+  // on a coarse grid so the loose-tree pass leaves it alone.
+  constexpr float kCover = 4.0f; // coverage grid, m
+  const int coverN = static_cast<int>(worldSize / kCover);
+  std::vector<uint8_t> covered(static_cast<size_t>(coverN) * coverN, 0);
+  auto coverIdx = [&](float x, float z) {
+    int cx = static_cast<int>(floorf(x / kCover)) % coverN;
+    int cz = static_cast<int>(floorf(z / kCover)) % coverN;
+    if (cx < 0) cx += coverN;
+    if (cz < 0) cz += coverN;
+    return static_cast<size_t>(cz) * coverN + cx;
+  };
+  const int groveN = static_cast<int>(worldSize / Config::GROVE_SPACING);
+  const float groveStep = worldSize / groveN; // tiles the world exactly
+  for (int gz = 0; gz < groveN; ++gz) {
+    for (int gx = 0; gx < groveN; ++gx) {
+      float x = (gx + 0.5f) * groveStep + frand(rng, -Config::GROVE_JITTER, Config::GROVE_JITTER);
+      float z = (gz + 0.5f) * groveStep + frand(rng, -Config::GROVE_JITTER, Config::GROVE_JITTER);
+      bool ok = deepForest(x, z) && inGrass(x, z) && slopeAt(planet, x, z) <= Config::GROVE_MAX_SLOPE;
+      for (int k = 0; k < 8 && ok; ++k) {
+        float a = k * 0.785398f;
+        const float rr = Config::GROVE_RING_FRAC * Config::GROVE_RADIUS;
+        float rx = x + cosf(a) * rr, rz = z + sinf(a) * rr;
+        ok = deepForest(rx, rz) && inGrass(rx, rz);
+      }
+      if (!ok) continue;
+      pushTree(groveFor(x, z), x, z, 0.9f, 1.1f);
+      const float r = Config::GROVE_COVER_RADIUS * m_items.back().scale;
+      for (float oz = -r; oz <= r; oz += kCover)
+        for (float ox = -r; ox <= r; ox += kCover)
+          if (ox * ox + oz * oz <= r * r) covered[coverIdx(x + ox, z + oz)] = 1;
+    }
+  }
+
+  // ---- Copses: clumps in the thinner forest round the groves ----
+  // Same idea on a finer grid: forest density at least COPSE_MIN_DENSITY
+  // at the centre and on a ring near the edge, centre not under a grove.
+  // Thin forest leans to birch-and-bush copses, like the old fringe.
+  auto density = [&](float x, float z) {
+    const int f = fields.fieldAt(x, z);
+    if (fields.isFarmland(f)) return -1.0f;
+    if (fields.isWood(f)) return 1.0f;
+    float t = (fields.forestMask(x, z) - Config::FOREST_NOISE_LOW) /
+              (Config::FOREST_NOISE_HIGH - Config::FOREST_NOISE_LOW);
+    return t > 1.0f ? 1.0f : t;
+  };
+  const int copseN = static_cast<int>(worldSize / Config::COPSE_SPACING);
+  const float copseStep = worldSize / copseN;
+  for (int gz = 0; gz < copseN; ++gz) {
+    for (int gx = 0; gx < copseN; ++gx) {
+      float x = (gx + 0.5f) * copseStep + frand(rng, -Config::COPSE_JITTER, Config::COPSE_JITTER);
+      float z = (gz + 0.5f) * copseStep + frand(rng, -Config::COPSE_JITTER, Config::COPSE_JITTER);
+      if (covered[coverIdx(x, z)]) continue;
+      const float t = density(x, z);
+      bool ok = t >= Config::COPSE_MIN_DENSITY && inGrass(x, z) &&
+                slopeAt(planet, x, z) <= Config::COPSE_MAX_SLOPE;
+      for (int k = 0; k < 6 && ok; ++k) {
+        float a = k * 1.0471976f, rr = 0.75f * Config::COPSE_RADIUS;
+        float rx = x + cosf(a) * rr, rz = z + sinf(a) * rr;
+        ok = density(rx, rz) >= Config::COPSE_MIN_DENSITY && inGrass(rx, rz);
+      }
+      if (!ok) continue;
+      TM model;
+      const float fringe = 1.0f - t;
+      if (frand(rng) < (Config::FOREST_FRINGE_BUSH + Config::FOREST_FRINGE_BIRCH) * fringe) {
+        model = TM::CopseBirch;
+      } else {
+        switch (standAt(x, z)) {
+        case Stand::Conifer: model = TM::CopseConifer; break;
+        case Stand::Broadleaf: model = TM::CopseBroadleaf; break;
+        case Stand::Birch: model = TM::CopseBirch; break;
+        default: model = TM::CopseMixed; break;
+        }
+      }
+      pushTree(model, x, z, 0.9f, 1.15f);
+      const float r = Config::COPSE_COVER_RADIUS * m_items.back().scale;
+      for (float oz = -r; oz <= r; oz += kCover)
+        for (float ox = -r; ox <= r; ox += kCover)
+          if (ox * ox + oz * oz <= r * r) covered[coverIdx(x + ox, z + oz)] = 1;
+    }
+  }
 
   // ---- Forests: every terrain cell inside the forest mask ----
   // Density ramps from zero at FOREST_NOISE_LOW to FOREST_TREES_PER_CELL
@@ -336,6 +478,15 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
                                frand(rng));
       for (int i = 0; i < n; ++i) {
         float x = x0 + frand(rng) * cellSize, z = z0 + frand(rng) * cellSize;
+        if (covered[coverIdx(x, z)]) continue; // inside a grove or copse
+        {
+          // A gap mostly ringed by stands is largely under their crowns.
+          int ring = 0;
+          for (int k = 0; k < 9; ++k)
+            if (k != 4)
+              ring += covered[coverIdx(x + (k % 3 - 1) * kCover, z + (k / 3 - 1) * kCover)];
+          if (ring >= 5 && frand(rng) > Config::FOREST_GAP_KEEP) continue;
+        }
         const int field = fields.fieldAt(x, z);
         if (fields.isFarmland(field)) continue;
         const bool wood = fields.isWood(field);
@@ -357,48 +508,98 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
   // One style per boundary (hashed from the two fields it divides):
   // open, a bush hedge with the odd tree, a broadleaf tree line over
   // bushes, or a row of poplars. Short gaps read as gateways.
-  // One stretch (at most a terrain cell long) of a boundary.
-  auto hedge = [&](float ax, float az, float bx, float bz, uint32_t key) {
-    const float len = sqrtf((bx - ax) * (bx - ax) + (bz - az) * (bz - az));
+  // One run of boundary between the same two fields, as a polyline
+  // (straight, or following a curved edge). Hedge segments are laid end
+  // to end along it by arc length, each spanning the chord of its piece,
+  // so a whole edge becomes as few segments as possible.
+  std::vector<FieldMap::Point> run;
+  auto pointAt = [&](float arc) {
+    for (size_t k = 0; k + 1 < run.size(); ++k) {
+      const float ex = run[k + 1].x - run[k].x, ez = run[k + 1].z - run[k].z;
+      const float l = sqrtf(ex * ex + ez * ez);
+      if (arc <= l || k + 2 == run.size()) {
+        const float t = l > 0.0f ? fminf(arc / l, 1.0f) : 0.0f;
+        return FieldMap::Point{run[k].x + ex * t, run[k].z + ez * t};
+      }
+      arc -= l;
+    }
+    return run.back();
+  };
+  auto hedgeRun = [&](uint32_t key) {
+    if (run.size() < 2) return;
+    float len = 0.0f;
+    for (size_t k = 0; k + 1 < run.size(); ++k)
+      len += sqrtf((run[k + 1].x - run[k].x) * (run[k + 1].x - run[k].x) +
+                   (run[k + 1].z - run[k].z) * (run[k + 1].z - run[k].z));
     if (len < 0.5f) return;
-    const float ux = (bx - ax) / len, uz = (bz - az) / len;
     float style = (key & 0xffffu) / 65536.0f;
     if (style < Config::HEDGE_OPEN_SHARE) return;
-    if (frand(rng) < Config::HEDGE_GAP_CHANCE) return; // gateway
     style -= Config::HEDGE_OPEN_SHARE;
-    enum { Bushes, TreeLine, Poplars } kind =
-        style < Config::HEDGE_BUSH_SHARE ? Bushes
-        : style < Config::HEDGE_BUSH_SHARE + Config::HEDGE_TREELINE_SHARE ? TreeLine
-                                                                          : Poplars;
-    auto place = [&](TM model, float along, float jitter, float lo, float hi) {
-      float x = ax + ux * along - uz * frand(rng, -jitter, jitter);
-      float z = az + uz * along + ux * frand(rng, -jitter, jitter);
-      if (!inGrass(x, z) || slopeAt(planet, x, z) > 0.7f) return;
-      if (model != TM::Bush && frand(rng) < Config::DECOR_DEAD_TREE_CHANCE) model = TM::Dead;
-      pushTree(model, x, z, lo, hi);
-    };
+    enum { Bushes, TreeLine, Poplars, Wall, Fence } kind = Fence;
+    {
+      const float shares[] = {Config::HEDGE_BUSH_SHARE, Config::HEDGE_TREELINE_SHARE,
+                              Config::HEDGE_POPLAR_SHARE, Config::HEDGE_WALL_SHARE};
+      float acc = 0.0f;
+      for (int i = 0; i < 4; ++i) {
+        acc += shares[i];
+        if (style < acc) {
+          kind = static_cast<decltype(kind)>(i);
+          break;
+        }
+      }
+    }
+    const bool wallB = (key >> 20) & 1u, fenceB = (key >> 21) & 1u;
     if (kind == Poplars) {
-      for (float a = frand(rng, 0.0f, 4.0f); a < len; a += 4.0f)
-        place(TM::Poplar, a, 0.2f, 0.9f, 1.1f);
+      for (float arc = frand(rng, 0.0f, 4.0f); arc < len; arc += 4.0f) {
+        if (frand(rng) < Config::HEDGE_GAP_CHANCE * 0.5f) continue; // gateway
+        FieldMap::Point p = pointAt(arc);
+        float x = p.x + frand(rng, -0.2f, 0.2f), z = p.z + frand(rng, -0.2f, 0.2f);
+        if (!inGrass(x, z) || slopeAt(planet, x, z) > 0.7f) continue;
+        pushTree(frand(rng) < Config::DECOR_DEAD_TREE_CHANCE ? TM::Dead : TM::Poplar, x, z,
+                 0.9f, 1.1f);
+      }
       return;
     }
-    for (float a = frand(rng) * Config::HEDGE_SPACING; a < len;
-         a += Config::HEDGE_SPACING * frand(rng, 0.8f, 1.2f)) {
-      if (kind == Bushes && frand(rng) < 0.06f)
-        place(frand(rng) < 0.7f ? TM::Broadleaf : TM::Birch, a, 0.4f, 0.9f, 1.3f);
+    const int n = std::max(1, static_cast<int>(lroundf(len / Config::HEDGE_SEGMENT)));
+    const float segArc = len / n;
+    int fencePatch = 0; // segments left in a fenced patch of a hedge
+    for (int i = 0; i < n; ++i) {
+      if (frand(rng) < Config::HEDGE_GAP_CHANCE) continue; // gateway
+      const FieldMap::Point p0 = pointAt(i * segArc), p1 = pointAt((i + 1) * segArc);
+      const float dx = p1.x - p0.x, dz = p1.z - p0.z, chord = sqrtf(dx * dx + dz * dz);
+      if (chord < 0.3f) continue;
+      const float x = 0.5f * (p0.x + p1.x), z = 0.5f * (p0.z + p1.z);
+      if (!inGrass(x, z) || slopeAt(planet, x, z) > 0.7f) continue;
+      TM model;
+      if ((kind == Bushes || kind == TreeLine) && fencePatch == 0 &&
+          frand(rng) < Config::HEDGE_FENCE_PATCH)
+        fencePatch = 1 + static_cast<int>(xorshift32(rng) % 3);
+      if (kind == Wall)
+        model = wallB ? TM::WallB : TM::WallA;
+      else if (kind == Fence || fencePatch > 0)
+        model = fenceB ? TM::FenceB : TM::FenceA;
+      else if (kind == TreeLine)
+        model = frand(rng) < 0.85f ? TM::HedgeTree : TM::HedgeBirch;
+      else if (frand(rng) < Config::HEDGE_TREE_SHARE)
+        model = frand(rng) < 0.7f ? TM::HedgeTree : TM::HedgeBirch;
       else
-        place(TM::Bush, a, 0.5f, 0.8f, 1.3f);
+        model = frand(rng) < 0.5f ? TM::HedgeA : TM::HedgeB;
+      if (fencePatch > 0) --fencePatch;
+      // Walls and fences keep one size so neighbouring segments line up.
+      const bool built = kind == Wall || model == TM::FenceA || model == TM::FenceB;
+      pushTree(model, x, z, built ? 1.0f : 0.95f, built ? 1.0f : 1.1f);
+      Decoration &d = m_items.back();
+      d.yaw = atan2f(dx, dz) + (frand(rng) < 0.5f ? 0.0f : 3.14159265f);
+      d.stretch = chord / (Config::HEDGE_SEGMENT * d.scale);
     }
-    if (kind == TreeLine)
-      for (float a = frand(rng, 1.0f, 3.0f); a < len; a += frand(rng, 4.0f, 6.0f))
-        place(frand(rng) < 0.85f ? TM::Broadleaf : TM::Birch, a, 0.4f, 1.0f, 1.4f);
   };
   auto pairKey = [&](int f0, int f1) {
     uint32_t a = fields.hash(f0 < f1 ? f0 : f1), b = fields.hash(f0 < f1 ? f1 : f0);
     return a ^ (b * 0x85ebca6bu) ^ (b >> 13);
   };
   // Walk every field's outline in stretches of up to a cell, and look
-  // just outside each stretch for the neighbouring field. The lower-
+  // just outside each stretch for the neighbouring field. Consecutive
+  // stretches with the same neighbour join into one run. The lower-
   // numbered field of each pair plants the hedge, so each boundary is
   // planted once even where several fields meet it from the other side.
   for (int f = 0; f < fields.fieldCount(); ++f) {
@@ -412,21 +613,29 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
       area2 += a.x * b.z - b.x * a.z;
     }
     const float wind = area2 >= 0.0f ? 1.0f : -1.0f;
+    int runWith = -1;
+    run.clear();
     for (size_t k = 0; k < poly.size(); ++k) {
       const auto a = poly[k], b = poly[(k + 1) % poly.size()];
       const float ex = b.x - a.x, ez = b.z - a.z, len = sqrtf(ex * ex + ez * ez);
-      if (len < 0.5f) continue;
+      if (len < 0.01f) continue;
       const float nx = wind * ez / len, nz = -wind * ex / len; // outward
       const int steps = static_cast<int>(ceilf(len / cellSize));
       for (int i = 0; i < steps; ++i) {
         const float t0 = static_cast<float>(i) / steps, t1 = static_cast<float>(i + 1) / steps;
         const float mx = a.x + ex * (t0 + t1) * 0.5f, mz = a.z + ez * (t0 + t1) * 0.5f;
-        const int g = fields.fieldAt(mx + nx * 0.5f, mz + nz * 0.5f);
-        if (g == f || g < f) continue;
-        if (!fields.isFarmland(f) && !fields.isFarmland(g)) continue;
-        hedge(a.x + ex * t0, a.z + ez * t0, a.x + ex * t1, a.z + ez * t1, pairKey(f, g));
+        int g = fields.fieldAt(mx + nx * 0.5f, mz + nz * 0.5f);
+        if (g <= f || (!fields.isFarmland(f) && !fields.isFarmland(g))) g = -1;
+        if (g != runWith) {
+          if (runWith >= 0) hedgeRun(pairKey(f, runWith));
+          run.clear();
+          runWith = g;
+          if (g >= 0) run.push_back({a.x + ex * t0, a.z + ez * t0});
+        }
+        if (g >= 0) run.push_back({a.x + ex * t1, a.z + ez * t1});
       }
     }
+    if (runWith >= 0) hedgeRun(pairKey(f, runWith));
   }
 
   // Density targets for the remaining kinds.
@@ -510,14 +719,18 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
     }
   }
 #ifdef DEV_MODE
-  size_t perTree[6] = {};
+  size_t perTree[24] = {};
   for (const Decoration &d : m_items)
     if (d.kind == Decoration::Kind::Tree) ++perTree[static_cast<int>(d.tree)];
   std::fprintf(stderr,
                "[Decorations] trees: %zu conifer, %zu broadleaf, %zu poplar, "
-               "%zu birch, %zu bush, %zu dead (%zu items)\n",
-               perTree[0], perTree[1], perTree[2], perTree[3], perTree[4],
-               perTree[5], m_items.size());
+               "%zu birch, %zu bush, %zu dead; groves: %zu; copses: %zu; hedge "
+               "segments: %zu; walls: %zu; fences: %zu (%zu items)\n",
+               perTree[0], perTree[1], perTree[2], perTree[3], perTree[4], perTree[5],
+               perTree[6] + perTree[7] + perTree[8] + perTree[9] + perTree[10] + perTree[11],
+               perTree[12] + perTree[13] + perTree[14] + perTree[15],
+               perTree[16] + perTree[17] + perTree[18] + perTree[19],
+               perTree[20] + perTree[21], perTree[22] + perTree[23], m_items.size());
 #endif
   buildInstances(planet);
 }
@@ -594,7 +807,31 @@ void Decorations::buildInstances(const Planet &planet) {
   };
 
   for (const Decoration &d : m_items) {
-    if (d.kind == Decoration::Kind::Tree) {
+    if (d.kind == Decoration::Kind::Tree && Decoration::isStand(d.tree)) {
+      // Shear the stand onto the local ground plane: trees stay upright,
+      // their feet follow the slope.
+      const float e = 0.75f * Config::GROVE_RADIUS;
+      const float sx = (planet.heightAt(d.pos.x + e, d.pos.z) -
+                        planet.heightAt(d.pos.x - e, d.pos.z)) / (2.0f * e);
+      const float sz = (planet.heightAt(d.pos.x, d.pos.z + e) -
+                        planet.heightAt(d.pos.x, d.pos.z - e)) / (2.0f * e);
+      Matrix shear = MatrixIdentity();
+      shear.m1 = sx;
+      shear.m9 = sz;
+      Vector3 pos = d.pos;
+      pos.x = wrapCoord(pos.x, ws);
+      pos.z = wrapCoord(pos.z, ws);
+      int cx = static_cast<int>(pos.x / cell), cz = static_cast<int>(pos.z / cell);
+      if (cx >= m_gridN) cx = m_gridN - 1;
+      if (cz >= m_gridN) cz = m_gridN - 1;
+      Matrix m = MatrixMultiply(
+          MatrixMultiply(MatrixMultiply(MatrixScale(d.scale, d.scale, d.scale * d.stretch),
+                                        MatrixRotateY(d.yaw)),
+                         shear),
+          MatrixTranslate(pos.x, pos.y, pos.z));
+      placed[kConifer + static_cast<int>(d.tree)].push_back(
+          {static_cast<uint32_t>(cz * m_gridN + cx), m});
+    } else if (d.kind == Decoration::Kind::Tree) {
       add(kConifer + static_cast<int>(d.tree), d.pos, {d.scale, d.scale, d.scale},
           d.yaw);
     } else if (d.kind == Decoration::Kind::Rock) {
