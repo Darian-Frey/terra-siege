@@ -307,6 +307,8 @@ Status vocabulary: Proposed | Accepted | Superseded by D-NNN | Deprecated.
 
 **Reversal conditions.** Revisit if more than 32 colours are routinely needed, or if a shader-based colouring path ([IMP-010](IMPROVEMENTS.md#imp-010-shader-based-damage-flash-for-obj-entities)) makes per-instance colour cheap.
 
+*Amended 2026-11-22:* slots 4 and 5 (pure blue and pure yellow, used by no model) became red brick (150,72,52) and thatch brown (170,140,90) for the settlement buildings (Settlements track R.4). The palette stays at 32 colours. Change `src/mesh/Palette.hpp` and `scripts/meshgen/shiplib.py` together.
+
 ### D-011 Sidecar entity profiles by default, registry override later
 
 **Decided:** 2026-06-03 (from commit `d1b28be`; implemented in `a5660d7` / `c746a0a`, 2026-06-06)

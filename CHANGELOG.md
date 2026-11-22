@@ -10,6 +10,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 ## [Unreleased]
 
 ### Added
+- First settlement buildings (F-049, Settlements track R.4): 31 low-poly models generated in Blender. A farm set (farmhouses, barns, a Dutch barn, a silo, outbuildings, a glasshouse, a windmill, hay bales, a tractor) and a village set (cottages, houses, terraces, two churches, a chapel, a pub, a shop, a hall, a war memorial, garden walls, a picket fence). Placement comes in R.5. Palette slots 4 and 5 became red brick and thatch brown
 - Fields follow roads (F-048, Settlements track R.3): fields change crop colour across roads, field-edge hedges, walls and fences stop at the verge, and roads through farmland get their own roadside hedge, wall or fence runs. Trees, groves, rocks, antennas and crash sites keep clear of roads ([D-040](DECISIONS.md#d-040-fields-follow-roads-through-road-bounded-regions))
 - Road network (F-048, Settlements track R.2): main roads join the towns, lanes the villages and gravel tracks the farmsteads, routed over the terrain round water and steep ground. Roads are cut into the terrain mesh, so they don't flicker ([D-039](DECISIONS.md#d-039-road-network-a-on-a-wrapped-grid-roads-cut-into-the-terrain))
 - Settlement sites (F-048, Settlements track R.1): each world picks up to 4 towns, 22 villages and 180 farmsteads on gentle, dry grassland, spaced apart, with towns near water. Bases and radar towers keep clear of them. DEV: F8 overlay, and F6 also writes a site map. Roads and buildings follow in later phases

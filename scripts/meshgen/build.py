@@ -20,12 +20,13 @@ import structures
 import player
 import projectiles
 import scenery
+import settlements
 from shiplib import render, setup_scene, write_obj
 
 SHIPS = {**player.SHIPS, **enemies.SHIPS, **structures.SHIPS, **scenery.SHIPS,
-         **projectiles.SHIPS}
+         **projectiles.SHIPS, **settlements.SHIPS}
 HEADERS = {**player.HEADERS, **enemies.HEADERS, **structures.HEADERS,
-           **scenery.HEADERS, **projectiles.HEADERS}
+           **scenery.HEADERS, **projectiles.HEADERS, **settlements.HEADERS}
 
 
 def main(argv):

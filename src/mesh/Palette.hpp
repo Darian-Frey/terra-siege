@@ -15,7 +15,7 @@
 //   anything else    → kPaletteFallback (debug magenta)
 //
 // Indices 0..15 reserved for original Virus-style primaries + utility
-// colours. Indices 16..31 capture existing hand-coded ship/structure
+// colours (4 and 5 became building colours, red brick and thatch). Indices 16..31 capture existing hand-coded ship/structure
 // colours from EntityManager.cpp render paths so converting a ship's
 // procedural geometry to an OBJ preserves the look at parity.
 // ====================================================================
@@ -27,8 +27,8 @@ constexpr Color kPalette[32] = {
     {255, 255, 255, 255},  // 1:  white
     {255, 0, 0, 255},      // 2:  red
     {0, 255, 0, 255},      // 3:  green
-    {0, 0, 255, 255},      // 4:  blue
-    {255, 255, 0, 255},    // 5:  yellow
+    {150, 72, 52, 255},    // 4:  red brick (was pure blue, unused; D-010 amended 2026-11-22)
+    {170, 140, 90, 255},   // 5:  thatch brown (was pure yellow, unused)
     {255, 0, 255, 255},    // 6:  magenta
     {0, 255, 255, 255},    // 7:  cyan
     {128, 128, 128, 255},  // 8:  mid grey

@@ -80,6 +80,17 @@ Players who want a modern take on the 1988 Argonaut game *Virus*: flat-shaded lo
 
 **Notes:** Plan in [project-status/ROAD_VILLAGE_TOWN_ROADMAP.md](project-status/ROAD_VILLAGE_TOWN_ROADMAP.md) (Settlements track, phases R.1–R.3).
 
+### F-049 Villages and farmsteads
+
+**Priority:** Should
+**Status:** In progress (R.4 building models complete 2026-11-22; R.5 placement next)
+**Acceptance:**
+
+- A farm set and a village set of building models from `scripts/meshgen/settlements.py`, in palette colours, within their triangle targets, with walls down to 2 m below ground and windows and doors standing off their walls (R.4, done)
+- Villages laid out along their roads (core, street frontage, fringe) and farmsteads at the end of their tracks, as instanced decorations facing the road, with footprints cleared of scenery (R.5)
+
+**Notes:** Plan in [project-status/ROAD_VILLAGE_TOWN_ROADMAP.md](project-status/ROAD_VILLAGE_TOWN_ROADMAP.md) (phases R.4–R.5). Palette slots 4 and 5 became red brick and thatch ([D-010](DECISIONS.md#d-010-32-colour-palette-via-obj-material-names), amended).
+
 ### F-003 Rivers
 
 **Priority:** Could

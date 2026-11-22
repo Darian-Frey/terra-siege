@@ -1,6 +1,6 @@
 # Roads, Villages and Towns — Roadmap
 
-**Status:** In progress. R.1–R.3 complete (2026-11-22); R.4 (first buildings) next. Phases are tracked by [F-048](../FEATURES.md#f-048-settlement-sites-and-road-network) for R.1–R.3; later phases get their own feature IDs when they start.
+**Status:** In progress. R.1–R.4 complete (2026-11-22); R.5 (villages and farmsteads placed) next. R.4–R.5 are tracked by [F-049](../FEATURES.md#f-049-villages-and-farmsteads). Phases are tracked by [F-048](../FEATURES.md#f-048-settlement-sites-and-road-network) for R.1–R.3; later phases get their own feature IDs when they start.
 **Track:** New "Settlements" track, to sit beside the Engine, Features and Tooling tracks in [ROADMAP.md](../ROADMAP.md).
 **Builds on:** the farmland patchwork and forest mask ([D-035](../DECISIONS.md#d-035-farmland-patchwork-from-an-angled-bsp-shared-by-terrain-and-decorations)), instanced scenery and stand models ([D-034](../DECISIONS.md#d-034-trees-and-rocks-are-obj-models-drawn-with-gpu-instancing), [D-036](../DECISIONS.md#d-036-multi-plant-stand-models-cut-the-scenery-instance-count)), and the water surface ([D-038](../DECISIONS.md#d-038-water-is-not-ground-planetsurfaceat-for-anything-above-it)).
 
@@ -259,7 +259,7 @@ The existing 32 colours ([D-010](../DECISIONS.md#d-010-32-colour-palette-via-obj
 | Windows | `c10` / `c23` blues |
 | Doors and trim | `c00`, `c17` yellow, `c13` dark green |
 
-Missing: a warmer red brick and a mid-brown thatch would help most. Adding them means changing the palette, which D-010 governs. Decide in R.4.
+Missing: a warmer red brick and a mid-brown thatch would help most. Adding them means changing the palette, which D-010 governs. **Decided in R.4:** the unused slots `c04` and `c05` became red brick (150,72,52) and thatch brown (170,140,90).
 
 Road surface colours are terrain colours in `TerrainChunk`, like the field tints, so they need no palette slots.
 
@@ -314,6 +314,7 @@ Each phase ends playable, and gets its docs (FEATURES, DECISIONS, CHANGELOG) in 
 - a palette decision (5.8)
 **Acceptance:** models render correctly in the inspector and contact sheets, within their triangle targets.
 **Assets:** 5.3, 5.4.
+**Status:** Complete (2026-11-22). `scripts/meshgen/settlements.py` builds the 13 farm models and 18 village models in section 5.3–5.4 from a shared toolkit: walls with foundations, gable and hipped roofs, chimneys, window rows. All are 24–196 tris. Palette decided: slots 4 and 5 became red brick and thatch ([D-010](../DECISIONS.md#d-010-32-colour-palette-via-obj-material-names) amended).
 
 ### R.5 — Villages and farmsteads placed (M)
 
