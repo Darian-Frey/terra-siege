@@ -934,6 +934,51 @@ static_assert(static_cast<int>(WORLD_SIZE) % static_cast<int>(DECOR_CELL_SIZE) =
 constexpr float DECOR_CONIFER_FRAC_LOW = 0.2f;   // TUNE
 constexpr float DECOR_CONIFER_FRAC_HIGH = 0.8f;  // TUNE
 
+// Forests (FieldMap::forestMask). The mask is tiling value noise with
+// FOREST_NOISE_PERIOD lattice cells per world edge (~140 m blobs); forest
+// where it passes FOREST_NOISE_LOW, full density by FOREST_NOISE_HIGH.
+constexpr int FOREST_NOISE_PERIOD = 58;
+constexpr float FOREST_NOISE_LOW = 0.56f;      // TUNE
+constexpr float FOREST_NOISE_HIGH = 0.62f;     // TUNE
+constexpr int FOREST_TREES_PER_CELL = 5;       // per 8 m cell at full density; TUNE
+// Share of the forest fringe (mask below FOREST_NOISE_HIGH) given to
+// bushes and birches rather than full trees.
+constexpr float FOREST_FRINGE_BUSH = 0.35f;    // TUNE
+constexpr float FOREST_FRINGE_BIRCH = 0.25f;   // TUNE
+constexpr float FOREST_BIRCH_FRAC = 0.08f;     // birches inside the forest; TUNE
+constexpr float DECOR_DEAD_TREE_CHANCE = 0.01f; // any forest or hedge tree; TUNE
+
+// Farmland patchwork (FieldMap). The world is cut with straight lines
+// at random angles until no field is longer than FIELD_MAX_SIZE; no cut
+// leaves a field narrower than FIELD_MIN_SIZE.
+constexpr float FIELD_MAX_SIZE = 190.0f;       // m, longest dimension; TUNE
+constexpr float FIELD_MIN_SIZE = 45.0f;        // m, narrowest width; TUNE
+constexpr float FIELD_CUT_JITTER = 0.4f;       // rad (~23°) off square to the long axis; TUNE
+// Curved boundaries: this share of cuts carries a sine wave along its
+// length (a bow or an S-bend, fading to zero at both ends), amplitude up
+// to FIELD_CURVE_AMP of the cut's length (capped); sampled every
+// FIELD_CURVE_STEP.
+constexpr float FIELD_CURVE_CHANCE = 0.4f;     // TUNE
+constexpr float FIELD_CURVE_AMP = 0.12f;       // TUNE
+constexpr float FIELD_CURVE_AMP_MAX = 22.0f;   // m; TUNE
+constexpr float FIELD_CURVE_STEP = 5.0f;       // m
+constexpr float FIELD_MAX_SLOPE = 0.35f;       // rise/run, at 4/5 of sample points
+// Farming country vs wild country: tiling noise with FARM_NOISE_PERIOD
+// lattice cells per world edge (~400 m blobs); farming where it passes
+// FARM_NOISE_THRESHOLD.
+constexpr int FARM_NOISE_PERIOD = 20;
+constexpr float FARM_NOISE_THRESHOLD = 0.45f;  // TUNE
+constexpr float FIELD_WOOD_CHANCE = 0.12f;     // farming-country fields that are woods; TUNE
+
+// Hedgerows along farmland edges. Each boundary picks one style by hash
+// (shares sum to 1). HEDGE_SPACING is the bush pitch along a hedge.
+constexpr float HEDGE_OPEN_SHARE = 0.15f;      // no hedge; TUNE
+constexpr float HEDGE_BUSH_SHARE = 0.45f;      // bushes, the odd tree; TUNE
+constexpr float HEDGE_TREELINE_SHARE = 0.25f;  // broadleaf line over bushes; TUNE
+constexpr float HEDGE_POPLAR_SHARE = 0.15f;    // evenly spaced poplars; TUNE
+constexpr float HEDGE_SPACING = 2.2f;          // m; TUNE
+constexpr float HEDGE_GAP_CHANCE = 0.08f;      // per 8 m stretch, a gateway; TUNE
+
 constexpr int FBM_OCTAVES = 7; // octaves accumulated for each cell
 constexpr int FBM_LARGEST_CELL =
     512; // largest lattice spacing (heightmap cells)

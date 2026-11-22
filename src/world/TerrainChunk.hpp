@@ -4,6 +4,8 @@
 #include "core/Config.hpp"
 #include "raylib.h"
 
+class FieldMap;
+
 // ====================================================================
 // TerrainChunk
 // Flat-shaded mesh built from a heightmap region.
@@ -15,7 +17,9 @@ public:
   TerrainChunk() = default;
   ~TerrainChunk() = default;
 
-  void build(const Heightmap &hmap, int originX, int originZ, int cellsPerEdge);
+  // fields (optional) tints farmland quads in the grass band.
+  void build(const Heightmap &hmap, const FieldMap *fields, int originX,
+             int originZ, int cellsPerEdge);
   // Draw at a world-space offset. Planet picks the tile offset closest to
   // the camera so the toroidal world appears infinite in every direction.
   void draw(Vector3 offset) const;
@@ -25,7 +29,8 @@ public:
   Vector3 centre() const { return m_centre; }
 
 private:
-  Color landColor(float h) const;
+  // field >= 0: farmland tint index, used in the grass band only.
+  Color landColor(float h, int fieldTint = -1) const;
   Color waterColor(WaterType wt) const;
 
   Mesh m_mesh = {};

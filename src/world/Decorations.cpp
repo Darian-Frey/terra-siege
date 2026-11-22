@@ -1,5 +1,6 @@
 #include "Decorations.hpp"
 
+#include "FieldMap.hpp"
 #include "Planet.hpp"
 #include "core/Config.hpp"
 #include "mesh/ObjLoader.hpp"
@@ -68,47 +69,6 @@ constexpr float kSandMax  = Config::BIOME_SAND_MAX;
 constexpr float kGrassMax = Config::BIOME_GRASS_MAX;
 constexpr float kRockMax  = Config::BIOME_ROCK_MAX;
 constexpr float kHighMax  = Config::BIOME_HIGH_MAX;
-
-// 2D value noise — single-octave, smoothstep-interpolated. Used as a
-// forest mask. Algorithm per Red Blob Games + Potter Programming:
-//   * hash the 4 lattice corners surrounding (x, z) at the chosen freq
-//   * bilinear blend with smoothstep easing
-// Returns a value in [0, 1) that varies smoothly across the world.
-// Frequency = 1/featureSize, so freq = 1/128 gives ~128m blobs (about
-// the right scale for a forest patch).
-float hashCorner(int x, int z, uint32_t seed) {
-  uint32_t h = static_cast<uint32_t>(x) * 374761393u +
-               static_cast<uint32_t>(z) * 668265263u +
-               seed * 2654435761u;
-  h = (h ^ (h >> 13)) * 1274126177u;
-  h ^= h >> 16;
-  return (h & 0xffffffu) / 16777216.0f;
-}
-float valueNoise2D(float x, float z, float freq, uint32_t seed) {
-  float fx = x * freq;
-  float fz = z * freq;
-  int ix0 = static_cast<int>(floorf(fx));
-  int iz0 = static_cast<int>(floorf(fz));
-  float tx = fx - ix0;
-  float tz = fz - iz0;
-  tx = tx * tx * (3.0f - 2.0f * tx); // smoothstep
-  tz = tz * tz * (3.0f - 2.0f * tz);
-  float a = hashCorner(ix0,     iz0,     seed);
-  float b = hashCorner(ix0 + 1, iz0,     seed);
-  float c = hashCorner(ix0,     iz0 + 1, seed);
-  float d = hashCorner(ix0 + 1, iz0 + 1, seed);
-  float ab = a + (b - a) * tx;
-  float cd = c + (d - c) * tx;
-  return ab + (cd - ab) * tz;
-}
-// 2-octave fractal — adds finer detail to break up the smooth blobs
-// at their boundaries. Coarse octave = forest body, fine octave =
-// jagged edge / scattered outliers.
-float forestMask(float x, float z, uint32_t seed) {
-  float a = valueNoise2D(x, z, 1.0f / 140.0f, seed);            // coarse
-  float b = valueNoise2D(x, z, 1.0f / 45.0f,  seed ^ 0x5a17u);  // edge detail
-  return a * 0.75f + b * 0.25f;
-}
 
 // Approximate slope via finite differences. Returns |gradient| —
 // 0 = flat, 1 ≈ 45°.
@@ -259,6 +219,8 @@ void main() { finalColor = fragColor; }
 )";
 
 const char *const kModelFiles[] = {"tree_conifer.obj", "tree_broadleaf.obj",
+                                   "tree_poplar.obj",  "tree_birch.obj",
+                                   "bush.obj",         "tree_dead.obj",
                                    "rock_a.obj",       "rock_b.obj",
                                    "rock_c.obj",       "antenna.obj",
                                    "crash_site.obj",   "crash_debris.obj"};
@@ -282,25 +244,17 @@ int wrapIndex(int i, int n) { return ((i % n) + n) % n; }
 // ====================================================================
 // Procedural placement
 //
-// Forest pass uses a NOISE MASK — the canonical approach per Red Blob
-// Games + Potter Programming + the GameDev.net "trees and bushes"
-// thread. Each candidate point's acceptance is gated by a low-freq
-// value-noise field, with a smooth probability ramp around the cutoff
-// instead of a hard threshold. Two consequences:
-//   * Forests take on organic, irregular shapes (not discs) because
-//     the noise field is organic
-//   * Neighboring forests CONNECT naturally where the noise field's
-//     high regions touch — no special "blend" logic needed
-//   * Density falls off gradually at edges (the falloff zone) so
-//     forests don't end with a hard line
-//
-// Algorithm summary:
-//   * Trees       — per-point noise-mask rejection sampling. Each
-//                   accepted point places ONE tree (was: clusters).
-//                   Biome + slope gates still apply.
+// Trees follow the planet's FieldMap (farmland patchwork + forest mask):
+//   * Forests     — every terrain cell inside the forest mask (or a wood
+//                   field) gets up to FOREST_TREES_PER_CELL trees; the
+//                   fringe thins into bushes and birches. Farmland cells
+//                   stay clear, so woods stop at the hedges.
+//   * Hedgerows   — every edge between two fields with farmland on
+//                   either side: bush hedges, tree lines or poplar rows,
+//                   with gateways.
 //   * Rocks       — biome-weighted acceptance, mountain-heavy.
 //   * Antennas    — flat ground, dense enough to encounter.
-//   * Crash sites — anywhere on land, gentle slope.
+//   * Crash sites — anywhere on land, gentle slope, ringed by dead trees.
 // ====================================================================
 void Decorations::clearSquare(const Planet &planet, float x, float z,
                               float half, float reseatHalf) {
@@ -325,59 +279,153 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
   float worldSize = planet.worldSize();
   float seaY = Config::SEA_LEVEL * Config::TERRAIN_HEIGHT_MAX;
 
-  // ---- Forests: noise-mask placement + per-cell dense packing ----
-  // Two-stage approach:
-  //   (a) Sample N candidates; gate each on biome / slope / noise so
-  //       only forest-core points survive. This defines the forest
-  //       SHAPE (organic, biome-respecting, irregular boundary).
-  //   (b) Every surviving candidate fans out into kFanout sub-trees
-  //       with small jitter, scaling density inside forests by
-  //       kFanout× without re-running the expensive noise/biome
-  //       lookups. This is where "can't see the ground" density
-  //       comes from.
-  //
-  // Math at the current numbers:
-  //   * 350k candidates × 30% grass × 80% slope × ~20% noise pass =
-  //     ~17k surviving cores × 8 fanout = ~135k trees in forest
-  //     blobs. Spacing inside cores ≈ 1.8m → canopies fully overlap
-  //     (canopy is 1.8m wide).
-  constexpr int kTreeAttempts = 350000;
-  constexpr int kFanout = 8;
-  constexpr float kFanoutRadius = 2.4f; // small jitter so canopies overlap
-  // Noise cutoff: above kNoiseLow we're in a forest blob; ramp up
-  // to kNoiseHigh gives a soft edge. Both above 0.5 (the noise
-  // mean) so MOST of grassland is open — only the noise peaks
-  // become forest.
-  constexpr float kNoiseLow  = 0.56f;
-  constexpr float kNoiseHigh = 0.64f;
-  uint32_t forestSeed = rng ^ 0xb5297a4du;
-  for (int i = 0; i < kTreeAttempts; ++i) {
-    float tx = frand(rng) * worldSize;
-    float tz = frand(rng) * worldSize;
-    float b = landBiome(planet, tx, tz);
-    if (b < kSandMax || b > kGrassMax) continue;     // grassland only
-    if (slopeAt(planet, tx, tz) > 0.7f) continue;     // skip steep
-    float n = forestMask(tx, tz, forestSeed);
-    if (n < kNoiseLow) continue;                      // outside forest
-    // Probability ramp inside the falloff zone — smooth boundary.
-    float p = (n - kNoiseLow) / (kNoiseHigh - kNoiseLow);
-    if (p > 1.0f) p = 1.0f;
-    if (frand(rng) > p) continue;
-    // Fan out into kFanout sub-trees. Each sub-tree re-checks the
-    // biome cheaply (no slope, no noise) so canopies don't spill
-    // off the green band — they just stop at it.
-    for (int j = 0; j < kFanout; ++j) {
-      float jx = tx + frand(rng, -kFanoutRadius, kFanoutRadius);
-      float jz = tz + frand(rng, -kFanoutRadius, kFanoutRadius);
-      float jb = landBiome(planet, jx, jz);
-      if (jb < kSandMax || jb > kGrassMax) continue;
-      Decoration d;
-      d.kind = Decoration::Kind::Tree;
-      d.pos = {jx, planet.heightAt(jx, jz), jz};
-      d.yaw = frand(rng) * 6.2832f;
-      d.scale = frand(rng, 0.85f, 1.25f);
-      d.seed = xorshift32(rng);
-      m_items.push_back(d);
+  const FieldMap &fields = planet.fields();
+  const float cellSize = Config::TERRAIN_SCALE;
+  const int cells = static_cast<int>(worldSize / cellSize);
+  using TM = Decoration::TreeModel;
+  auto inGrass = [&](float x, float z) {
+    float b = landBiome(planet, x, z);
+    return b >= kSandMax && b < kGrassMax && !planet.isWater(x, z);
+  };
+  auto pushTree = [&](TM model, float x, float z, float scaleLo, float scaleHi) {
+    Decoration d;
+    d.kind = Decoration::Kind::Tree;
+    d.tree = model;
+    d.pos = {x, planet.heightAt(x, z), z};
+    d.yaw = frand(rng) * 6.2832f;
+    d.scale = frand(rng, scaleLo, scaleHi);
+    d.seed = xorshift32(rng);
+    m_items.push_back(d);
+  };
+  // Woodland species: conifers commoner towards the top of the grass band.
+  auto woodlandTree = [&](float x, float z) -> TM {
+    float r = frand(rng);
+    if (r < Config::DECOR_DEAD_TREE_CHANCE) return TM::Dead;
+    if (r < Config::DECOR_DEAD_TREE_CHANCE + Config::FOREST_BIRCH_FRAC) return TM::Birch;
+    float t = (landBiome(planet, x, z) - kSandMax) / (kGrassMax - kSandMax);
+    t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+    float conifer = Config::DECOR_CONIFER_FRAC_LOW +
+                    (Config::DECOR_CONIFER_FRAC_HIGH - Config::DECOR_CONIFER_FRAC_LOW) * t;
+    return frand(rng) < conifer ? TM::Conifer : TM::Broadleaf;
+  };
+
+  // ---- Forests: every terrain cell inside the forest mask ----
+  // Density ramps from zero at FOREST_NOISE_LOW to FOREST_TREES_PER_CELL
+  // at FOREST_NOISE_HIGH, so the interior closes into a canopy and the
+  // fringe thins out into bushes and birches. Farmland cells stay clear,
+  // so where a wood meets a field it stops at the field's hedge; wood
+  // fields in farming country are planted solid to their edges.
+  for (int cz = 0; cz < cells; ++cz) {
+    for (int cx = 0; cx < cells; ++cx) {
+      const float x0 = cx * cellSize, z0 = cz * cellSize;
+      const float xc = x0 + 0.5f * cellSize, zc = z0 + 0.5f * cellSize;
+      // A cell can straddle field edges: it is worth filling if the mask
+      // says forest or any corner lies in a wood field.
+      bool anyWood = false;
+      for (int k = 0; k < 4 && !anyWood; ++k)
+        anyWood = fields.isWood(fields.fieldAt(x0 + (k & 1) * cellSize,
+                                               z0 + (k >> 1) * cellSize));
+      const float m = fields.forestMask(xc, zc);
+      if (m < Config::FOREST_NOISE_LOW && !anyWood) continue;
+      if (slopeAt(planet, xc, zc) > 0.7f) continue;
+      float t = (m - Config::FOREST_NOISE_LOW) /
+                (Config::FOREST_NOISE_HIGH - Config::FOREST_NOISE_LOW);
+      t = t > 1.0f ? 1.0f : t;
+      const float tCell = anyWood ? 1.0f : t;
+      int n = static_cast<int>(Config::FOREST_TREES_PER_CELL * (0.25f + 0.75f * tCell) +
+                               frand(rng));
+      for (int i = 0; i < n; ++i) {
+        float x = x0 + frand(rng) * cellSize, z = z0 + frand(rng) * cellSize;
+        const int field = fields.fieldAt(x, z);
+        if (fields.isFarmland(field)) continue;
+        const bool wood = fields.isWood(field);
+        if (!wood && m < Config::FOREST_NOISE_LOW) continue;
+        if (!inGrass(x, z)) continue;
+        const float fringe = wood ? 0.0f : 1.0f - t;
+        float r = frand(rng);
+        if (r < Config::FOREST_FRINGE_BUSH * fringe)
+          pushTree(TM::Bush, x, z, 0.8f, 1.3f);
+        else if (r < (Config::FOREST_FRINGE_BUSH + Config::FOREST_FRINGE_BIRCH) * fringe)
+          pushTree(TM::Birch, x, z, 0.85f, 1.2f);
+        else
+          pushTree(woodlandTree(x, z), x, z, 0.85f, 1.3f);
+      }
+    }
+  }
+
+  // ---- Hedgerows along farmland field edges ----
+  // One style per boundary (hashed from the two fields it divides):
+  // open, a bush hedge with the odd tree, a broadleaf tree line over
+  // bushes, or a row of poplars. Short gaps read as gateways.
+  // One stretch (at most a terrain cell long) of a boundary.
+  auto hedge = [&](float ax, float az, float bx, float bz, uint32_t key) {
+    const float len = sqrtf((bx - ax) * (bx - ax) + (bz - az) * (bz - az));
+    if (len < 0.5f) return;
+    const float ux = (bx - ax) / len, uz = (bz - az) / len;
+    float style = (key & 0xffffu) / 65536.0f;
+    if (style < Config::HEDGE_OPEN_SHARE) return;
+    if (frand(rng) < Config::HEDGE_GAP_CHANCE) return; // gateway
+    style -= Config::HEDGE_OPEN_SHARE;
+    enum { Bushes, TreeLine, Poplars } kind =
+        style < Config::HEDGE_BUSH_SHARE ? Bushes
+        : style < Config::HEDGE_BUSH_SHARE + Config::HEDGE_TREELINE_SHARE ? TreeLine
+                                                                          : Poplars;
+    auto place = [&](TM model, float along, float jitter, float lo, float hi) {
+      float x = ax + ux * along - uz * frand(rng, -jitter, jitter);
+      float z = az + uz * along + ux * frand(rng, -jitter, jitter);
+      if (!inGrass(x, z) || slopeAt(planet, x, z) > 0.7f) return;
+      if (model != TM::Bush && frand(rng) < Config::DECOR_DEAD_TREE_CHANCE) model = TM::Dead;
+      pushTree(model, x, z, lo, hi);
+    };
+    if (kind == Poplars) {
+      for (float a = frand(rng, 0.0f, 4.0f); a < len; a += 4.0f)
+        place(TM::Poplar, a, 0.2f, 0.9f, 1.1f);
+      return;
+    }
+    for (float a = frand(rng) * Config::HEDGE_SPACING; a < len;
+         a += Config::HEDGE_SPACING * frand(rng, 0.8f, 1.2f)) {
+      if (kind == Bushes && frand(rng) < 0.06f)
+        place(frand(rng) < 0.7f ? TM::Broadleaf : TM::Birch, a, 0.4f, 0.9f, 1.3f);
+      else
+        place(TM::Bush, a, 0.5f, 0.8f, 1.3f);
+    }
+    if (kind == TreeLine)
+      for (float a = frand(rng, 1.0f, 3.0f); a < len; a += frand(rng, 4.0f, 6.0f))
+        place(frand(rng) < 0.85f ? TM::Broadleaf : TM::Birch, a, 0.4f, 1.0f, 1.4f);
+  };
+  auto pairKey = [&](int f0, int f1) {
+    uint32_t a = fields.hash(f0 < f1 ? f0 : f1), b = fields.hash(f0 < f1 ? f1 : f0);
+    return a ^ (b * 0x85ebca6bu) ^ (b >> 13);
+  };
+  // Walk every field's outline in stretches of up to a cell, and look
+  // just outside each stretch for the neighbouring field. The lower-
+  // numbered field of each pair plants the hedge, so each boundary is
+  // planted once even where several fields meet it from the other side.
+  for (int f = 0; f < fields.fieldCount(); ++f) {
+    const auto &poly = fields.outline(f);
+    // Winding sign: outward is (ez, -ex) for a positive signed area. (A
+    // curved edge can make the outline non-convex, so the centroid is no
+    // guide.)
+    float area2 = 0.0f;
+    for (size_t k = 0; k < poly.size(); ++k) {
+      const auto a = poly[k], b = poly[(k + 1) % poly.size()];
+      area2 += a.x * b.z - b.x * a.z;
+    }
+    const float wind = area2 >= 0.0f ? 1.0f : -1.0f;
+    for (size_t k = 0; k < poly.size(); ++k) {
+      const auto a = poly[k], b = poly[(k + 1) % poly.size()];
+      const float ex = b.x - a.x, ez = b.z - a.z, len = sqrtf(ex * ex + ez * ez);
+      if (len < 0.5f) continue;
+      const float nx = wind * ez / len, nz = -wind * ex / len; // outward
+      const int steps = static_cast<int>(ceilf(len / cellSize));
+      for (int i = 0; i < steps; ++i) {
+        const float t0 = static_cast<float>(i) / steps, t1 = static_cast<float>(i + 1) / steps;
+        const float mx = a.x + ex * (t0 + t1) * 0.5f, mz = a.z + ez * (t0 + t1) * 0.5f;
+        const int g = fields.fieldAt(mx + nx * 0.5f, mz + nz * 0.5f);
+        if (g == f || g < f) continue;
+        if (!fields.isFarmland(f) && !fields.isFarmland(g)) continue;
+        hedge(a.x + ex * t0, a.z + ez * t0, a.x + ex * t1, a.z + ez * t1, pairKey(f, g));
+      }
     }
   }
 
@@ -450,6 +498,27 @@ void Decorations::generate(const Planet &planet, uint32_t seed) {
                   },
                   40);
   }
+  // A few dead trees round each wreck.
+  const size_t itemCount = m_items.size();
+  for (size_t i = 0; i < itemCount; ++i) {
+    if (m_items[i].kind != Decoration::Kind::CrashSite) continue;
+    const Vector3 c = m_items[i].pos;
+    for (int k = 0; k < 3; ++k) {
+      float a = frand(rng) * 6.2832f, r = frand(rng, 7.0f, 14.0f);
+      float x = c.x + cosf(a) * r, z = c.z + sinf(a) * r;
+      if (isLand(planet, x, z)) pushTree(TM::Dead, x, z, 0.9f, 1.3f);
+    }
+  }
+#ifdef DEV_MODE
+  size_t perTree[6] = {};
+  for (const Decoration &d : m_items)
+    if (d.kind == Decoration::Kind::Tree) ++perTree[static_cast<int>(d.tree)];
+  std::fprintf(stderr,
+               "[Decorations] trees: %zu conifer, %zu broadleaf, %zu poplar, "
+               "%zu birch, %zu bush, %zu dead (%zu items)\n",
+               perTree[0], perTree[1], perTree[2], perTree[3], perTree[4],
+               perTree[5], m_items.size());
+#endif
   buildInstances(planet);
 }
 
@@ -526,18 +595,8 @@ void Decorations::buildInstances(const Planet &planet) {
 
   for (const Decoration &d : m_items) {
     if (d.kind == Decoration::Kind::Tree) {
-      // Conifers get commoner towards the top of the grass band. The
-      // biome comes from the stored height, so no terrain query.
-      float h = d.pos.y / Config::TERRAIN_HEIGHT_MAX;
-      float b = (h - Config::SEA_LEVEL) / (1.0f - Config::SEA_LEVEL);
-      float t = (b - kSandMax) / (kGrassMax - kSandMax);
-      t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
-      float conifer = Config::DECOR_CONIFER_FRAC_LOW +
-                      (Config::DECOR_CONIFER_FRAC_HIGH -
-                       Config::DECOR_CONIFER_FRAC_LOW) * t;
-      float roll = (d.seed & 0xffffu) / 65536.0f;
-      add(roll < conifer ? kConifer : kBroadleaf, d.pos,
-          {d.scale, d.scale, d.scale}, d.yaw);
+      add(kConifer + static_cast<int>(d.tree), d.pos, {d.scale, d.scale, d.scale},
+          d.yaw);
     } else if (d.kind == Decoration::Kind::Rock) {
       // Same cluster recipe (and RNG sequence) as drawRock(), with each
       // box replaced by a boulder of the same size, plus a random yaw.

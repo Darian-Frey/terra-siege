@@ -8,6 +8,7 @@ void Planet::generate(uint32_t seed, ProgressCb cb) {
   // ---- Heightmap phase (0% → 40%) ----
   if (cb) cb("Generating heightmap", 0.0f);
   m_heightmap.generate(Config::HEIGHTMAP_SIZE, seed);
+  m_fields.generate(m_heightmap, seed);
   if (cb) cb("Heightmap complete, meshing terrain", 0.4f);
 
   // ---- Chunk phase (40% → 100%) ----
@@ -23,8 +24,8 @@ void Planet::generate(uint32_t seed, ProgressCb cb) {
       int originX = cx * cellsPerChunk;
       int originZ = cz * cellsPerChunk;
       int idx = cz * chunksPerEdge + cx;
-      m_chunks[static_cast<size_t>(idx)].build(m_heightmap, originX, originZ,
-                                               cellsPerChunk);
+      m_chunks[static_cast<size_t>(idx)].build(m_heightmap, &m_fields, originX,
+                                               originZ, cellsPerChunk);
       ++done;
       if (cb)
         cb("Building terrain chunks",
@@ -83,7 +84,8 @@ float Planet::flattenPad(float worldX, float worldZ, float halfSize,
       int wx = ((cx % chunksPerEdge) + chunksPerEdge) % chunksPerEdge;
       int wz = ((cz % chunksPerEdge) + chunksPerEdge) % chunksPerEdge;
       m_chunks[static_cast<size_t>(wz * chunksPerEdge + wx)].build(
-          m_heightmap, wx * cellsPerChunk, wz * cellsPerChunk, cellsPerChunk);
+          m_heightmap, &m_fields, wx * cellsPerChunk, wz * cellsPerChunk,
+          cellsPerChunk);
     }
   }
   return h;

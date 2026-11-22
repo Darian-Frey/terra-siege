@@ -1,11 +1,22 @@
 #include "TerrainChunk.hpp"
+#include "FieldMap.hpp"
 #include <cmath>
+#include <cstring>
+#include <vector>
 
 // ================================================================
 // Colour helpers
 // ================================================================
 
-Color TerrainChunk::landColor(float h) const {
+// Farmland tints (FieldMap::tint): meadow, two greens, young crop,
+// ripe wheat and ploughed earth. Kept close to the grass green so the
+// patchwork reads as fields, not paint.
+static constexpr Color kFieldTints[] = {
+    {100, 155, 65, 255}, {84, 140, 56, 255},  {118, 166, 70, 255},
+    {140, 165, 72, 255}, {178, 160, 84, 255}, {128, 104, 70, 255}};
+static_assert(sizeof(kFieldTints) / sizeof(kFieldTints[0]) == FieldMap::kTintCount);
+
+Color TerrainChunk::landColor(float h, int fieldTint) const {
   // h is normalised [0,1]. Remap land portion (above SEA_LEVEL) to [0,1]
   // so colour bands track sea-level changes without re-tuning thresholds.
   float landH = (h - Config::SEA_LEVEL) / (1.0f - Config::SEA_LEVEL);
@@ -14,7 +25,8 @@ Color TerrainChunk::landColor(float h) const {
   if (landH < Config::BIOME_SAND_MAX)
     return {210, 190, 120, 255}; // sand / beach
   else if (landH < Config::BIOME_GRASS_MAX)
-    return {100, 155, 65, 255}; // grassland
+    return fieldTint >= 0 ? kFieldTints[fieldTint]
+                          : Color{100, 155, 65, 255}; // grassland
   else if (landH < Config::BIOME_ROCK_MAX)
     return {145, 125, 95, 255}; // rock
   else if (landH < Config::BIOME_HIGH_MAX)
@@ -60,8 +72,8 @@ static Color applyLight(Color base, Vector3 normal, bool isWater) {
 // ================================================================
 // build
 // ================================================================
-void TerrainChunk::build(const Heightmap &hmap, int originX, int originZ,
-                         int cellsPerEdge) {
+void TerrainChunk::build(const Heightmap &hmap, const FieldMap *fields,
+                         int originX, int originZ, int cellsPerEdge) {
   if (m_built)
     unload();
 
@@ -69,19 +81,16 @@ void TerrainChunk::build(const Heightmap &hmap, int originX, int originZ,
   const float Hm = Config::TERRAIN_HEIGHT_MAX;
   const float seaWorld = Config::SEA_LEVEL * Hm;
   const int N = cellsPerEdge;
-  const int vertCount = N * N * 6;
 
-  m_mesh.vertexCount = vertCount;
-  m_mesh.triangleCount = N * N * 2;
-  m_mesh.vertices =
-      static_cast<float *>(RL_MALLOC(vertCount * 3 * sizeof(float)));
-  m_mesh.colors = static_cast<unsigned char *>(
-      RL_MALLOC(vertCount * 4 * sizeof(unsigned char)));
-  m_mesh.normals =
-      static_cast<float *>(RL_MALLOC(vertCount * 3 * sizeof(float)));
-
-  int vi = 0, ci = 0, ni = 0;
+  // Two triangles per quad, plus extra ones where field edges split a
+  // grass triangle; collected here, then copied into the mesh.
+  std::vector<float> verts, norms;
+  std::vector<unsigned char> cols;
+  verts.reserve(static_cast<size_t>(N) * N * 18);
+  norms.reserve(static_cast<size_t>(N) * N * 18);
+  cols.reserve(static_cast<size_t>(N) * N * 24);
   float cx = 0.0f, cz = 0.0f;
+  std::vector<FieldMap::Piece> pieces;
 
   // World height: clamp anything below sea level to flat ocean surface
   auto worldH = [&](int x, int z) -> float {
@@ -139,50 +148,70 @@ void TerrainChunk::build(const Heightmap &hmap, int originX, int originZ,
         return n;
       };
 
-      // Triangle 1: v00, v01, v10 (CCW from above)
-      Vector3 n1 = faceNormal(v00, v01, v10);
-      WaterType wt1 = dominantWater(hx, hz, hx, hz + 1, hx + 1, hz);
-      float a1 = (h00 + h01 + h10) / 3.0f / Hm;
-      Color c1 = (wt1 != WaterType::None)
-                     ? applyLight(waterColor(wt1), n1, true)
-                     : applyLight(landColor(a1), n1, false);
-
-      // Triangle 2: v10, v01, v11 (CCW from above)
-      Vector3 n2 = faceNormal(v10, v01, v11);
-      WaterType wt2 = dominantWater(hx + 1, hz, hx, hz + 1, hx + 1, hz + 1);
-      float a2 = (h10 + h01 + h11) / 3.0f / Hm;
-      Color c2 = (wt2 != WaterType::None)
-                     ? applyLight(waterColor(wt2), n2, true)
-                     : applyLight(landColor(a2), n2, false);
-
       auto writeVert = [&](Vector3 v, Vector3 n, Color col) {
-        m_mesh.vertices[vi] = v.x;
-        m_mesh.vertices[vi + 1] = v.y;
-        m_mesh.vertices[vi + 2] = v.z;
-        m_mesh.normals[ni] = n.x;
-        m_mesh.normals[ni + 1] = n.y;
-        m_mesh.normals[ni + 2] = n.z;
-        m_mesh.colors[ci] = col.r;
-        m_mesh.colors[ci + 1] = col.g;
-        m_mesh.colors[ci + 2] = col.b;
-        m_mesh.colors[ci + 3] = col.a;
-        vi += 3;
-        ni += 3;
-        ci += 4;
+        verts.insert(verts.end(), {v.x, v.y, v.z});
+        norms.insert(norms.end(), {n.x, n.y, n.z});
+        cols.insert(cols.end(), {col.r, col.g, col.b, col.a});
       };
-
-      writeVert(v00, n1, c1);
-      writeVert(v01, n1, c1);
-      writeVert(v10, n1, c1);
-
-      writeVert(v10, n2, c2);
-      writeVert(v01, n2, c2);
-      writeVert(v11, n2, c2);
+      // One terrain triangle (CCW from above). A grass triangle that
+      // crosses field edges is split along them so each piece takes its
+      // field's tint; the pieces stay in the triangle's plane.
+      auto emitTri = [&](Vector3 a, Vector3 b, Vector3 c, WaterType wt) {
+        Vector3 n = faceNormal(a, b, c);
+        float avg = (a.y + b.y + c.y) / 3.0f / Hm;
+        if (wt != WaterType::None) {
+          Color col = applyLight(waterColor(wt), n, true);
+          writeVert(a, n, col);
+          writeVert(b, n, col);
+          writeVert(c, n, col);
+          return;
+        }
+        float landH = (avg - Config::SEA_LEVEL) / (1.0f - Config::SEA_LEVEL);
+        if (!fields || landH < Config::BIOME_SAND_MAX ||
+            landH >= Config::BIOME_GRASS_MAX) {
+          Color col = applyLight(landColor(avg), n, false);
+          writeVert(a, n, col);
+          writeVert(b, n, col);
+          writeVert(c, n, col);
+          return;
+        }
+        pieces.clear();
+        fields->clip({{a.x, a.z}, {b.x, b.z}, {c.x, c.z}}, pieces);
+        // Height on the triangle's plane, from barycentric weights.
+        const float det = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
+        auto onPlane = [&](FieldMap::Point p) -> Vector3 {
+          float wa = ((b.z - c.z) * (p.x - c.x) + (c.x - b.x) * (p.z - c.z)) / det;
+          float wb = ((c.z - a.z) * (p.x - c.x) + (a.x - c.x) * (p.z - c.z)) / det;
+          return {p.x, wa * a.y + wb * b.y + (1.0f - wa - wb) * c.y, p.z};
+        };
+        for (const FieldMap::Piece &pc : pieces) {
+          int tint = fields->isFarmland(pc.field) ? fields->tint(pc.field) : -1;
+          Color col = applyLight(landColor(avg, tint), n, false);
+          Vector3 p0 = onPlane(pc.poly[0]);
+          for (size_t k = 1; k + 1 < pc.poly.size(); ++k) {
+            writeVert(p0, n, col);
+            writeVert(onPlane(pc.poly[k]), n, col);
+            writeVert(onPlane(pc.poly[k + 1]), n, col);
+          }
+        }
+      };
+      emitTri(v00, v01, v10, dominantWater(hx, hz, hx, hz + 1, hx + 1, hz));
+      emitTri(v10, v01, v11, dominantWater(hx + 1, hz, hx, hz + 1, hx + 1, hz + 1));
 
       cx += wx + S * 0.5f;
       cz += wz + S * 0.5f;
     }
   }
+
+  const int vertCount = static_cast<int>(verts.size() / 3);
+  m_mesh.vertexCount = vertCount;
+  m_mesh.triangleCount = vertCount / 3;
+  m_mesh.vertices = static_cast<float *>(RL_MALLOC(verts.size() * sizeof(float)));
+  m_mesh.normals = static_cast<float *>(RL_MALLOC(norms.size() * sizeof(float)));
+  m_mesh.colors = static_cast<unsigned char *>(RL_MALLOC(cols.size()));
+  std::memcpy(m_mesh.vertices, verts.data(), verts.size() * sizeof(float));
+  std::memcpy(m_mesh.normals, norms.data(), norms.size() * sizeof(float));
+  std::memcpy(m_mesh.colors, cols.data(), cols.size());
 
   float quads = static_cast<float>(N * N);
   float avgCY = 0.0f;

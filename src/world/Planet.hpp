@@ -1,5 +1,6 @@
 #pragma once
 
+#include "FieldMap.hpp"
 #include "Heightmap.hpp"
 #include "TerrainChunk.hpp"
 #include "core/Config.hpp"
@@ -51,6 +52,9 @@ public:
   // (re-uploads chunk meshes).
   float flattenPad(float worldX, float worldZ, float halfSize, float blend);
 
+  // Farmland patchwork and forest mask, fixed at generate().
+  const FieldMap &fields() const { return m_fields; }
+
   // True when (x, z) is open water: ocean below sea level, or a lake.
   bool isWater(float worldX, float worldZ) const;
 
@@ -64,6 +68,7 @@ public:
 
 private:
   Heightmap m_heightmap;
+  FieldMap m_fields;
   std::vector<TerrainChunk> m_chunks;
   bool m_ready = false;
 };

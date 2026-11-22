@@ -19,15 +19,17 @@ class Planet;
 //
 // Per CLAUDE.md §3.5 — tree clusters, rock formations, antennas,
 // crash sites. All four placed by the same procedural pass at world-
-// generation time, then static for the session.
+// generation time, then static for the session. Trees follow the
+// planet's FieldMap: dense forests inside the forest mask, hedgerows
+// and tree lines along farmland field edges.
 //
 // Render path does a radial distance check against the camera and
 // skips anything past DECOR_RENDER_RADIUS — fog hides the rest anyway.
 //
 // Decorations are OBJ models (from scripts/meshgen/scenery.py) drawn
-// with GPU instancing: there are
-// ~135k trees, far too many for a draw call each. Their transforms are
-// built once per placement into a grid of DECOR_CELL_SIZE cells, and
+// with GPU instancing: there are hundreds of thousands of trees and
+// bushes, far too many for a draw call each. Their transforms are built
+// once per placement into a grid of DECOR_CELL_SIZE cells, and
 // each frame the cells near the camera are gathered into one
 // DrawMeshInstanced call per model. If a kind's models or the
 // instancing shader fail to load, that kind falls back to boxes.
@@ -37,14 +39,18 @@ class Planet;
 
 struct Decoration {
   enum class Kind : uint8_t {
-    Tree,      // One Decoration = one tree. Forests are made of thousands
-               // of Tree decorations placed by a noise-mask pass.
+    Tree,      // One Decoration = one tree or bush (see TreeModel). Forests
+               // and hedgerows are made of thousands of them.
     Rock,
     Antenna,
     CrashSite,
   };
 
+  // Which model a Tree uses, in the Decorations model-slot order.
+  enum class TreeModel : uint8_t { Conifer, Broadleaf, Poplar, Birch, Bush, Dead };
+
   Kind kind = Kind::Rock;
+  TreeModel tree = TreeModel::Broadleaf;
   Vector3 pos{0, 0, 0}; // world-space, y = terrain height at pos
   float yaw = 0.0f;     // visual rotation (purely cosmetic)
   float scale = 1.0f;   // per-instance size variation
@@ -88,18 +94,22 @@ public:
 private:
   // Instanced scenery models, in kModelFiles order.
   enum ModelSlot {
-    kConifer, kBroadleaf,
+    kConifer, kBroadleaf, kPoplar, kBirch, kBush, kDeadTree,
     kRockA, kRockB, kRockC,
     kAntenna,
     kCrashHull, kCrashDebris,
     kModelCount
   };
   static constexpr int kFirstRock = kRockA;
+  static_assert(kDeadTree - kConifer == static_cast<int>(Decoration::TreeModel::Dead),
+                "tree model slots follow Decoration::TreeModel");
   static constexpr int kRockVariants = kRockC - kRockA + 1;
   static constexpr int kKindCount = 4;
   // The decoration kind each model slot belongs to. A kind is drawn
   // instanced only when every one of its slots loaded.
   static constexpr Decoration::Kind kSlotKind[kModelCount] = {
+      Decoration::Kind::Tree,    Decoration::Kind::Tree,
+      Decoration::Kind::Tree,    Decoration::Kind::Tree,
       Decoration::Kind::Tree,    Decoration::Kind::Tree,
       Decoration::Kind::Rock,    Decoration::Kind::Rock,
       Decoration::Kind::Rock,    Decoration::Kind::Antenna,

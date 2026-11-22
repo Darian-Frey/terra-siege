@@ -1007,4 +1007,38 @@ Undo is held at inspector level as full-mesh snapshots (32 deep) and is shared a
 - raylib's `DrawMeshInstanced` allocates and uploads a transform buffer per call. That cost sits in render, not update, so D-012 is unaffected.
 
 **Reversal conditions.** Revisit if scenery has to animate per instance (wind, destruction), or if the instance count grows enough that the per-frame transform upload shows in profiles.
+- *Amended 2026-11-22:* with dense forests and hedgerows ([D-035](#d-035-farmland-patchwork-from-an-angled-bsp-shared-by-terrain-and-decorations)) the world holds about 420,000 trees and bushes in six models (adding `tree_poplar`, `tree_birch`, `bush` and `tree_dead`). The instanced path held up in playtesting with no visible frame-rate cost.
+
+### D-035 Farmland patchwork from an angled BSP shared by terrain and decorations
+
+**Decided:** 2026-11-22
+**Recorded:** 2026-11-22
+**Status:** Accepted
+**Authors:** Shane Hartley (with Claude Code)
+**Related:** D-006, D-007, D-013, D-034, F-002
+
+**Context.** Grassland was one flat green, and forests were noise blobs. The goal was countryside that reads as real: dense woods, a patchwork of irregular fields (some with curved edges), and hedgerows and tree lines along the field borders. Terrain colouring and tree placement both need the same field layout, and the terrain is a grid of 8 m flat-shaded triangles.
+
+**Options.**
+
+- **A. Rectangles on the 8 m cell grid.** Tints stay crisp because edges never cut a quad. Tried first; rejected as too regular.
+- **B. Irregular fields tinted per whole triangle.** Rejected: any edge off the grid becomes an 8 m staircase.
+- **C. Angled binary space partition, clipping terrain triangles along field edges.** Chosen.
+
+**Decision.**
+
+- `world/FieldMap`, owned by `Planet` and generated with the heightmap, recursively cuts the world square with straight lines across each piece's longer axis, tilted up to `FIELD_CUT_JITTER`, until no piece exceeds `FIELD_MAX_SIZE`. No cut may leave a piece narrower than `FIELD_MIN_SIZE`.
+- `FIELD_CURVE_CHANCE` of cuts carry a sine term along the cut: a bow or an S-bend, windowed to zero at both ends of the cut's chord, so the curve meets neighbouring edges where the straight cut would. Field outlines sample curves every `FIELD_CURVE_STEP`.
+- The BSP is the single source of truth. `fieldAt()` walks it. `TerrainChunk::build` clips each grass triangle through it and gives each piece its field's tint, so tints meet on a clean line or curve at any angle. `Decorations` uses it for per-tree field tests, and walks field outlines for hedgerows.
+- A farm-region noise splits grassland into farming country and wild country. In farming country, gentle, dry fields are farmland (tinted, hedged) or, by `FIELD_WOOD_CHANCE`, woods planted to their edges. Wild country keeps the tiling forest mask, now also in `FieldMap`.
+- The world edge is just the root square's boundary, so the layout tiles the toroidal world.
+
+**Consequences.**
+
+- Terrain chunk meshes have a variable vertex count, built in vectors at load time.
+- Forest and hedge density raises the decoration count from about 135,000 to about 420,000.
+- Field outlines can be slightly non-convex where a curve bows an edge. Code that needs an edge's outward side uses the outline's winding, not its centroid.
+- The forest-mask noise now tiles with the world. It used to have a seam at the world edge.
+
+**Reversal conditions.** Revisit if fields must follow roads or rivers, or depend on terrain features beyond biome and slope; or if terrain chunks start being rebuilt at run time, where the clipping cost would matter.
 

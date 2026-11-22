@@ -10,6 +10,11 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 ## [Unreleased]
 
 ### Added
+- Countryside: grassland now splits into farming country and wild country ([D-035](DECISIONS.md#d-035-farmland-patchwork-from-an-angled-bsp-shared-by-terrain-and-decorations)).
+  - Farming country is a patchwork of irregular fields, cut at random angles, some with bowed or S-bent edges. They are tinted meadow, two greens, young crop, wheat or ploughed earth, and terrain triangles are split along field edges so the colours meet cleanly.
+  - Field borders carry bush hedges, broadleaf tree lines or poplar rows, with gateways. About one field in eight is a wood planted to its hedges.
+  - Wild country keeps dense forests (up to 5 trees per 8 m cell) that thin into bushes and birches at their edges, and open meadow. Crash sites are ringed by dead trees.
+- New scenery models: `tree_poplar`, `tree_birch`, `bush` and `tree_dead`. There are about 420,000 trees and bushes, up from 135,000, still drawn instanced.
 - Antennas and crash sites are now OBJ models too, drawn through the same instanced path as the trees and rocks. Antennas are guyed masts with a red beacon. Crash sites are a burnt-out wreck with its nose dug in and a glowing ember, surrounded by scattered debris chunks ([D-034](DECISIONS.md#d-034-trees-and-rocks-are-obj-models-drawn-with-gpu-instancing))
 - Trees and rock formations are now OBJ models (`scripts/meshgen/scenery.py`): conifer and broadleaf trees, with conifers commoner higher up the grassland, and three boulder variants mixed in each rock cluster. They are drawn with GPU instancing from a prebuilt grid of transforms, one draw call per model ([D-034](DECISIONS.md#d-034-trees-and-rocks-are-obj-models-drawn-with-gpu-instancing))
 - `scripts/meshgen/`: Python definitions for the player, enemy and structure meshes, run headless in Blender to regenerate `assets/meshes/*.obj` (with optional preview renders)

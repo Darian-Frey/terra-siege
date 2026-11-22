@@ -48,6 +48,51 @@ def tree_broadleaf():
     return s, 5.0
 
 
+def tree_poplar():
+    """Tall narrow column crown on a short trunk, about 7 m tall: the
+    field-edge and roadside line tree."""
+    s = Ship("tree_poplar")
+    s.stack([(-0.3, 0.15, 0.15), (1.0, 0.12, 0.12)], [14], n=4, rot=math.pi / 4)
+    rings = s.stack([(0.8, 0.3, 0.3), (1.7, 0.62, 0.62), (4.2, 0.72, 0.72), (6.0, 0.48, 0.48)],
+                    [_alt(28, 25), _alt(24, 28), _alt(28, 25)], n=6, bottom=25)
+    _cone(s, rings[-1], (0, 0, 7.2), _alt(24, 28), 25)
+    return s, 9.0
+
+
+def tree_birch():
+    """Slender white trunk with a black band and a light green crown,
+    about 4.3 m tall."""
+    s = Ship("tree_birch")
+    s.stack([(-0.3, 0.12, 0.12), (0.8, 0.11, 0.11), (1.0, 0.11, 0.11), (2.2, 0.09, 0.09)],
+            [15, 0, 15], n=4, rot=math.pi / 4)
+    s.stack([(1.8, 0.4, 0.4), (2.4, 0.95, 0.95), (3.5, 0.85, 0.85), (4.3, 0.35, 0.35)],
+            [_alt(29, 24), _alt(24, 29), _alt(29, 24)], n=5, bottom=28, top=24)
+    return s, 6.0
+
+
+def bush():
+    """Low rounded shrub, about 1.1 m tall and 1.5 m across: hedgerow
+    filler and forest-edge undergrowth."""
+    s = Ship("bush")
+    s.stack([(-0.15, 0.5, 0.5), (0.35, 0.75, 0.75), (0.8, 0.6, 0.6), (1.1, 0.25, 0.25)],
+            [_alt(28, 25), _alt(24, 28), _alt(28, 24)], n=6, rot=math.pi / 6, top=24)
+    return s, 2.5
+
+
+def tree_dead():
+    """Bare grey trunk with four crooked branches, about 4.5 m tall."""
+    s = Ship("tree_dead")
+    s.stack([(-0.3, 0.2, 0.2), (1.5, 0.15, 0.15), (3.0, 0.1, 0.1), (3.8, 0.05, 0.05)],
+            [26, 30, 26], n=4, rot=math.pi / 4, top=30)
+    for (bx, by, bz), (tx, ty, tz) in (((0, 0, 1.6), (0.9, 0.3, 2.6)),
+                                       ((0, 0, 2.2), (-0.8, 0.4, 3.1)),
+                                       ((0, 0, 2.7), (0.2, -0.9, 3.7)),
+                                       ((0.5, 0.17, 2.2), (0.7, 0.9, 2.9))):
+        s.strut((bx, by, bz), (tx, ty, tz), 0.05, 26)
+    s.strut((0, 0, 3.6), (0.3, 0.2, 4.5), 0.035, 30)
+    return s, 6.0
+
+
 # ---------------------------------------------------------------- Boulders
 def _boulder(name, seed, top, sides, bottom):
     """Irregular 20-triangle stone, about 1 m across, y from -0.1 to 0.9
@@ -147,6 +192,8 @@ def crash_debris():
 
 
 SHIPS = {"tree_conifer": tree_conifer, "tree_broadleaf": tree_broadleaf,
+         "tree_poplar": tree_poplar, "tree_birch": tree_birch, "bush": bush,
+         "tree_dead": tree_dead,
          "rock_a": rock_a, "rock_b": rock_b, "rock_c": rock_c,
          "antenna": antenna, "crash_site": crash_site, "crash_debris": crash_debris}
 
@@ -165,6 +212,18 @@ HEADERS = {
 "tree_broadleaf": "terra-siege tree, broadleaf: faceted six-sided crown on a square trunk.\n"
                   "{verts} verts, {tris} tris, about 3.3 m tall at scale 1.\n" + _TREE +
                   "\nc14 trunk, c24/c28/c25 leaves.",
+"tree_poplar": "terra-siege tree, poplar: tall six-sided column crown on a short trunk.\n"
+               "{verts} verts, {tris} tris, about 7.2 m tall at scale 1. Lines field edges.\n" + _TREE +
+               "\nc14 trunk, c24/c28/c25 leaves.",
+"tree_birch": "terra-siege tree, birch: white trunk with a black band, light green crown.\n"
+              "{verts} verts, {tris} tris, about 4.3 m tall at scale 1.\n" + _TREE +
+              "\nc15/c00 trunk, c29/c24/c28 leaves.",
+"bush": "terra-siege bush: low six-sided shrub, no trunk. Hedgerows and forest edges.\n"
+        "{verts} verts, {tris} tris, about 1.1 m tall and 1.5 m across at scale 1.\n" + _TREE +
+        "\nc28/c25/c24 leaves.",
+"tree_dead": "terra-siege tree, dead: bare tapering trunk with crooked branches.\n"
+             "{verts} verts, {tris} tris, about 4.5 m tall at scale 1.\n" + _TREE +
+             "\nc26/c30 bark.",
 "rock_a": _ROCK.replace("{v}", "A").replace("{cols}", "c08 top, c26/c30 sides, c30 base."),
 "rock_b": _ROCK.replace("{v}", "B").replace("{cols}", "c26 top, c30/c08 sides, c30 base."),
 "rock_c": _ROCK.replace("{v}", "C (mossy)").replace("{cols}", "c24 top, c26/c30 sides, c30 base."),

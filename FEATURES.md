@@ -41,14 +41,18 @@ Players who want a modern take on the 1988 Argonaut game *Virus*: flat-shaded lo
 ### F-002 Atmospheric terrain decorations
 
 **Priority:** Should
-**Status:** Complete (2026-06-08, `bdc63e5`; wrap-aware rendering 2026-10-15, `7e846c3`; instanced OBJ models for every kind 2026-11-19)
+**Status:** Complete (2026-06-08, `bdc63e5`; wrap-aware rendering 2026-10-15, `7e846c3`; instanced OBJ models for every kind 2026-11-19; fields, dense forests and hedgerows 2026-11-22)
 **Acceptance:**
 
-- Noise-mask forests on grassland only, plus biome-weighted rocks, antennas and crash sites
+- Grassland splits into farming country and wild country ([D-035](DECISIONS.md#d-035-farmland-patchwork-from-an-angled-bsp-shared-by-terrain-and-decorations)):
+  - Farming country is a patchwork of irregular fields, some with curved edges, tinted in six crop colours, with crisp edges at any angle. Some fields are woods planted to their edges.
+  - Field borders carry hedgerows, broadleaf tree lines or poplar rows, with gateways.
+  - Wild country has dense noise-mask forests that thin into bushes and birches at their edges, and open meadow.
+- Biome-weighted rocks, antennas and crash sites (ringed by dead trees)
 - Placement is deterministic for a given terrain seed
 - Visual only: no collision, AI or entity-pool slots
 - Distance-culled at `DECOR_RENDER_RADIUS` and drawn at the toroidal copy nearest the camera
-- Trees (conifer and broadleaf, with more conifers higher up the grass band) rock boulders, antennas and crash sites (a wreck plus scattered debris) are OBJ models drawn with GPU instancing ([D-034](DECISIONS.md#d-034-trees-and-rocks-are-obj-models-drawn-with-gpu-instancing))
+- Trees (conifer, broadleaf, poplar, birch, dead, and bushes; more conifers higher up the grass band), rock boulders, antennas and crash sites (a wreck plus scattered debris) are OBJ models drawn with GPU instancing ([D-034](DECISIONS.md#d-034-trees-and-rocks-are-obj-models-drawn-with-gpu-instancing))
 
 ### F-003 Rivers
 
