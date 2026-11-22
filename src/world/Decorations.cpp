@@ -272,7 +272,7 @@ int wrapIndex(int i, int n) { return ((i % n) + n) % n; }
 //   * Crash sites — anywhere on land, gentle slope, ringed by dead trees.
 // ====================================================================
 void Decorations::clearSquare(const Planet &planet, float x, float z,
-                              float half, float reseatHalf) {
+                              float half, float reseatHalf, bool rebuild) {
   const Vector3 c{x, 0.0f, z};
   size_t w = 0;
   for (size_t i = 0; i < m_items.size(); ++i) {
@@ -292,7 +292,7 @@ void Decorations::clearSquare(const Planet &planet, float x, float z,
     m_items[w++] = d;
   }
   m_items.resize(w);
-  buildInstances(planet);
+  if (rebuild) buildInstances(planet);
 }
 
 void Decorations::generate(const Planet &planet, uint32_t seed) {

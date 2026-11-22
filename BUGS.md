@@ -343,6 +343,16 @@ The 5g commit says strafe runs "fire at the friendly", but the friendly-hit chec
 **Reproduction.** Start any game, or Restart. The craft hovers next to the base.
 **Notes.** Fixed 2026-11-22. `pickHomeSite()` finds the gentle grassland nearest the world centre, the home base is built there in both modes, and `placePlayerOnHomePad()` puts the craft at rest on the pad's centre landing spot. Base decks were made solid for the player at the same time, so it sits on the deck ([D-037](DECISIONS.md#d-037-base-platform-decks-are-solid-ground-for-the-player)).
 
+### BUG-032: Launch freezes for a couple of seconds with no feedback
+
+**Status:** fixed (2026-11-22)
+**Found:** 2026-11-22 (playtest)
+**Location:** [src/core/GameState.cpp](src/core/GameState.cpp) `spawnFriendliesForRound()`, `resetCombat()`; [src/world/Decorations.cpp](src/world/Decorations.cpp) `clearSquare()`
+**Severity:** low
+**Description.** Pressing Launch builds the round's layout. Every base, radar tower and relay-chain tower clears scenery off its site, and each `clearSquare()` rebuilt the instance transforms for every decoration. That came to about 50 full rebuilds of about 164,000 items, a couple of seconds with the window unresponsive and no loading screen.
+**Reproduction.** Press Launch on the loadout screen. The menu freezes before play starts.
+**Notes.** Fixed 2026-11-22. `clearSquare()` takes `rebuild = false` for batches, and the layout calls `rebuildInstances()` once at the end. Setup at Launch dropped to about 0.4 s (Debug build). It now runs behind the loading screen (`drawLoadingScreen()`, shared with world load), with per-step progress. See [AV-017](ATTACK_VECTORS.md#av-017-per-call-full-rebuild-of-scenery-instances).
+
 ## Won't Fix
 
 _None._

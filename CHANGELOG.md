@@ -70,6 +70,7 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Stale duplicate of `game_modes_and_features.md` at the repo root
 
 ### Fixed
+- Pressing Launch froze the game for a couple of seconds: every base and radar tower placed rebuilt all the scenery instances. Sites are now cleared in one batch, so setup takes a fraction of a second, and it runs behind a loading bar with progress steps. World loading at startup also reports its forest and layout steps ([BUG-032](BUGS.md#bug-032-launch-freezes-for-a-couple-of-seconds-with-no-feedback))
 - The player started hovering beside the home base. The round now starts with the craft parked on the home base's landing pad, and the home base sits on the gentle grassland nearest the world centre ([BUG-031](BUGS.md#bug-031-the-player-starts-hovering-beside-the-home-base-instead-of-on-its-landing-pad))
 - Waves didn't clear while an infected enemy (or a base defender) was still alive, because allied ships counted as enemies. The game appeared to stop progressing until the infected ship bled out. Allied ships no longer count towards clearing a wave or the HUD enemy count ([BUG-030](BUGS.md#bug-030-allied-ships-infected-enemies-base-defenders-hold-up-wave-clear))
 - Base deck hatches and the feet of base ramps z-fought (flickered) from a distance. The camera near plane moves from 0.05 m to `CAM_NEAR_PLANE`, the hatches are thicker plates, and the drawn ramps run on into the ground instead of meeting it flush ([AV-013](ATTACK_VECTORS.md#av-013-raylib-name-and-default-collisions))

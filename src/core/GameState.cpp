@@ -270,54 +270,56 @@ void GameState::init() {
 // above the world centre. Used by init() and the DEV_MODE seed-reroll
 // hotkey. Progress callback drives the loading screen.
 // ================================================================
+void GameState::drawLoadingScreen(const char *step, float progress) {
+  // Throttle to ~30 fps so the UI doesn't eat into the load work.
+  double now = GetTime();
+  if (progress < 1.0f && (now - m_loadingLastDraw) < 0.033) return;
+  m_loadingLastDraw = now;
+
+  int sw = GetScreenWidth();
+  int sh = GetScreenHeight();
+
+  BeginDrawing();
+  ClearBackground({18, 28, 48, 255});
+
+  const char *title = "TERRA-SIEGE";
+  int tw = measureHudText(title, 48);
+  drawHudText(title, sw / 2 - tw / 2, sh / 2 - 110, 48, {230, 235, 245, 255});
+
+  const char *sub = "a modern reimagining of Virus (1988)";
+  int sbw = measureHudText(sub, 16);
+  drawHudText(sub, sw / 2 - sbw / 2, sh / 2 - 60, 16, {150, 165, 185, 220});
+
+  int stepW = measureHudText(step, 20);
+  drawHudText(step, sw / 2 - stepW / 2, sh / 2 + 5, 20, {200, 215, 235, 255});
+
+  const int barW = 440, barH = 18;
+  const int barX = sw / 2 - barW / 2, barY = sh / 2 + 50;
+  DrawRectangle(barX - 2, barY - 2, barW + 4, barH + 4, {80, 100, 130, 255});
+  DrawRectangle(barX, barY, barW, barH, {30, 40, 60, 255});
+  int fillW = static_cast<int>(barW * progress);
+  if (fillW > 0) DrawRectangle(barX, barY, fillW, barH, {90, 200, 110, 255});
+
+  char pct[16];
+  snprintf(pct, sizeof(pct), "%d%%", static_cast<int>(progress * 100.0f));
+  int pw = measureHudText(pct, 18);
+  drawHudText(pct, sw / 2 - pw / 2, barY + 30, 18, {180, 200, 225, 255});
+
+  EndDrawing();
+}
+
 void GameState::loadWorld(uint32_t seed) {
   m_seed = seed;
 
-  // Throttle the loading-screen render to ~30 fps so we don't spend
-  // meaningful time on UI during chunk meshing.
-  double lastDraw = 0.0;
-  auto progressCb = [&lastDraw, this](const char *step, float progress) {
-    double now = GetTime();
-    if (progress < 1.0f && (now - lastDraw) < 0.033) return;
-    lastDraw = now;
-
-    int sw = GetScreenWidth();
-    int sh = GetScreenHeight();
-
-    BeginDrawing();
-    ClearBackground({18, 28, 48, 255});
-
-    const char *title = "TERRA-SIEGE";
-    int tw = measureHudText(title, 48);
-    drawHudText(title, sw / 2 - tw / 2, sh / 2 - 110, 48, {230, 235, 245, 255});
-
-    const char *sub = "a modern reimagining of Virus (1988)";
-    int sbw = measureHudText(sub, 16);
-    drawHudText(sub, sw / 2 - sbw / 2, sh / 2 - 60, 16, {150, 165, 185, 220});
-
-    int stepW = measureHudText(step, 20);
-    drawHudText(step, sw / 2 - stepW / 2, sh / 2 + 5, 20, {200, 215, 235, 255});
-
-    const int barW = 440, barH = 18;
-    const int barX = sw / 2 - barW / 2, barY = sh / 2 + 50;
-    DrawRectangle(barX - 2, barY - 2, barW + 4, barH + 4,
-                  {80, 100, 130, 255});
-    DrawRectangle(barX, barY, barW, barH, {30, 40, 60, 255});
-    int fillW = static_cast<int>(barW * progress);
-    if (fillW > 0)
-      DrawRectangle(barX, barY, fillW, barH, {90, 200, 110, 255});
-
-    char pct[16];
-    snprintf(pct, sizeof(pct), "%d%%", static_cast<int>(progress * 100.0f));
-    int pw = measureHudText(pct, 18);
-    drawHudText(pct, sw / 2 - pw / 2, barY + 30, 18, {180, 200, 225, 255});
-
-    EndDrawing();
+  // Terrain is most of the load; scenery and the friendly layout follow.
+  m_loadingLastDraw = 0.0;
+  auto progressCb = [this](const char *step, float progress) {
+    drawLoadingScreen(step, 0.75f * progress);
   };
-
   m_planet.generate(seed, progressCb);
   // Engine Phase 3.5 — populate the world with trees/rocks/antennas/
   // crash sites. Deterministic on `seed` so reroll reproduces.
+  drawLoadingScreen("Planting forests", 0.76f);
   m_decorations.generate(m_planet, seed);
   m_particles.clear();
   m_em.clear();
@@ -326,7 +328,9 @@ void GameState::loadWorld(uint32_t seed) {
   // the player then starts at rest on its landing pad, facing north.
   // Deterministic per seed.
   const Vector3 home = pickHomeSite();
-  spawnFriendliesForRound(home);
+  spawnFriendliesForRound(home, [this](const char *step, float p) {
+    drawLoadingScreen(step, 0.85f + 0.15f * p);
+  });
   placePlayerOnHomePad(home);
 
   // Snapshot the total for the "alive vs total" HUD readout and
@@ -395,7 +399,11 @@ int GameState::liveDefendedCount() const {
              : m_em.liveFriendlyCount() - m_em.liveEnemyOfType(EntityType::RadarStation);
 }
 
-void GameState::spawnFriendliesForRound(Vector3 homeSite) {
+void GameState::spawnFriendliesForRound(
+    Vector3 homeSite, const std::function<void(const char *, float)> &progress) {
+  auto report = [&](const char *step, float p) {
+    if (progress) progress(step, p);
+  };
   const Vector3 playerStart = homeSite; // the player starts on the home pad
   uint32_t rng = m_seed ? m_seed : 0xACE1u;
   auto randF = [&rng](float lo, float hi) {
@@ -481,7 +489,7 @@ void GameState::spawnFriendliesForRound(Vector3 homeSite) {
   auto spawnRadarStation = [&](Vector3 pos) {
     m_decorations.clearSquare(m_planet, pos.x, pos.z,
                               Config::RADAR_STATION_CLEAR_HALF,
-                              Config::RADAR_STATION_CLEAR_HALF);
+                              Config::RADAR_STATION_CLEAR_HALF, false);
     pos.y = m_planet.heightAt(pos.x, pos.z);
     m_em.spawnEnemy(EntityType::RadarStation, pos);
     placed.push_back(pos);
@@ -496,7 +504,7 @@ void GameState::spawnFriendliesForRound(Vector3 homeSite) {
     const float site = Config::BASE_PAD_HALF_SIZE + Config::BASE_RAMP_LENGTH + 2.0f;
     float h = m_planet.flattenPad(pos.x, pos.z, site, Config::BASE_PAD_BLEND);
     m_decorations.clearSquare(m_planet, pos.x, pos.z, site + 2.0f,
-                              site + Config::BASE_PAD_BLEND + 2.0f);
+                              site + Config::BASE_PAD_BLEND + 2.0f, false);
     pos.y = h + Config::BASE_PAD_HEIGHT;
     Entity *b = m_em.spawnEnemy(EntityType::Base, pos);
     if (b) {
@@ -585,7 +593,7 @@ void GameState::spawnFriendliesForRound(Vector3 homeSite) {
         if (crowded) continue;
         m_decorations.clearSquare(m_planet, p.x, p.z,
                                   Config::RADAR_STATION_CLEAR_HALF,
-                                  Config::RADAR_STATION_CLEAR_HALF);
+                                  Config::RADAR_STATION_CLEAR_HALF, false);
         p.y = fmaxf(m_planet.heightAt(p.x, p.z), seaY);
         const bool wet = m_planet.isWater(p.x, p.z);
         if (wet) p.y += Config::RADAR_PLINTH_HEIGHT;
@@ -607,18 +615,26 @@ void GameState::spawnFriendliesForRound(Vector3 homeSite) {
   // ship in C.3; friendly side is "infrastructure under attack").
   if (m_gameMode == GameMode::Base) {
     // Home base — the player starts on its pad.
+    report("Building bases", 0.0f);
     spawnBase({homeSite.x, 0.0f, homeSite.z});
     // Remaining bases. Difficulty-driven counts come in C.8.
     for (int i = 1; i < Config::BASE_MODE_BASE_COUNT; ++i) {
+      report("Building bases", 0.6f * i / Config::BASE_MODE_BASE_COUNT);
       spawnBase(pickGrassSpot());
     }
     // Slice C C.2 — radar stations are the network nodes (C.4 adds the
     // link graph). No Repair Stations or Radar Boosters in this mode:
     // base landing pads repair + rearm, and boosters are Wave-mode only.
+    report("Raising radar towers", 0.6f);
     for (int i = 0; i < Config::BASE_MODE_RADAR_STATION_COUNT; ++i)
       spawnRadarStation(pickGrassSpot());
+    report("Linking radar network", 0.7f);
     placeRelayChains();
     logRadarNetwork();
+    // One rebuild for all the scenery cleared off the sites above.
+    report("Clearing sites", 0.85f);
+    m_decorations.rebuildInstances(m_planet);
+    report("Deploying landers", 0.95f);
 
     // Slice C C.3 — drop in N grounded landers. Spec table:
     //   Easy 3 / Normal 5 / Hard 7 landers. Difficulty presets come
@@ -670,6 +686,7 @@ void GameState::spawnFriendliesForRound(Vector3 homeSite) {
   // Base first — collectors look for it on their first update tick,
   // so it has to exist by the time they spawn. It is the home base: the
   // player starts on its pad.
+  report("Building bases", 0.0f);
   Vector3 basePos = spawnBase({homeSite.x, 0.0f, homeSite.z});
 
   for (int i = 0; i < Config::FRIENDLY_COLLECTOR_COUNT; ++i) {
@@ -697,12 +714,20 @@ void GameState::spawnFriendliesForRound(Vector3 homeSite) {
   }
   // Extra bases (with landing platforms) and radar towers spread across
   // the map, so there are pads to land on away from home.
-  for (int i = 0; i < Config::WAVE_MODE_EXTRA_BASE_COUNT; ++i)
+  for (int i = 0; i < Config::WAVE_MODE_EXTRA_BASE_COUNT; ++i) {
+    report("Building bases", 0.15f + 0.45f * i / Config::WAVE_MODE_EXTRA_BASE_COUNT);
     spawnBase(pickGrassSpot());
+  }
+  report("Raising radar towers", 0.6f);
   for (int i = 0; i < Config::WAVE_MODE_RADAR_STATION_COUNT; ++i)
     spawnRadarStation(pickGrassSpot());
+  report("Linking radar network", 0.7f);
   placeRelayChains();
   logRadarNetwork();
+  // One rebuild for all the scenery cleared off the sites above.
+  report("Clearing sites", 0.85f);
+  m_decorations.rebuildInstances(m_planet);
+  report("Ready", 1.0f);
 }
 
 // ================================================================
@@ -2961,9 +2986,16 @@ void GameState::resetCombat() {
   // path would leave the friendly pool empty and the
   // all-friendlies-dead game over would fire on tick 1. The player
   // then starts at rest on the home base's pad (camera re-anchored).
+  // Building the layout takes a moment (pads reshape terrain chunks), so
+  // it runs behind the loading screen.
+  const double t0 = GetTime();
+  m_loadingLastDraw = 0.0;
+  drawLoadingScreen("Preparing battlefield", 0.0f);
   const Vector3 home = pickHomeSite();
-  spawnFriendliesForRound(home);
+  spawnFriendliesForRound(home, [this](const char *step, float p) { drawLoadingScreen(step, p); });
   placePlayerOnHomePad(home);
+  drawLoadingScreen("Ready", 1.0f);
+  TraceLog(LOG_INFO, "Battlefield setup: %.2f seconds", GetTime() - t0);
   m_friendlyTotalAtStart = liveDefendedCount();
   // Slice C C.7 — snapshot lander total for the result-screen stat
   // line + the Base-mode victory gate. Zero in Wave mode (no landers

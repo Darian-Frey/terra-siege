@@ -62,7 +62,7 @@ Created 2026-10-15 ([D-001](DECISIONS.md#d-001-adopt-the-development-documentati
 ### AV-014 Loading progress callback lost on terrain regeneration
 
 **Severity:** Minor
-**Description.** `Planet::generate()` takes a `ProgressCb` that drives the loading screen. Terrain generation takes non-trivial time; if a regeneration path (reseed, new round) drops the callback, the window looks hung.
+**Description.** `Planet::generate()` takes a `ProgressCb` that drives the loading screen. Terrain generation takes non-trivial time; if a regeneration path (reseed, new round) drops the callback, the window looks hung. The same applies to the round layout at Launch: `spawnFriendliesForRound()` takes a progress callback, and `resetCombat()` shows `drawLoadingScreen()`.
 **Detection.** Not implemented (manual: F5 reseed in DEV_MODE should show progress).
 **Related decisions.** D-006
 
@@ -113,6 +113,14 @@ Breaking any of them causes faction ping-pong, missiles chasing allies, or a bro
 **Related decisions.** D-020
 
 ## Engine and performance
+
+### AV-017 Per-call full rebuild of scenery instances
+
+**Severity:** Minor
+**Description.** `Decorations::clearSquare()` and `generate()` rebuild the instance transforms for every decoration (about 164,000, with grove shears and terrain samples). Calling `clearSquare()` in a loop with the default `rebuild = true` repeats that work per call. The round layout clears about 50 sites, which is how Launch came to freeze for seconds ([BUG-032](BUGS.md#bug-032-launch-freezes-for-a-couple-of-seconds-with-no-feedback)). Batch clears pass `rebuild = false` and call `rebuildInstances()` once.
+**Detection.** Manual: the DEV log line "Battlefield setup: N seconds" on Launch should stay well under a second.
+**Related decisions.** D-034, D-036
+
 
 ### AV-006 Heap allocation in the hot path
 

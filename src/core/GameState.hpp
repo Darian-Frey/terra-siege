@@ -10,6 +10,8 @@
 #include "mesh/MeshRegistry.hpp"
 #include "raylib.h"
 #include "wave/WaveManager.hpp"
+
+#include <functional>
 #include "world/Decorations.hpp"
 #include "world/Planet.hpp"
 #include <array>
@@ -97,6 +99,11 @@ private:
 
   // World loading — called from init() and from F5 (DEV_MODE) to reroll seed
   void loadWorld(uint32_t seed);
+  // Loading screen: title, step label and progress bar. Drawn directly
+  // (BeginDrawing/EndDrawing) from inside blocking load work, like the
+  // terrain generator's ProgressCb; throttled to ~30 fps except at 100%.
+  void drawLoadingScreen(const char *step, float progress);
+  double m_loadingLastDraw = 0.0;
   // Warn if base_platform / base_ramp.obj no longer match Config sizes.
   void checkBasePartSizes() const;
 
@@ -263,7 +270,9 @@ private:
   // Spawn the round's friendly roster on terrain, with the home base on
   // `homeSite`. Called from loadWorld() and resetCombat(); deterministic
   // per-seed.
-  void spawnFriendliesForRound(Vector3 homeSite);
+  // `progress` (optional) gets a step label and 0..1 as it goes.
+  void spawnFriendliesForRound(Vector3 homeSite,
+                               const std::function<void(const char *, float)> &progress = {});
   // Home-base site: the gentle grassland nearest the world centre.
   Vector3 pickHomeSite() const;
   // Place the player at rest on the home base's centre landing spot and

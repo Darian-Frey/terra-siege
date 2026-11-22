@@ -118,7 +118,8 @@ The game binary has the repo path built in (`TERRA_SIEGE_PROJECT_ROOT`) for asse
     - `MatrixMultiply(A, B)` computes `B·A`
   - **Beam vs Carrier** ([AV-008](ATTACK_VECTORS.md#av-008-carrier-shields-regenerate-under-sustained-beam-fire)): the Beam Laser resets `timeSinceHit` every tick on target. That is the Carrier fight mechanic.
   - **OBJ save paths** ([AV-009](ATTACK_VECTORS.md#av-009-obj-save-corrupts-authored-content)): `saveObjVertices` is byte-exact (T-06/T-07); `saveObjMaterials` / `saveObjMesh` are untested.
-- `Planet::generate()` takes a `ProgressCb` for the loading screen. Keep it on every regeneration path ([AV-014](ATTACK_VECTORS.md#av-014-loading-progress-callback-lost-on-terrain-regeneration)).
+- `Planet::generate()` takes a `ProgressCb` for the loading screen. Keep it on every regeneration path, and keep the round layout's progress callback at Launch ([AV-014](ATTACK_VECTORS.md#av-014-loading-progress-callback-lost-on-terrain-regeneration)).
+- `Decorations::clearSquare()` rebuilds every scenery instance by default. Batch clears pass `rebuild = false` and call `rebuildInstances()` once ([AV-017](ATTACK_VECTORS.md#av-017-per-call-full-rebuild-of-scenery-instances)).
 - The 120° cluster-submunition cone in old docs **is not implemented** ([BUG-016](BUGS.md#bug-016-cluster-submunition-120-search-cone-documented-but-not-implemented)). Don't "preserve" code that isn't there.
 - `project-status/archive/` holds superseded specs. `terrain_rebuild.md` (sine synthesis) is obsolete and must not be implemented ([D-006](DECISIONS.md#d-006-tileable-perlin-gradient-fbm-terrain)).
 - `gen_sfx.sh` (rFXGen pipeline) is untracked and `tools/` is git-ignored. Neither is part of the build.

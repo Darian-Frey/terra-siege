@@ -106,8 +106,11 @@ public:
   // Remove decorations inside a square (toroidal), e.g. a base apron, and
   // re-seat those inside the larger `reseatHalf` square onto the current
   // terrain (after Planet::flattenPad has reshaped the ground there).
+  // Rebuilding the instance data walks every decoration, so a batch of
+  // clears passes rebuild = false and calls rebuildInstances() once.
   void clearSquare(const Planet &planet, float x, float z, float half,
-                   float reseatHalf);
+                   float reseatHalf, bool rebuild = true);
+  void rebuildInstances(const Planet &planet) { buildInstances(planet); }
   size_t count() const { return m_items.size(); }
 
 private:
