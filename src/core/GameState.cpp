@@ -367,6 +367,8 @@ Vector3 GameState::pickHomeSite() const {
       if (m_planet.settlements().occupied(x, z, Config::BASE_PAD_HALF_SIZE +
                                                     Config::SETTLEMENT_BASE_CLEARANCE))
         continue;
+      const float roadClear = Config::BASE_PAD_HALF_SIZE + Config::BASE_RAMP_LENGTH + Config::STRUCTURE_ROAD_CLEARANCE;
+      if (m_planet.roads().edgeDistance(x, z, roadClear + 1.0f) < roadClear) continue;
       const float h = m_planet.heightAt(x, z);
       const float span = Config::BASE_PAD_HALF_SIZE;
       if (fabsf(m_planet.heightAt(x + span, z) - h) > Config::HOME_SITE_MAX_RISE ||
@@ -533,6 +535,11 @@ void GameState::spawnFriendliesForRound(
         if (m_planet.settlements().occupied(x, z, Config::BASE_PAD_HALF_SIZE +
                                                       Config::SETTLEMENT_BASE_CLEARANCE))
           continue;
+        // Clear of roads by a whole base site (pad and ramps), so neither a
+        // base nor anything smaller lands on one.
+        const float roadClear =
+            Config::BASE_PAD_HALF_SIZE + Config::BASE_RAMP_LENGTH + Config::STRUCTURE_ROAD_CLEARANCE;
+        if (m_planet.roads().edgeDistance(x, z, roadClear + 1.0f) < roadClear) continue;
         float h = m_planet.heightAt(x, z);
         float slope = fabsf(m_planet.heightAt(x + 1.0f, z) - h) +
                       fabsf(m_planet.heightAt(x, z + 1.0f) - h);
@@ -660,6 +667,22 @@ void GameState::spawnFriendliesForRound(
           if (e.x * e.x + e.z * e.z < sep2) { crowded = true; break; }
         }
         if (crowded) continue;
+        // Off the roads: step sideways from the chain line until clear.
+        {
+          const float clear = Config::RADAR_STATION_CLEAR_HALF + Config::STRUCTURE_ROAD_CLEARANCE;
+          const float px = -d.z / len, pz = d.x / len;
+          bool ok = m_planet.roads().edgeDistance(p.x, p.z, clear + 1.0f) >= clear;
+          for (float off = 10.0f; !ok && off <= 60.0f; off += 10.0f)
+            for (float sgn : {1.0f, -1.0f}) {
+              const Vector3 q{p.x + px * off * sgn, 0.0f, p.z + pz * off * sgn};
+              if (m_planet.roads().edgeDistance(q.x, q.z, clear + 1.0f) >= clear) {
+                p = q;
+                ok = true;
+                break;
+              }
+            }
+          if (!ok) continue;
+        }
         m_decorations.clearSquare(m_planet, p.x, p.z,
                                   Config::RADAR_STATION_CLEAR_HALF,
                                   Config::RADAR_STATION_CLEAR_HALF, false);
@@ -2033,7 +2056,13 @@ void GameState::drawHUD() const {
   DrawFPS(12, 12);
 
   // ---- Debug info panel (top right) ----
-  const Vector3 &pos = m_player.position();
+  // In free cam the position lines follow the camera, so the panel can
+  // locate anything you fly the camera to. X/Z are wrapped into the world
+  // square, the frame the F6 maps and settlement sites use.
+  const bool freeCam = m_camMode == CamMode::FreeRoam;
+  const Vector3 pos = freeCam ? m_camera.position : m_player.position();
+  const float ws = m_planet.worldSize();
+  const float wrapX = fmodf(fmodf(pos.x, ws) + ws, ws), wrapZ = fmodf(fmodf(pos.z, ws) + ws, ws);
   float terrainH = m_planet.surfaceAt(pos.x, pos.z);
   float agl = pos.y - terrainH;
   char buf[64];
@@ -2073,11 +2102,11 @@ void GameState::drawHUD() const {
   int panelLines = m_camMode == CamMode::FreeRoam ? 11 : 10;
   DrawRectangle(px - 8, py - 4, 216, lh * panelLines + 8, {0, 0, 0, 120});
 
-  snprintf(buf, sizeof(buf), "X: %7.1f", pos.x);
-  drawHudText(buf, px, py, 14, col);
+  snprintf(buf, sizeof(buf), freeCam ? "Cam X: %7.1f" : "X: %7.1f", wrapX);
+  drawHudText(buf, px, py, 14, freeCam ? Color{255, 220, 120, 255} : col);
   py += lh;
-  snprintf(buf, sizeof(buf), "Z: %7.1f", pos.z);
-  drawHudText(buf, px, py, 14, col);
+  snprintf(buf, sizeof(buf), freeCam ? "Cam Z: %7.1f" : "Z: %7.1f", wrapZ);
+  drawHudText(buf, px, py, 14, freeCam ? Color{255, 220, 120, 255} : col);
   py += lh;
   snprintf(buf, sizeof(buf), "Alt:  %6.1f m", pos.y);
   drawHudText(buf, px, py, 14, col);

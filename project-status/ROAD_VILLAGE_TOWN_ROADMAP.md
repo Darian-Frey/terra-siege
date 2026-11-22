@@ -1,6 +1,6 @@
 # Roads, Villages and Towns — Roadmap
 
-**Status:** In progress. R.1–R.5 and R.7 complete (2026-11-22). R.6 (bridges) is optional; R.8 (settlement gameplay) waits on the section 4 decisions. R.4–R.5 are tracked by [F-049](../FEATURES.md#f-049-villages-and-farmsteads), R.7 by [F-050](../FEATURES.md#f-050-towns). Phases are tracked by [F-048](../FEATURES.md#f-048-settlement-sites-and-road-network) for R.1–R.3; later phases get their own feature IDs when they start.
+**Status:** In progress. R.1–R.7 complete (2026-11-22); only R.8 (settlement gameplay) remains, and it waits on the section 4 decisions. R.4–R.5 are tracked by [F-049](../FEATURES.md#f-049-villages-and-farmsteads), R.6 by [F-051](../FEATURES.md#f-051-bridges), R.7 by [F-050](../FEATURES.md#f-050-towns). Phases are tracked by [F-048](../FEATURES.md#f-048-settlement-sites-and-road-network) for R.1–R.3; later phases get their own feature IDs when they start.
 **Track:** New "Settlements" track, to sit beside the Engine, Features and Tooling tracks in [ROADMAP.md](../ROADMAP.md).
 **Builds on:** the farmland patchwork and forest mask ([D-035](../DECISIONS.md#d-035-farmland-patchwork-from-an-angled-bsp-shared-by-terrain-and-decorations)), instanced scenery and stand models ([D-034](../DECISIONS.md#d-034-trees-and-rocks-are-obj-models-drawn-with-gpu-instancing), [D-036](../DECISIONS.md#d-036-multi-plant-stand-models-cut-the-scenery-instance-count)), and the water surface ([D-038](../DECISIONS.md#d-038-water-is-not-ground-planetsurfaceat-for-anything-above-it)).
 
@@ -335,6 +335,7 @@ Each phase ends playable, and gets its docs (FEATURES, DECISIONS, CHANGELOG) in 
 **Deliverables:** A* allows short water crossings at a cost, and places bridge spans and piers on `surfaceAt()`.
 **Acceptance:** bridges meet the road at both ends, and their decks sit at a sensible height above the water.
 **Assets:** `bridge_stone`, `bridge_girder`, `bridge_pier`.
+**Status:** Complete (2026-11-22, [D-043](../DECISIONS.md#d-043-bridges-water-near-land-is-bridgeable-at-a-cost-spans-laid-along-the-road)). Water within `ROAD_BRIDGE_REACH` of land is bridgeable at `ROAD_BRIDGE_COST`. Every stretch of road over drawn water (at least `BRIDGE_MIN_WATER`) becomes stone arches or steel girder spans, sheared to a deck that meets both banks and clears the water mid-span, with piers at the joints. In practice the test worlds rarely need a bridge: seed 99999's island farmstead gets one, the default world none. Playtesting this phase also turned up routing faults ([BUG-035](../BUGS.md#bug-035-road-network-routing-artefacts-gaps-stubs-staircases-and-water-clips), [BUG-036](../BUGS.md#bug-036-bases-and-radar-towers-placed-on-roads)): gaps where routes met streets, dead-end street stubs, main roads staircasing through towns, smoothing clipping drawn water, and structures on roads. The DEV free camera now shows its own coordinates.
 
 ### R.7 — Towns (L)
 

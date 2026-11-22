@@ -64,6 +64,9 @@ struct Decoration {
     ApartmentBlockA, ApartmentBlockB, OfficeBlockA, OfficeBlockB, WarehouseA, WarehouseB,
     Factory, Chimney, WaterTower, PetrolStation, ParkedCarA, ParkedCarB, ParkedCarC,
     StreetLamp, TelegraphPole, RoadSign, Signpost, BusShelter, PhoneBox,
+    // Bridges (R.6): spans laid along roads over water, sheared to the
+    // deck slope (`slope`); piers scaled to height (`stretch` is vertical).
+    BridgeStone, BridgeGirder, BridgePier,
     Count
   };
 
@@ -92,6 +95,7 @@ struct Decoration {
   float yaw = 0.0f;     // visual rotation (purely cosmetic)
   float scale = 1.0f;   // per-instance size variation
   float stretch = 1.0f; // extra scale along local Z (boundary segments fit their edge)
+  float slope = 0.0f;   // bridge spans: rise per metre along local Z (deck shear)
   uint32_t seed = 0;    // per-instance RNG (cluster count, debris jitter, ...)
 };
 

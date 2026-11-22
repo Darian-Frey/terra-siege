@@ -1031,7 +1031,7 @@ constexpr float FARM_CANDIDATE_STEP = 32.0f;   // m
 // STEEP_PENALTY past MAX_GRADE, times REUSE_FACTOR on existing road (so
 // routes merge). Nodes within WATER_CLEARANCE of water are impassable.
 constexpr float ROAD_GRID_STEP = 16.0f;        // m
-constexpr float ROAD_WATER_CLEARANCE = 14.0f;  // m from any water
+constexpr float ROAD_WATER_CLEARANCE = 20.0f;  // m from any water (covers drawn water and diagonal steps)
 constexpr float ROAD_GRADE_COST = 60.0f;       // TUNE
 constexpr float ROAD_HEIGHT_COST = 0.6f;       // TUNE — prefer valleys
 constexpr float ROAD_MAX_GRADE = 0.18f;        // rise/run before the penalty; TUNE
@@ -1057,7 +1057,22 @@ constexpr float TOWN_STREET_REACH = 0.95f;     // TUNE
 constexpr float TOWN_STREET_TILT = 0.09f;      // rad; TUNE
 constexpr float TOWN_STREET_MAX_GRADE = 0.16f; // TUNE
 constexpr float TOWN_SQUARE_RADIUS = 22.0f;    // m
+// Main roads run straight from the edge of town to the square; ones
+// entering within TOWN_SPOKE_MERGE of each other share that spoke.
+constexpr float TOWN_SPOKE_MERGE = 40.0f;      // m
 constexpr float ROAD_INDEX_CELL = 64.0f;       // m, spatial index for terrain clipping
+constexpr float ROAD_SNAP_DIST = 30.0f;        // m: a road end this close to another road joins it
+// Bridges (R.6): water within ROAD_BRIDGE_REACH of passable land can be
+// crossed at ROAD_BRIDGE_COST times the step cost, so roads bridge narrow
+// water only when it saves a long way round. Decks clear the water by
+// BRIDGE_CLEARANCE mid-span and meet the road BRIDGE_ABUTMENT inland.
+constexpr float ROAD_BRIDGE_REACH = 110.0f;    // m from land (crossings up to ~2x); TUNE
+constexpr float ROAD_BRIDGE_COST = 4.0f;       // TUNE
+constexpr float BRIDGE_CLEARANCE = 3.0f;       // m above the water mid-span; TUNE
+constexpr float BRIDGE_ABUTMENT = 4.0f;        // m onto the bank at each end
+constexpr float BRIDGE_MERGE_GAP = 12.0f;      // m: shorter dry gaps stay inside one crossing
+constexpr float BRIDGE_MIN_WATER = 6.0f;       // m of water under the road before it needs a bridge
+constexpr float BRIDGE_STONE_MAX = 48.0f;      // m: shorter crossings get stone arches
 // Scenery clearance from road edges (R.3).
 constexpr float ROAD_TREE_CLEARANCE = 2.5f;    // m, trees (plus the stand radius for groves/copses)
 constexpr float ROAD_BOUNDARY_CLEARANCE = 1.0f; // m, hedge, wall and fence segments
@@ -1102,6 +1117,9 @@ constexpr float TELEGRAPH_POLE_OFFSET = 2.2f;    // m beyond the lane edge
 
 // Bases and radar towers keep this far outside any settlement footprint.
 constexpr float SETTLEMENT_BASE_CLEARANCE = 60.0f; // m
+// Bases, radar towers and other spawned structures keep this far beyond
+// their own footprint from any road edge.
+constexpr float STRUCTURE_ROAD_CLEARANCE = 4.0f;  // m
 constexpr float SETTLEMENT_OVERLAY_RANGE = 3000.0f; // m, DEV F8 overlay draw range
 
 // Farmland patchwork (FieldMap). The world is cut with straight lines

@@ -373,6 +373,37 @@ The 5g commit says strafe runs "fire at the friendly", but the friendly-hit chec
 **Reproduction.** Classify a small square on a road's centre line: before the fix, no pieces came back at all.
 **Notes.** Fixed 2026-11-22: areas are measured relative to the polygon's first vertex. The field-outline winding in Decorations got the same treatment. See [AV-019](ATTACK_VECTORS.md#av-019-polygon-maths-on-raw-world-coordinates-in-float).
 
+### BUG-035: Road network routing artefacts: gaps, stubs, staircases and water clips
+
+**Status:** fixed (2026-11-22)
+**Found:** 2026-11-22 (playtest screenshots during R.6)
+**Location:** [src/world/Roads.cpp](src/world/Roads.cpp) `RoadNetwork::generate()`
+**Severity:** low
+**Description.** Several faults in the generated network:
+
+- Lanes and tracks stopped a few metres short of the street they joined. A route ends at a grid node, which can sit up to about 11 m off the street's line.
+- Town street grid lines ran on past the last cross street into the fields as dead-end stubs.
+- Main roads staircased across town blocks on their way to the centre, and roads passing through a town were never adjusted. Two roads that shared a route outside a town ran side by side inside it.
+- Route smoothing could cut a corner across the edge of drawn water (a cell is drawn as water when any corner is), which then drew a stray bridge on a road over sand.
+
+**Reproduction.** Default world: the towns at 5152,6880 and 6688,7904, and the main road at 5556,6155.
+**Notes.** Fixed 2026-11-22:
+
+- Road ends within `ROAD_SNAP_DIST` of another road get a final point on it.
+- Streets are trimmed to their first and last junction, iterated to a fixed point with slack.
+- Main roads inside towns become straight spokes through the square ([D-042](DECISIONS.md#d-042-towns-street-grids-in-the-road-network-zoned-frontage), amended).
+- `ROAD_WATER_CLEARANCE` is 20 m, and the smoothing check tests drawn water across the full road width.
+
+### BUG-036: Bases and radar towers placed on roads
+
+**Status:** fixed (2026-11-22)
+**Found:** 2026-11-22 (playtest)
+**Location:** [src/core/GameState.cpp](src/core/GameState.cpp) `pickHomeSite()`, `spawnFriendliesForRound()` (`pickGrassSpot`, `placeRelayChains`)
+**Severity:** low
+**Description.** Friendly structures were placed without regard to roads. A radar relay tower stood on a farm track, and a base pad could land on a road and block it.
+**Reproduction.** Default world: a relay tower on a track near the north of a town.
+**Notes.** Fixed 2026-11-22. The home site and grass spots need a whole base site (pad and ramps) plus `STRUCTURE_ROAD_CLEARANCE` clear of roads. Relay towers step sideways off their chain line, up to 60 m, until clear, and are skipped if no spot is found. Four fewer relay nodes on the default world (49, 45 online).
+
 ## Won't Fix
 
 _None._

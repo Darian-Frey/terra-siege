@@ -895,6 +895,66 @@ def phone_box():
     return s, 4.0
 
 
+# ---------------------------------------------------------------- bridges
+def bridge_stone():
+    """Stone arch bridge span, 8 m along +y (y -4..4), 8 m wide. Origin
+    at the middle of the deck surface; laid end to end along a road over
+    water, stretched to fit and sheared to its slope."""
+    s = Ship("bridge_stone")
+    w, L = 8.0, 8.0
+    s.block((-w / 2, w / 2, -L / 2, L / 2, -0.6), (-w / 2, w / 2, -L / 2, L / 2, 0.0), 26)    # deck slab
+    for sx in (-1, 1):                                                                   # parapets
+        x0, x1 = sorted((sx * (w / 2 - 0.35), sx * w / 2))
+        s.block((x0, x1, -L / 2, L / 2, 0.0), (x0, x1, -L / 2, L / 2, 0.9), 8)
+    # Arch: a half-barrel under the deck, and spandrel walls on both sides.
+    n = 8
+    # Crown just under the deck at mid-span, springing 4 m down at each end.
+    pts = [(-L / 2 + L * k / n, -0.6 - 3.4 * (1.0 - math.sin(math.pi * k / n))) for k in range(n + 1)]
+    for k in range(n):
+        (y0, z0), (y1, z1) = pts[k], pts[k + 1]
+        s.face([s.vert(w / 2, y0, z0), s.vert(-w / 2, y0, z0), s.vert(-w / 2, y1, z1), s.vert(w / 2, y1, z1)],
+               26 if k % 2 else 8, (0, (y0 + y1) / 2, -10.0))
+    for sx in (-1, 1):
+        x = sx * w / 2
+        s.face([s.vert(x, -L / 2, 0.0)] + [s.vert(x, y, z) for y, z in pts] + [s.vert(x, L / 2, 0.0)],
+               26, (0, 0, -2.0))
+    return s, 12.0
+
+
+def bridge_girder():
+    """Steel girder bridge span, 12 m along +y (y -6..6), 8 m wide: a
+    concrete deck on two deep red girders, with railings. Origin at the
+    middle of the deck surface."""
+    s = Ship("bridge_girder")
+    w, L = 8.0, 12.0
+    s.block((-w / 2, w / 2, -L / 2, L / 2, -0.4), (-w / 2, w / 2, -L / 2, L / 2, 0.0), 8)
+    for sx in (-1, 1):
+        x0, x1 = sorted((sx * (w / 2 - 0.5), sx * (w / 2 + 0.1)))
+        s.block((x0, x1, -L / 2, L / 2, -1.6), (x0, x1, -L / 2, L / 2, -0.4), 16)  # girder
+        xr = sx * (w / 2 - 0.1)
+        for k in range(5):                                                       # railing posts
+            y = -L / 2 + 0.3 + (L - 0.6) * k / 4
+            s.strut((xr, y, 0.0), (xr, y, 1.0), 0.05, 30)
+        s.strut((xr, -L / 2, 1.0), (xr, L / 2, 1.0), 0.05, 30)                     # handrail
+    return s, 15.0
+
+
+def bridge_pier():
+    """Bridge pier with pointed cutwaters, unit height (z 0..1): the game
+    scales it to reach from the bed to the deck. Narrow along the road
+    (+y), wide across it."""
+    s = Ship("bridge_pier")
+    hw, hd = 3.4, 0.9
+    ring = [(-hw, -hd), (hw, -hd), (hw + 0.9, 0.0), (hw, hd), (-hw, hd), (-hw - 0.9, 0.0)]
+    lo = [s.vert(x, y, 0.0) for x, y in ring]
+    hi = [s.vert(x, y, 1.0) for x, y in ring]
+    for k in range(len(ring)):
+        j = (k + 1) % len(ring)
+        s.face([lo[k], lo[j], hi[j], hi[k]], 26 if k % 2 else 8, (0, 0, 0.5))
+    s.face(hi, 8, (0, 0, 0.0))
+    return s, 10.0
+
+
 SHIPS = {
     "farmhouse_a": farmhouse_a, "farmhouse_b": farmhouse_b, "barn_a": barn_a, "barn_b": barn_b,
     "dutch_barn": dutch_barn, "grain_silo": grain_silo, "outbuilding_a": outbuilding_a,
@@ -915,6 +975,7 @@ SHIPS = {
     "petrol_station": petrol_station, "parked_car_a": parked_car_a, "parked_car_b": parked_car_b,
     "parked_car_c": parked_car_c, "street_lamp": street_lamp, "telegraph_pole": telegraph_pole,
     "road_sign": road_sign, "signpost": signpost, "bus_shelter": bus_shelter, "phone_box": phone_box,
+    "bridge_stone": bridge_stone, "bridge_girder": bridge_girder, "bridge_pier": bridge_pier,
 }
 
 _COMMON = """Settlement model (Settlements track R.4), drawn instanced. Origin at

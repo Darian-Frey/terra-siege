@@ -192,19 +192,46 @@ void RoadNetwork::generate(const Heightmap &hmap, const Settlements &settlements
         wobble[z * N + x] = 1.0f + Config::ROAD_WOBBLE * v;
       }
   }
+  // Bridgeable (R.6): water and shore nodes within ROAD_BRIDGE_REACH of
+  // passable land, found by a breadth-first distance from the land. Open
+  // sea stays out of reach; narrow water can be crossed, at a price.
+  std::vector<uint8_t> bridgeable(height.size(), 0);
+  {
+    const int reach = static_cast<int>(Config::ROAD_BRIDGE_REACH / G);
+    std::vector<int> dist(height.size(), -1), q;
+    for (int i = 0; i < N * N; ++i)
+      if (passable[i]) {
+        dist[i] = 0;
+        q.push_back(i);
+      }
+    for (size_t k = 0; k < q.size(); ++k) {
+      const int x = q[k] % N, z = q[k] / N;
+      if (dist[q[k]] >= reach) continue;
+      for (int dz = -1; dz <= 1; ++dz)
+        for (int dx = -1; dx <= 1; ++dx) {
+          const int j = idx(x + dx, z + dz);
+          if (dist[j] < 0) {
+            dist[j] = dist[q[k]] + 1;
+            q.push_back(j);
+          }
+        }
+    }
+    for (int i = 0; i < N * N; ++i) bridgeable[i] = !passable[i] && dist[i] > 0;
+  }
+  auto canGo = [&](int i) { return passable[i] || bridgeable[i]; };
   std::vector<int> comp(height.size(), -1);
   {
     std::vector<int> q;
     int nc = 0;
     for (int i = 0; i < N * N; ++i) {
-      if (comp[i] >= 0 || !passable[i]) continue;
+      if (comp[i] >= 0 || !canGo(i)) continue;
       q.assign(1, i);
       comp[i] = nc;
       for (size_t k = 0; k < q.size(); ++k) {
         const int x = q[k] % N, z = q[k] / N;
         for (int d = 0; d < 4; ++d) {
           const int j = idx(x + (d == 0) - (d == 1), z + (d == 2) - (d == 3));
-          if (comp[j] < 0 && passable[j]) {
+          if (comp[j] < 0 && canGo(j)) {
             comp[j] = nc;
             q.push_back(j);
           }
@@ -226,6 +253,7 @@ void RoadNetwork::generate(const Heightmap &hmap, const Settlements &settlements
               (1.0f + Config::ROAD_GRADE_COST * grade * grade + Config::ROAD_HEIGHT_COST * landH[to]);
     if (grade > Config::ROAD_MAX_GRADE) c *= Config::ROAD_STEEP_PENALTY;
     if (onRoad[to]) c *= Config::ROAD_REUSE_FACTOR;
+    if (!passable[to]) c *= Config::ROAD_BRIDGE_COST; // over water: a bridge
     return c;
   };
   auto heuristic = [&](int a, int b) {
@@ -260,7 +288,7 @@ void RoadNetwork::generate(const Heightmap &hmap, const Settlements &settlements
         for (int dx = -1; dx <= 1; ++dx) {
           if (!dx && !dz) continue;
           const int m = idx(x + dx, z + dz);
-          if (!passable[m] || closed[m] == searchId) continue;
+          if (!canGo(m) || closed[m] == searchId) continue;
           const float ng = g[n] + stepCost(n, m, (dx && dz) ? G * 1.41421356f : G);
           if (seen[m] != searchId || ng < g[m]) {
             seen[m] = searchId;
@@ -293,16 +321,29 @@ void RoadNetwork::generate(const Heightmap &hmap, const Settlements &settlements
       pz += dz * G;
       raw.push_back({px, pz});
     }
-    // Smooth, then check the smoothed line stays dry; fall back to the
-    // raw grid path (which kept its clearance) if it cut a corner.
+    // Smooth, then check the smoothed road stays clear of water as drawn
+    // (a terrain triangle is water when any corner is) across its full
+    // width; fall back to the raw grid path, which kept its clearance, if
+    // smoothing cut a corner. A path that bridges water keeps its raw
+    // shape too.
+    const float reach = halfWidthOf(cls) + 2.0f;
+    auto wetDrawn = [&](float x, float z) {
+      const float c = Config::TERRAIN_SCALE;
+      const float x0 = floorf(x / c) * c, z0 = floorf(z / c) * c;
+      return wetAt(x0, z0) || wetAt(x0 + c, z0) || wetAt(x0, z0 + c) || wetAt(x0 + c, z0 + c);
+    };
     Poly smooth = simplified(chaikin(chaikin(raw)), Config::ROAD_SIMPLIFY_TOL);
     bool dry = true;
     for (size_t i = 0; i + 1 < smooth.size() && dry; ++i) {
       const Point a = smooth[i], b = smooth[i + 1];
       const float len = sqrtf((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z));
+      if (len < 1e-3f) continue;
+      const float nx = -(b.z - a.z) / len * reach, nz = (b.x - a.x) / len * reach;
       const int steps = std::max(1, static_cast<int>(len / 4.0f));
-      for (int s = 0; s <= steps && dry; ++s)
-        dry = !wetAt(a.x + (b.x - a.x) * s / steps, a.z + (b.z - a.z) * s / steps);
+      for (int s = 0; s <= steps && dry; ++s) {
+        const float x = a.x + (b.x - a.x) * s / steps, z = a.z + (b.z - a.z) * s / steps;
+        dry = !wetDrawn(x, z) && !wetDrawn(x + nx, z + nz) && !wetDrawn(x - nx, z - nz);
+      }
     }
     m_roads.push_back({cls, dry ? smooth : simplified(raw, 0.01f)});
   };
@@ -388,6 +429,95 @@ void RoadNetwork::generate(const Heightmap &hmap, const Settlements &settlements
     for (size_t t : towns) connected[t] = connected[t] || compOf(t) >= 0;
   }
 
+  // ---- Main roads come straight into town ----
+  // Inside a town a routed main road staircases between grid nodes.
+  // Every stretch of main road inside a town's street reach is replaced
+  // by straight spokes through the square: edge to centre for a road that
+  // ends there, edge to centre to edge for one passing through. The
+  // street grid is then aligned with one of the spokes. Roads entering
+  // within TOWN_SPOKE_MERGE of each other (they shared a route outside
+  // town) share a spoke. A spoke that would cross water keeps the route.
+  std::vector<std::vector<Point>> townEntries(sites.size());
+  auto straightLeg = [&](Point from, Point to) {
+    const float len = hypotf(to.x - from.x, to.z - from.z);
+    for (float s = 0.0f; s <= len; s += 4.0f) {
+      const float px = from.x + (to.x - from.x) * s / len, pz = from.z + (to.z - from.z) * s / len;
+      if (!passable[idx(static_cast<int>(floorf(px / G)), static_cast<int>(floorf(pz / G)))]) return false;
+    }
+    return true;
+  };
+  auto markLeg = [&](Point from, Point to) {
+    const float len = hypotf(to.x - from.x, to.z - from.z);
+    for (float s = 0.0f; s <= len; s += G * 0.5f) {
+      const float px = from.x + (to.x - from.x) * s / len, pz = from.z + (to.z - from.z) * s / len;
+      onRoad[idx(static_cast<int>(floorf(px / G)), static_cast<int>(floorf(pz / G)))] = 1;
+    }
+  };
+  for (Road &r : m_roads) {
+    if (r.cls != Class::Main || r.pts.size() < 2) continue;
+    for (size_t t : towns) {
+      const SettlementSite &site = sites[t];
+      const float reach = Config::TOWN_STREET_REACH * site.radius;
+      Poly &pts = r.pts;
+      // The town centre in the road's frame, and which points lie inside.
+      float dx = site.x - pts[0].x, dz = site.z - pts[0].z;
+      dx -= roundf(dx / ws) * ws;
+      dz -= roundf(dz / ws) * ws;
+      const Point c{pts[0].x + dx, pts[0].z + dz};
+      auto inside = [&](const Point &q) {
+        float ex = q.x - c.x, ez = q.z - c.z;
+        ex -= roundf(ex / ws) * ws; // a long road may wrap away from c
+        ez -= roundf(ez / ws) * ws;
+        return ex * ex + ez * ez < reach * reach;
+      };
+      size_t i0 = 0;
+      while (i0 < pts.size() && !inside(pts[i0])) ++i0;
+      if (i0 >= pts.size()) continue;
+      size_t i1 = i0;
+      while (i1 + 1 < pts.size() && inside(pts[i1 + 1])) ++i1;
+      if (i0 == 0 && i1 + 1 == pts.size()) continue; // wholly inside: leave it
+      // The town centre and crossing points in this stretch's own frame.
+      float cx = site.x - pts[i0].x, cz = site.z - pts[i0].z;
+      cx -= roundf(cx / ws) * ws;
+      cz -= roundf(cz / ws) * ws;
+      const Point cc{pts[i0].x + cx, pts[i0].z + cz};
+      auto crossing = [&](const Point &in, const Point &out) {
+        const float da = hypotf(in.x - cc.x, in.z - cc.z), db = hypotf(out.x - cc.x, out.z - cc.z);
+        const float f = db > da ? (reach - da) / (db - da) : 0.0f;
+        Point x{in.x + (out.x - in.x) * f, in.z + (out.z - in.z) * f};
+        for (const Point &q : townEntries[t]) {
+          float qx = q.x - x.x, qz = q.z - x.z;
+          qx -= roundf(qx / ws) * ws;
+          qz -= roundf(qz / ws) * ws;
+          if (qx * qx + qz * qz < Config::TOWN_SPOKE_MERGE * Config::TOWN_SPOKE_MERGE) return Point{x.x + qx, x.z + qz};
+        }
+        return x;
+      };
+      Poly mid;
+      bool ok = true;
+      if (i0 > 0) {
+        const Point x1 = crossing(pts[i0], pts[i0 - 1]);
+        ok = ok && straightLeg(x1, cc);
+        mid.push_back(x1);
+      }
+      mid.push_back(cc);
+      if (i1 + 1 < pts.size()) {
+        const Point x2 = crossing(pts[i1], pts[i1 + 1]);
+        ok = ok && straightLeg(cc, x2);
+        mid.push_back(x2);
+      }
+      if (!ok) continue;
+      for (size_t k = 0; k < mid.size(); ++k) {
+        if (k + 1 < mid.size()) markLeg(mid[k], mid[k + 1]);
+        if (k != 0 || i0 > 0) townEntries[t].push_back(mid[k]);
+      }
+      Poly out(pts.begin(), pts.begin() + i0);
+      out.insert(out.end(), mid.begin(), mid.end());
+      out.insert(out.end(), pts.begin() + i1 + 1, pts.end());
+      pts.swap(out);
+    }
+  }
+
   // ---- Town streets: a rough grid round each town centre ----
   // Lines every TOWN_STREET_SPACING across and along the main road's
   // direction near the centre, offset half a block so the main road is
@@ -426,6 +556,7 @@ void RoadNetwork::generate(const Heightmap &hmap, const Settlements &settlements
       h ^= h << 5;
       return ((h & 0xffffu) / 65536.0f - 0.5f) * 2.0f;
     };
+    std::vector<Poly> townRuns;
     for (int dirn = 0; dirn < 2; ++dirn) {
       const float ax = dirn ? vx : ux, az = dirn ? vz : uz;   // along the line
       const float px = dirn ? ux : vx, pz = dirn ? uz : vz;   // across the lines
@@ -439,11 +570,7 @@ void RoadNetwork::generate(const Heightmap &hmap, const Settlements &settlements
         Poly run;
         float prevH = 0.0f;
         auto flush = [&]() {
-          if (run.size() >= 3) {
-            m_roads.push_back({Class::Street, run});
-            for (const Point &q : run)
-              onRoad[idx(static_cast<int>(floorf(q.x / G)), static_cast<int>(floorf(q.z / G)))] = 1;
-          }
+          if (run.size() >= 3) townRuns.push_back(run);
           run.clear();
         };
         for (float s = -half; s <= half; s += 8.0f) {
@@ -461,6 +588,80 @@ void RoadNetwork::generate(const Heightmap &hmap, const Settlements &settlements
         }
         flush();
       }
+    }
+    // Trim each street to its first and last junction (with another
+    // street or a road through town), so the grid has no dead-end stubs
+    // running out into the fields; a line with fewer than two junctions
+    // goes. Repeat until nothing changes: a junction only counts if the
+    // street it meets survives its own trimming.
+    std::vector<Poly> through; // roads through town, in this town's frame
+    for (const Road &r : m_roads) {
+      if (r.pts.size() < 2) continue;
+      Poly near;
+      for (const Point &q : r.pts) {
+        float dx = q.x - site.x, dz = q.z - site.z;
+        dx -= roundf(dx / ws) * ws;
+        dz -= roundf(dz / ws) * ws;
+        near.push_back({site.x + dx, site.z + dz});
+      }
+      through.push_back(near);
+    }
+    auto crossAt = [](Point a, Point b, Point c, Point d, float &t) {
+      const float rx = b.x - a.x, rz = b.z - a.z, sx = d.x - c.x, sz = d.z - c.z;
+      const float den = rx * sz - rz * sx;
+      if (fabsf(den) < 1e-6f) return false;
+      t = ((c.x - a.x) * sz - (c.z - a.z) * sx) / den;
+      const float u = ((c.x - a.x) * rz - (c.z - a.z) * rx) / den;
+      // A little slack (about a metre on 8 m segments) so a street that
+      // ends exactly on another still counts as meeting it after trimming.
+      constexpr float kSlack = 0.15f;
+      if (t < -kSlack || t > 1.0f + kSlack || u < -kSlack || u > 1.0f + kSlack) return false;
+      t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+      return true;
+    };
+    for (int pass = 0; pass < 6; ++pass) {
+      std::vector<Poly> next;
+      bool changed = false;
+      for (size_t ri = 0; ri < townRuns.size(); ++ri) {
+        const Poly &run = townRuns[ri];
+        float lo = 1e30f, hi = -1e30f; // junction positions, in segment units
+        auto scan = [&](const Poly &o) {
+          for (size_t i = 0; i + 1 < run.size(); ++i)
+            for (size_t j = 0; j + 1 < o.size(); ++j) {
+              float u;
+              if (!crossAt(run[i], run[i + 1], o[j], o[j + 1], u)) continue;
+              lo = fminf(lo, i + u);
+              hi = fmaxf(hi, i + u);
+            }
+        };
+        for (size_t oi = 0; oi < townRuns.size(); ++oi)
+          if (oi != ri) scan(townRuns[oi]);
+        for (const Poly &o : through) scan(o);
+        if (hi - lo < 1.0f) {
+          changed = true;
+          continue;
+        }
+        auto at = [&](float u) {
+          const size_t i = std::min(static_cast<size_t>(u), run.size() - 2);
+          const float f = u - i;
+          return Point{run[i].x + (run[i + 1].x - run[i].x) * f, run[i].z + (run[i + 1].z - run[i].z) * f};
+        };
+        Poly trimmed{at(lo)};
+        for (size_t i = static_cast<size_t>(lo) + 1; i <= static_cast<size_t>(hi) && i < run.size(); ++i)
+          trimmed.push_back(run[i]);
+        trimmed.push_back(at(hi));
+        const float before = hypotf(run.front().x - run.back().x, run.front().z - run.back().z);
+        const float after = hypotf(trimmed.front().x - trimmed.back().x, trimmed.front().z - trimmed.back().z);
+        changed = changed || after < before - 0.5f;
+        next.push_back(trimmed);
+      }
+      townRuns.swap(next);
+      if (!changed) break;
+    }
+    for (const Poly &trimmed : townRuns) {
+      m_roads.push_back({Class::Street, trimmed});
+      for (const Point &q : trimmed)
+        onRoad[idx(static_cast<int>(floorf(q.x / G)), static_cast<int>(floorf(q.z / G)))] = 1;
     }
     if (passable[node[t]]) m_roads.push_back({Class::Square, {{site.x, site.z}}});
   }
@@ -522,6 +723,45 @@ void RoadNetwork::generate(const Heightmap &hmap, const Settlements &settlements
       addRoad(path, Class::Track);
     else
       ++m_unconnected;
+  }
+
+  // ---- Join road ends to the road they stop at ----
+  // A route that stops on reaching existing road ends at a grid node,
+  // which can sit metres off that road's line; street trimming leaves
+  // ends on a junction. Give every end within ROAD_SNAP_DIST of another
+  // road one more point, on that road, so the two meet.
+  for (size_t ri = 0; ri < m_roads.size(); ++ri) {
+    if (m_roads[ri].pts.size() < 2) continue;
+    for (int end = 0; end < 2; ++end) {
+      Poly &pts = m_roads[ri].pts;
+      const Point e = end ? pts.back() : pts.front();
+      float best = Config::ROAD_SNAP_DIST * Config::ROAD_SNAP_DIST;
+      Point hit{};
+      bool found = false;
+      for (size_t oi = 0; oi < m_roads.size(); ++oi) {
+        if (oi == ri) continue;
+        const Poly &o = m_roads[oi].pts;
+        for (size_t j = 0; j + 1 < o.size(); ++j) {
+          float ax = o[j].x - e.x, az = o[j].z - e.z;
+          const float sx = roundf(ax / ws) * ws, sz = roundf(az / ws) * ws;
+          ax -= sx;
+          az -= sz;
+          const float bx = o[j + 1].x - sx - e.x, bz = o[j + 1].z - sz - e.z;
+          const float ex = bx - ax, ez = bz - az, l2 = ex * ex + ez * ez;
+          float t = l2 > 0.0f ? -(ax * ex + az * ez) / l2 : 0.0f;
+          t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+          const float px = ax + ex * t, pz = az + ez * t, d2 = px * px + pz * pz;
+          if (d2 < best) {
+            best = d2;
+            hit = {e.x + px, e.z + pz};
+            found = true;
+          }
+        }
+      }
+      if (!found || best < 0.25f) continue;
+      if (end) pts.push_back(hit);
+      else pts.insert(pts.begin(), hit);
+    }
   }
 
   buildShapes();

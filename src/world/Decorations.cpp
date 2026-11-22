@@ -261,7 +261,8 @@ const char *const kModelFiles[] = {"tree_conifer.obj", "tree_broadleaf.obj",
                                    "warehouse_b.obj", "factory.obj", "chimney.obj", "water_tower.obj",
                                    "petrol_station.obj", "parked_car_a.obj", "parked_car_b.obj",
                                    "parked_car_c.obj", "street_lamp.obj", "telegraph_pole.obj",
-                                   "road_sign.obj", "signpost.obj", "bus_shelter.obj", "phone_box.obj"};
+                                   "road_sign.obj", "signpost.obj", "bus_shelter.obj", "phone_box.obj",
+                                   "bridge_stone.obj", "bridge_girder.obj", "bridge_pier.obj"};
 
 // Scale, then yaw, then translate — the same order as DrawModelEx.
 Matrix placeMatrix(Vector3 pos, Vector3 scale, float yaw) {
@@ -966,9 +967,28 @@ void Decorations::buildInstances(const Planet &planet) {
         add(kFirstRock + i % kRockVariants, p, {w, h, l}, yaw);
       }
     } else if (d.kind == Decoration::Kind::Building) {
-      // Level (no shear); boundary segments stretch along their length.
-      add(kBuildingFirst + static_cast<int>(d.building), d.pos, {d.scale, d.scale, d.scale * d.stretch},
-          d.yaw);
+      // Level; boundary segments and bridge spans stretch along their
+      // length, spans shear to the deck slope, piers stretch vertically.
+      const int slot = kBuildingFirst + static_cast<int>(d.building);
+      if (d.building == Decoration::BuildingModel::BridgePier) {
+        add(slot, d.pos, {d.scale, d.stretch, d.scale}, d.yaw);
+      } else if (d.slope != 0.0f) {
+        Vector3 pos = d.pos;
+        pos.x = wrapCoord(pos.x, ws);
+        pos.z = wrapCoord(pos.z, ws);
+        int cx = static_cast<int>(pos.x / cell), cz = static_cast<int>(pos.z / cell);
+        if (cx >= m_gridN) cx = m_gridN - 1;
+        if (cz >= m_gridN) cz = m_gridN - 1;
+        Matrix shear = MatrixIdentity();
+        shear.m9 = d.slope; // y += slope * z, in the span's own frame
+        Matrix m = MatrixMultiply(
+            MatrixMultiply(MatrixMultiply(MatrixScale(d.scale, d.scale, d.scale * d.stretch), shear),
+                           MatrixRotateY(d.yaw)),
+            MatrixTranslate(pos.x, pos.y, pos.z));
+        placed[slot].push_back({static_cast<uint32_t>(cz * m_gridN + cx), m});
+      } else {
+        add(slot, d.pos, {d.scale, d.scale, d.scale * d.stretch}, d.yaw);
+      }
     } else if (d.kind == Decoration::Kind::Antenna) {
       add(kAntenna, d.pos, {d.scale, d.scale, d.scale}, d.yaw);
     } else if (d.kind == Decoration::Kind::CrashSite) {

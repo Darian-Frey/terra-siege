@@ -106,6 +106,9 @@ constexpr Size kSize[static_cast<int>(BM::Count)] = {
     {0.0f, 0.0f, 0.9f, 0.9f},   // Signpost
     {0.0f, 0.0f, 1.75f, 0.9f},  // BusShelter
     {0.0f, 0.0f, 0.55f, 0.55f}, // PhoneBox
+    {0.0f, 0.0f, 4.0f, 4.0f},   // BridgeStone (span along z; scaled by stretch)
+    {0.0f, 0.0f, 4.1f, 6.0f},   // BridgeGirder
+    {0.0f, 0.0f, 4.3f, 0.9f},   // BridgePier
 };
 static_assert(sizeof(kSize) / sizeof(kSize[0]) == static_cast<size_t>(BM::Count),
               "a footprint for every building model");
@@ -548,6 +551,103 @@ void SettlementLayout::build(const Planet &planet, uint32_t seed, std::vector<De
       }
       carry = fmodf(carry - len, Config::TELEGRAPH_POLE_SPACING);
       if (carry < 0.0f) carry += Config::TELEGRAPH_POLE_SPACING;
+    }
+  }
+
+  // ---- Bridges (R.6): every stretch of road over water ----
+  // Spans are laid end to end along the road's chord, stretched to fit,
+  // from BRIDGE_ABUTMENT inland on one bank to the same on the other. The
+  // deck meets the road at both banks and rises to clear the water by
+  // BRIDGE_CLEARANCE mid-span; piers stand on the bed at each joint over
+  // water. Short crossings get stone arches, long ones steel girders.
+  for (const RoadNetwork::Road &rd : roads.roads()) {
+    if (rd.pts.size() < 2) continue;
+    std::vector<float> arcAt{0.0f};
+    for (size_t i = 0; i + 1 < rd.pts.size(); ++i)
+      arcAt.push_back(arcAt.back() + hypotf(rd.pts[i + 1].x - rd.pts[i].x, rd.pts[i + 1].z - rd.pts[i].z));
+    const float total = arcAt.back();
+    auto pointAt = [&](float arc, float &px, float &pz) {
+      size_t i = 0;
+      while (i + 2 < arcAt.size() && arcAt[i + 1] < arc) ++i;
+      const float l = arcAt[i + 1] - arcAt[i];
+      const float t = l > 0.0f ? std::clamp((arc - arcAt[i]) / l, 0.0f, 1.0f) : 0.0f;
+      px = rd.pts[i].x + (rd.pts[i + 1].x - rd.pts[i].x) * t;
+      pz = rd.pts[i].z + (rd.pts[i + 1].z - rd.pts[i].z) * t;
+    };
+    // Wet as drawn: TerrainChunk paints a triangle as water when any of
+    // its corners is water, so test the corners of the cell under the
+    // point, not just the nearest heightmap point.
+    auto wetDrawn = [&](float x, float z) {
+      const float cell = Config::TERRAIN_SCALE;
+      const float x0 = floorf(x / cell) * cell, z0 = floorf(z / cell) * cell;
+      return planet.isWater(x0, z0) || planet.isWater(x0 + cell, z0) ||
+             planet.isWater(x0, z0 + cell) || planet.isWater(x0 + cell, z0 + cell);
+    };
+    // A crossing runs from the first wet sample to the last one before a
+    // dry stretch of at least BRIDGE_MERGE_GAP (a tiny islet or a dry
+    // cell mid-channel doesn't split the bridge).
+    float wetStart = -1.0f, lastWet = -1.0f, waterTop = -1e30f;
+    for (float arc = 0.0f; arc <= total + Config::BRIDGE_MERGE_GAP + 2.0f; arc += 2.0f) {
+      float px, pz;
+      pointAt(std::min(arc, total), px, pz);
+      const bool wet = arc <= total && wetDrawn(px, pz);
+      if (wet) {
+        if (wetStart < 0.0f) wetStart = arc;
+        lastWet = arc;
+        waterTop = fmaxf(waterTop, planet.surfaceAt(px, pz));
+        continue;
+      }
+      if (wetStart < 0.0f || arc - lastWet < Config::BRIDGE_MERGE_GAP) continue;
+      // A crossing from wetStart to lastWet: build its bridge, unless the
+      // road only clips the edge of the water.
+      const float wetLen = lastWet - wetStart + 2.0f;
+      const float s0 = std::max(0.0f, wetStart - Config::BRIDGE_ABUTMENT);
+      const float s1 = std::min(total, lastWet + Config::BRIDGE_ABUTMENT);
+      wetStart = -1.0f;
+      if (wetLen < Config::BRIDGE_MIN_WATER) continue;
+      const float len = s1 - s0;
+      if (len < 4.0f) continue;
+      const bool stone = len <= Config::BRIDGE_STONE_MAX;
+      const BM spanModel = stone ? BM::BridgeStone : BM::BridgeGirder;
+      const float span = stone ? 8.0f : 12.0f, deckDepth = stone ? 0.6f : 1.6f;
+      float ax, az, bx, bz;
+      pointAt(s0, ax, az);
+      pointAt(s1, bx, bz);
+      const float hA = planet.surfaceAt(ax, az), hB = planet.surfaceAt(bx, bz);
+      const float lift = fmaxf(0.0f, waterTop + Config::BRIDGE_CLEARANCE - fminf(hA, hB));
+      auto deckAt = [&](float u) { return hA + (hB - hA) * u + lift * sqrtf(sinf(3.14159265f * u)); };
+      const int n = std::max(1, static_cast<int>(lroundf(len / span)));
+      for (int k = 0; k < n; ++k) {
+        const float u0 = static_cast<float>(k) / n, u1 = static_cast<float>(k + 1) / n;
+        float x0, z0, x1, z1;
+        pointAt(s0 + len * u0, x0, z0);
+        pointAt(s0 + len * u1, x1, z1);
+        const float chord = hypotf(x1 - x0, z1 - z0);
+        if (chord < 0.5f) continue;
+        const float h0 = deckAt(u0), h1 = deckAt(u1);
+        Decoration d;
+        d.kind = Decoration::Kind::Building;
+        d.building = spanModel;
+        d.pos = {0.5f * (x0 + x1), 0.5f * (h0 + h1), 0.5f * (z0 + z1)};
+        d.yaw = atan2f(x1 - x0, z1 - z0);
+        d.stretch = chord / span;
+        d.slope = (h1 - h0) / chord;
+        d.seed = rng.next();
+        out.push_back(d);
+        index(footprintOf(spanModel, d.pos.x, d.pos.z, d.yaw, d.stretch));
+        if (k + 1 < n && wetDrawn(x1, z1)) { // pier under the joint
+          const float bed = planet.heightAt(x1, z1) - 2.0f;
+          const float top = h1 - deckDepth;
+          if (top > bed + 0.5f) {
+            Decoration p = d;
+            p.building = BM::BridgePier;
+            p.pos = {x1, bed, z1};
+            p.stretch = top - bed;
+            p.slope = 0.0f;
+            out.push_back(p);
+          }
+        }
+      }
     }
   }
 }

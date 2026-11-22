@@ -1265,3 +1265,38 @@ Undo is held at inspector level as full-mesh snapshots (32 deep) and is shared a
 
 **Reversal conditions.** Revisit if towns need non-grid plans (radial or organic old towns), back lanes and courtyards, or coastal layouts (harbours, 5.6).
 
+*Amended 2026-11-22* ([BUG-035](BUGS.md#bug-035-road-network-routing-artefacts-gaps-stubs-staircases-and-water-clips)):
+
+- Every stretch of main road inside a town is replaced by straight spokes through the square. A road ending there gets edge-to-centre; one passing through gets edge-to-centre-to-edge. Roads entering within `TOWN_SPOKE_MERGE` share a spoke. The street grid is then aligned with a spoke.
+- Streets are trimmed to their first and last junction, repeated until nothing changes (with a metre of slack on the junction test), so the grid has no dead-end stubs.
+
+### D-043 Bridges: water near land is bridgeable at a cost; spans laid along the road
+
+**Decided:** 2026-11-22
+**Recorded:** 2026-11-22
+**Status:** Accepted
+**Authors:** Shane Hartley (with Claude Code)
+**Related:** D-038, D-039, D-041, F-051
+
+**Context.** Water was impassable to road routing ([D-039](#d-039-road-network-a-on-a-wrapped-grid-roads-cut-into-the-terrain)), so settlements on islands stayed unconnected ([project-status/ROAD_VILLAGE_TOWN_ROADMAP.md](project-status/ROAD_VILLAGE_TOWN_ROADMAP.md) R.6).
+
+**Options.**
+
+- **A. Bridge any water.** Rejected: roads would run straight across lakes and sea.
+- **B. Bridge only narrow water, at a cost.** Chosen.
+
+**Decision.**
+
+- Water and shore nodes within `ROAD_BRIDGE_REACH` of passable land are bridgeable, at `ROAD_BRIDGE_COST` times the step cost. Land masses are worked out across bridgeable water, so islands within reach join the network.
+- After routing, `SettlementLayout` walks every road. A crossing runs from the first to the last sample over drawn water (a cell is water when any corner is, as `TerrainChunk` paints it). Dry gaps shorter than `BRIDGE_MERGE_GAP` don't split it, and crossings with less than `BRIDGE_MIN_WATER` of water are ignored.
+- Each crossing gets `bridge_stone` spans (up to `BRIDGE_STONE_MAX`) or `bridge_girder` spans along the road's chord, stretched to fit and sheared to a deck profile. The deck meets the bank `BRIDGE_ABUTMENT` inland at both ends and lifts to `BRIDGE_CLEARANCE` over the water mid-span. `bridge_pier`s are scaled from the bed to the deck at joints over water.
+- `Decoration::slope` carries the deck shear; piers use `stretch` vertically.
+
+**Consequences.**
+
+- Bridges appear only where geography demands them. The default seed has none; seed 99999's island farmstead has a three-arch stone bridge.
+- Road water clearance rose to 20 m and smoothing checks drawn water across the road width ([BUG-035](BUGS.md#bug-035-road-network-routing-artefacts-gaps-stubs-staircases-and-water-clips)). Otherwise roads clipped the edges of water and drew stray bridges.
+- Bridges are visual only: ground units still avoid water, and the decks are not solid to the player.
+
+**Reversal conditions.** Revisit if ground units should use bridges, if the player should land on them, or if longer crossings (causeways, ferries) are wanted.
+

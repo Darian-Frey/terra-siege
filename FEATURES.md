@@ -103,6 +103,18 @@ Players who want a modern take on the 1988 Argonaut game *Virus*: flat-shaded lo
 
 **Notes:** Settlements track R.7 ([project-status/ROAD_VILLAGE_TOWN_ROADMAP.md](project-status/ROAD_VILLAGE_TOWN_ROADMAP.md)), [D-042](DECISIONS.md#d-042-towns-street-grids-in-the-road-network-zoned-frontage). Coastal props (harbour, lighthouse) not done.
 
+### F-051 Bridges
+
+**Priority:** Could
+**Status:** Complete (2026-11-22)
+**Acceptance:**
+
+- Roads may cross narrow water (within `ROAD_BRIDGE_REACH` of land) when it saves a long way round; open sea stays impassable
+- Each crossing gets stone arch spans (up to `BRIDGE_STONE_MAX`) or steel girder spans, laid along the road, meeting the road on both banks and clearing the water mid-span by `BRIDGE_CLEARANCE`, with piers at the joints
+- A road that only clips the edge of water gets no bridge
+
+**Notes:** Settlements track R.6 ([project-status/ROAD_VILLAGE_TOWN_ROADMAP.md](project-status/ROAD_VILLAGE_TOWN_ROADMAP.md)), [D-043](DECISIONS.md#d-043-bridges-water-near-land-is-bridgeable-at-a-cost-spans-laid-along-the-road). Bridges appear only where geography needs them; the default seed has none.
+
 ### F-003 Rivers
 
 **Priority:** Could

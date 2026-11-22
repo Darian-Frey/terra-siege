@@ -7,7 +7,7 @@ Phased plan for terra-siege. Work runs on four tracks:
 | **Engine** | Phases 1–6: terrain, flight, combat, shields and HUD, polish, extras | This file |
 | **Features** | Game-mode slices A → B → C | [project-status/game_modes_and_features.md](project-status/game_modes_and_features.md) (v1), [project-status/base_mode_v2.md](project-status/base_mode_v2.md) (Slice C) |
 | **Tooling** | `terra-siege-inspect` phases A–G, F.1–F.6 | [project-status/terra_siege_inspect_roadmap.md](project-status/terra_siege_inspect_roadmap.md) |
-| **Settlements** | Roads, villages, towns and farmsteads, phases R.1–R.8 (R.1–R.5 and R.7 done 2026-11-22: sites, roads, fields along roads, villages, farmsteads and towns. R.6 bridges optional; R.8 gameplay awaits design decisions) | [project-status/ROAD_VILLAGE_TOWN_ROADMAP.md](project-status/ROAD_VILLAGE_TOWN_ROADMAP.md) |
+| **Settlements** | Roads, villages, towns and farmsteads, phases R.1–R.8 (R.1–R.7 done 2026-11-22: sites, roads, fields along roads, villages, farmsteads, bridges and towns. R.8 gameplay awaits design decisions) | [project-status/ROAD_VILLAGE_TOWN_ROADMAP.md](project-status/ROAD_VILLAGE_TOWN_ROADMAP.md) |
 
 Phases are append-only: completed phases are marked with an ISO date, never deleted. Feature IDs refer to [FEATURES.md](FEATURES.md). Completion dates come from `git log`; phases completed before 2026-10-15 were backfilled when the project adopted the documentation standard ([D-001](DECISIONS.md#d-001-adopt-the-development-documentation-standard)).
 

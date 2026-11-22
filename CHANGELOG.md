@@ -10,6 +10,8 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 ## [Unreleased]
 
 ### Added
+- Bridges (F-051, Settlements track R.6): roads may cross narrow water when it saves a long detour. Crossings get stone arch or steel girder spans that meet the road on both banks and rise clear of the water, with piers at the joints ([D-043](DECISIONS.md#d-043-bridges-water-near-land-is-bridgeable-at-a-cost-spans-laid-along-the-road))
+- DEV: in free cam (F1) the debug panel shows the camera's world coordinates
 - Towns (F-050, Settlements track R.7): street grids round a paved square, with a town hall, market hall and church on the square; shop rows, terraces, offices and flats in the centre; houses and an industrial quarter (warehouses, factory, chimney, water tower) at the edge; a petrol station, street lamps, parked cars, a phone box, a bus shelter and town signs. 26 new models. Telegraph poles now line country lanes ([D-042](DECISIONS.md#d-042-towns-street-grids-in-the-road-network-zoned-frontage))
 - Villages and farmsteads (F-049, Settlements track R.5). Villages have a church or chapel and war memorial, houses, cottages and terraces fronting their roads with garden walls or fences, a pub, a shop, a hall and a fringe of farm buildings. Farmsteads have a farmhouse, barn and outbuilding, with hay, silos, tractors and the odd windmill. Buildings face the road and sit level; forests, hedges and rocks keep clear of them ([D-041](DECISIONS.md#d-041-settlement-buildings-laid-out-first-level-on-foundations))
 - First settlement buildings (F-049, Settlements track R.4): 31 low-poly models generated in Blender. A farm set (farmhouses, barns, a Dutch barn, a silo, outbuildings, a glasshouse, a windmill, hay bales, a tractor) and a village set (cottages, houses, terraces, two churches, a chapel, a pub, a shop, a hall, a war memorial, garden walls, a picket fence). Placement comes in R.5. Palette slots 4 and 5 became red brick and thatch brown
@@ -78,6 +80,8 @@ The project has no tagged releases yet. `[0.1.0]` is a retroactive baseline: the
 - Stale duplicate of `game_modes_and_features.md` at the repo root
 
 ### Fixed
+- Road routing artefacts: lanes and tracks stopping short of town streets, dead-end street stubs, main roads staircasing through towns (they now run as straight spokes to the square), and roads clipping the edge of water ([BUG-035](BUGS.md#bug-035-road-network-routing-artefacts-gaps-stubs-staircases-and-water-clips))
+- Bases and radar relay towers could be placed on roads ([BUG-036](BUGS.md#bug-036-bases-and-radar-towers-placed-on-roads))
 - Float precision dropped terrain pieces near roads, leaving holes along them. Polygon areas are now measured from a local origin ([BUG-034](BUGS.md#bug-034-terrain-pieces-near-roads-dropped-from-the-mesh))
 - Ships flew below the sea surface and the player could land in water, because heights over the sea were measured from the seabed. Shots, the camera and altitude readouts now use the water surface too ([BUG-033](BUGS.md#bug-033-ships-fly-into-the-sea-and-the-player-can-land-in-water))
 - Pressing Launch froze the game for a couple of seconds: every base and radar tower placed rebuilt all the scenery instances. Sites are now cleared in one batch, so setup takes a fraction of a second, and it runs behind a loading bar with progress steps. World loading at startup also reports its forest and layout steps ([BUG-032](BUGS.md#bug-032-launch-freezes-for-a-couple-of-seconds-with-no-feedback))
